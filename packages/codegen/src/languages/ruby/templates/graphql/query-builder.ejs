@@ -1,0 +1,117 @@
+# frozen_string_literal: true
+
+def _snake_to_camel(s)
+  parts = s.to_s.split("_")
+  parts[0] + parts[1..].map(&:capitalize).join
+end
+
+class SelectorProxy
+  def initialize
+    @fields = []
+  end
+
+  def method_missing(name, *args, &block)
+    field_name = _snake_to_camel(name)
+    if block
+      sub = SelectorProxy.new
+      block.call(sub)
+      @fields << [field_name, sub]
+    else
+      @fields << [field_name, nil]
+    end
+    self
+  end
+
+  def respond_to_missing?(_name, _include_private = false)
+    true
+  end
+
+  def _build_selection(indent)
+    lines = []
+    @fields.each do |name, sub|
+      if sub
+        lines << "#{indent}#{name} {"
+        lines << sub._build_selection(indent + "  ")
+        lines << "#{indent}}"
+      else
+        lines << "#{indent}#{name}"
+      end
+    end
+    lines.join("\n")
+  end
+end
+
+class RootProxy
+  def initialize(arg_defs)
+    @entries = []
+    @arg_defs = arg_defs
+  end
+
+  def method_missing(name, *args, **kwargs, &block)
+    field_name = _snake_to_camel(name)
+    arg_dict = kwargs
+    selector = nil
+    if block
+      selector = SelectorProxy.new
+      block.call(selector)
+    end
+    @entries << [field_name, arg_dict, @arg_defs.fetch(field_name, []), selector]
+    self
+  end
+
+  def respond_to_missing?(_name, _include_private = false)
+    true
+  end
+
+  def _build_document(kind)
+    variables = {}
+    var_defs = []
+    parts = []
+    vi = 0
+    @entries.each do |field, args, arg_defs, selector|
+      # Build a lookup from camelCase arg name to the value provided via kwargs.
+      # kwargs keys are snake_case symbols; arg_def names are camelCase strings.
+      camel_args = {}
+      args.each { |k, v| camel_args[_snake_to_camel(k)] = v }
+
+      arg_parts = []
+      arg_defs.each do |ad|
+        if camel_args.key?(ad["name"])
+          vn = "v#{vi}"
+          vi += 1
+          var_defs << "$#{vn}: #{ad["gql_type"]}"
+          arg_parts << "#{ad["name"]}: $#{vn}"
+          variables[vn] = camel_args[ad["name"]]
+        end
+      end
+      args_str = arg_parts.any? ? "(#{arg_parts.join(", ")})" : ""
+      if selector
+        parts << "    #{field}#{args_str} {\n#{selector._build_selection("      ")}\n    }"
+      else
+        parts << "    #{field}#{args_str}"
+      end
+    end
+    vd = var_defs.any? ? "(#{var_defs.join(", ")})" : ""
+    query = "#{kind}#{vd} {\n#{parts.join("\n")}\n  }"
+    [query, variables]
+  end
+end
+
+<% const opKinds = [
+  { name: 'query', ops: it.queries, kind: 'Query' },
+  { name: 'mutation', ops: it.mutations, kind: 'Mutation' },
+  { name: 'subscription', ops: it.subscriptions, kind: 'Subscription' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; -%>
+
+<%= bk.name.toUpperCase() %>_ARG_DEFS = {
+<% for (const op of bk.ops) { -%>
+  "<%= op.name %>" => [<%= op.args.map(a => `{"name" => "${a.name}", "gql_type" => "${a.typeRaw}"}`).join(', ') %>],
+<% } -%>
+}.freeze
+
+def create_<%= bk.name %>_builder
+  RootProxy.new(<%= bk.name.toUpperCase() %>_ARG_DEFS)
+end
+<% } %>

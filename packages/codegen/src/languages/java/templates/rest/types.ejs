@@ -1,0 +1,46 @@
+<% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+package <%= pkg %>.models;
+
+import java.util.List;
+import java.util.Map;
+
+<% for (const schema of it.schemas) { -%>
+<% if (schema.isEnum) { -%>
+public enum <%= schema.className %> {
+<% for (let i = 0; i < schema.enumValues.length; i++) { -%>
+<% const v = schema.enumValues[i]; -%>
+    <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %>("<%= v %>")<%= i < schema.enumValues.length - 1 ? ',' : ';' %>
+<% } -%>
+
+    private final String value;
+
+    <%= schema.className %>(String value) {
+        this.value = value;
+    }
+
+    public String getValue() {
+        return value;
+    }
+}
+
+<% } else { -%>
+public class <%= schema.className %> {
+<% for (const prop of schema.properties) { -%>
+    private <%= prop.type %> <%= prop.name %>;
+<% } -%>
+
+<% for (const prop of schema.properties) { -%>
+    public <%= prop.type %> get<%= it.naming.className(prop.originalName) %>() {
+        return <%= prop.name %>;
+    }
+
+    public <%= schema.className %> <%= prop.name %>(<%= prop.type %> <%= prop.name %>) {
+        this.<%= prop.name %> = <%= prop.name %>;
+        return this;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+<% } -%>

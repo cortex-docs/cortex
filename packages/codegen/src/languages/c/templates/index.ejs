@@ -1,0 +1,10 @@
+#ifndef SDK_INDEX_H
+#define SDK_INDEX_H
+
+#include "client.h"
+#include "types.h"
+<% for (const r of it.resources) { %>
+#include "resources/<%= it.naming.fileName(r.name) %>.h"
+<% } %>
+
+#endif /* SDK_INDEX_H */

@@ -1,0 +1,4 @@
+<% const gemName = it.gemName ?? it.config.languageConfig.package_name; -%>
+require '<%= gemName %>'
+
+client = <%= it.clientClass %>.new(base_url: 'localhost:50051')

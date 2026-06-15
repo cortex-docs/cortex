@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package petstore.v1;
+
+// Pet management service
+service PetService {
+  // List all pets
+  rpc ListPets(ListPetsRequest) returns (ListPetsResponse);
+  // Get a pet by ID
+  rpc GetPet(GetPetRequest) returns (Pet);
+  // Create a new pet
+  rpc CreatePet(CreatePetRequest) returns (Pet);
+  // Update a pet
+  rpc UpdatePet(UpdatePetRequest) returns (Pet);
+  // Delete a pet
+  rpc DeletePet(DeletePetRequest) returns (DeletePetResponse);
+  // Stream pet updates
+  rpc WatchPets(WatchPetsRequest) returns (stream Pet);
+}
+
+// Owner management service
+service OwnerService {
+  // List all owners
+  rpc ListOwners(ListOwnersRequest) returns (ListOwnersResponse);
+  // Get an owner by ID
+  rpc GetOwner(GetOwnerRequest) returns (Owner);
+  // Create a new owner
+  rpc CreateOwner(CreateOwnerRequest) returns (Owner);
+}
+
+enum Species {
+  SPECIES_UNSPECIFIED = 0;
+  SPECIES_DOG = 1;
+  SPECIES_CAT = 2;
+  SPECIES_BIRD = 3;
+  SPECIES_FISH = 4;
+  SPECIES_REPTILE = 5;
+}
+
+enum PetStatus {
+  PET_STATUS_UNSPECIFIED = 0;
+  PET_STATUS_AVAILABLE = 1;
+  PET_STATUS_ADOPTED = 2;
+  PET_STATUS_PENDING = 3;
+}
+
+message Pet {
+  string id = 1;
+  string name = 2;
+  Species species = 3;
+  optional string breed = 4;
+  optional int32 age = 5;
+  PetStatus status = 6;
+  optional string owner_id = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+
+message Owner {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+  optional string phone = 4;
+  repeated Pet pets = 5;
+  string created_at = 6;
+}
+
+message ListPetsRequest {
+  optional int32 limit = 1;
+  optional string cursor = 2;
+}
+
+message ListPetsResponse {
+  repeated Pet data = 1;
+  optional string next_cursor = 2;
+}
+
+message GetPetRequest {
+  string id = 1;
+}
+
+message CreatePetRequest {
+  string name = 1;
+  Species species = 2;
+  optional string breed = 3;
+  optional int32 age = 4;
+}
+
+message UpdatePetRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string breed = 3;
+  optional int32 age = 4;
+  optional PetStatus status = 5;
+  optional string owner_id = 6;
+}
+
+message DeletePetRequest {
+  string id = 1;
+}
+
+message DeletePetResponse {}
+
+message WatchPetsRequest {
+  optional Species species_filter = 1;
+}
+
+message ListOwnersRequest {
+  optional int32 limit = 1;
+}
+
+message ListOwnersResponse {
+  repeated Owner data = 1;
+}
+
+message GetOwnerRequest {
+  string id = 1;
+}
+
+message CreateOwnerRequest {
+  string name = 1;
+  string email = 2;
+  optional string phone = 3;
+}

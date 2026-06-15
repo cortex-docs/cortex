@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import json
+import threading
+from typing import Any, Callable, Mapping, Optional, Union
+import websockets
+import asyncio
+from pydantic import BaseModel
+
+from . import ws_types as Types
+
+
+def _dump_payload(payload: Any) -> Any:
+    if isinstance(payload, BaseModel):
+        return payload.model_dump(by_alias=True, exclude_none=True)
+    if isinstance(payload, Mapping):
+        return dict(payload)
+    return payload
+
+
+class <%= it.clientClass %>:
+    def __init__(
+        self,
+        *,
+        url: str = "<%= it.serverUrl %>",
+        reconnect: bool = True,
+        reconnect_interval: float = 3.0,
+        max_reconnect_attempts: int = 10,
+    ) -> None:
+        self.url = url
+        self._reconnect = reconnect
+        self._reconnect_interval = reconnect_interval
+        self._max_reconnect_attempts = max_reconnect_attempts
+        self._handlers: dict[str, set[Callable]] = {}
+        self._ws = None
+        self._reconnect_attempts = 0
+
+    async def connect(self) -> None:
+        self._ws = await websockets.connect(self.url)
+        self._reconnect_attempts = 0
+        asyncio.create_task(self._listen())
+
+    async def disconnect(self) -> None:
+        self._reconnect = False
+        if self._ws:
+            await self._ws.close()
+            self._ws = None
+
+    async def send(self, channel: str, payload: Any) -> None:
+        if not self._ws:
+            raise RuntimeError("WebSocket is not connected")
+        await self._ws.send(json.dumps({"channel": channel, "payload": payload}))
+
+    def subscribe(self, channel: str, handler: Callable) -> Callable:
+        if channel not in self._handlers:
+            self._handlers[channel] = set()
+        self._handlers[channel].add(handler)
+
+        def unsubscribe():
+            self._handlers.get(channel, set()).discard(handler)
+        return unsubscribe
+
+    async def _listen(self) -> None:
+        try:
+            async for raw in self._ws:
+                try:
+                    data = json.loads(raw)
+                    channel = data.get("channel") or data.get("type") or data.get("event", "")
+                    if channel in self._handlers:
+                        payload = data.get("payload", data.get("data", data))
+                        for handler in self._handlers[channel]:
+                            handler(payload)
+                except json.JSONDecodeError:
+                    pass
+        except websockets.ConnectionClosed:
+            if self._reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
+                self._reconnect_attempts += 1
+                await asyncio.sleep(self._reconnect_interval)
+                await self.connect()
+
+<% for (const ch of it.channels) { %>
+<% if (ch.canSubscribe) { %>
+    def on_<%= it.naming.methodName(ch.name.replace(/[^a-zA-Z0-9]/g, '-')) %>(self, handler: Callable[[<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %>Types.<%= ch.className %>Message<% } else { %>Any<% } %>], None]) -> Callable:
+        """Subscribe to <%= ch.name %>"""
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { -%>
+        return self.subscribe("<%= ch.name %>", lambda payload: handler(Types.<%= ch.className %>Message.model_validate(payload)))
+<% } else { -%>
+        return self.subscribe("<%= ch.name %>", handler)
+<% } -%>
+
+<% } %>
+<% if (ch.canPublish) { %>
+    async def send_<%= it.naming.methodName(ch.name.replace(/[^a-zA-Z0-9]/g, '-')) %>(self, payload: <% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { %>Union[Types.<%= ch.className %>Payload, Mapping[str, Any]]<% } else { %>Any<% } %>) -> None:
+        """Publish to <%= ch.name %>"""
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { -%>
+        await self.send("<%= ch.name %>", _dump_payload(Types.<%= ch.className %>Payload.model_validate(payload)))
+<% } else { -%>
+        await self.send("<%= ch.name %>", payload)
+<% } -%>
+
+<% } %>
+<% } %>

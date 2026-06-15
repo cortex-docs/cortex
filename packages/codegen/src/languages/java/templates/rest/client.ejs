@@ -1,0 +1,106 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const clientClass = it.clientClass; -%>
+<% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+package <%= pkg %>;
+
+import com.google.gson.Gson;
+import java.io.IOException;
+import java.util.List;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class <%= clientClass %> {
+    private final String baseUrl;
+    private final HttpClient httpClient;
+    private final Map<String, String> headers;
+    private final Gson gson;
+
+<% for (const r of it.resources) { -%>
+    private final <%= r.className %> <%= it.naming.propertyName(r.name) %>;
+<% } -%>
+
+    public <%= clientClass %>() {
+        this("<%= baseUrl %>", null, null);
+    }
+
+    public <%= clientClass %>(String baseUrl, String bearerToken, String apiKey) {
+        this.baseUrl = baseUrl;
+        this.httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(30))
+            .build();
+        this.headers = new HashMap<>();
+        this.headers.put("Content-Type", "application/json");
+        this.gson = new Gson();
+
+        if (bearerToken != null) {
+            this.headers.put("Authorization", "Bearer " + bearerToken);
+        }
+        if (apiKey != null) {
+            this.headers.put("X-API-Key", apiKey);
+        }
+
+<% for (const r of it.resources) { -%>
+        this.<%= it.naming.propertyName(r.name) %> = new <%= r.className %>(this);
+<% } -%>
+    }
+
+<% for (const r of it.resources) { -%>
+    public <%= r.className %> get<%= it.naming.className(r.name) %>() {
+        return <%= it.naming.propertyName(r.name) %>;
+    }
+
+<% } -%>
+    public String request(String method, String path, Map<String, String> query, Object body) throws ApiException {
+        StringBuilder urlBuilder = new StringBuilder(baseUrl).append(path);
+
+        if (query != null && !query.isEmpty()) {
+            urlBuilder.append("?");
+            urlBuilder.append(query.entrySet().stream()
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .collect(Collectors.joining("&")));
+        }
+
+        HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
+            .uri(URI.create(urlBuilder.toString()));
+
+        headers.forEach(reqBuilder::header);
+
+        if (body != null && !method.equals("GET") && !method.equals("DELETE")) {
+            reqBuilder.method(method, HttpRequest.BodyPublishers.ofString(gson.toJson(body)));
+        } else {
+            reqBuilder.method(method, HttpRequest.BodyPublishers.noBody());
+        }
+
+        try {
+            HttpResponse<String> response = httpClient.send(reqBuilder.build(),
+                HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() >= 400) {
+                throw new ApiException(response.statusCode(), response.body());
+            }
+
+            return response.body();
+        } catch (IOException | InterruptedException e) {
+            throw new ApiException(0, e.getMessage());
+        }
+    }
+
+    public Gson getGson() {
+        return gson;
+    }
+}
+
+public class PaginatedResponse<T> {
+    private List<T> data;
+    private String nextCursor;
+
+    public List<T> getData() { return data; }
+    public String getNextCursor() { return nextCursor; }
+}

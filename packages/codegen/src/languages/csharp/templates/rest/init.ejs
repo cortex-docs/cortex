@@ -1,0 +1,6 @@
+<% const ns = it.utils.toPascalCase(it.config.languageConfig.package_name); -%>
+<% const clientClass = it.clientClass; -%>
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+using <%= ns %>;
+
+var client = new <%= clientClass %>(baseUrl: "<%= baseUrl %>");

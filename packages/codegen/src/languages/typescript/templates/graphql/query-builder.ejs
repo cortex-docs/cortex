@@ -1,0 +1,171 @@
+<% /* Collect enums and inputs that need to be imported */ -%>
+<% const importedTypes = new Set(); -%>
+<% for (const t of it.types) { -%>
+<%   for (const f of t.fields) { -%>
+<%     if (it.enumNames.has(f.type)) importedTypes.add(f.type); -%>
+<%   } -%>
+<% } -%>
+<% for (const op of it.operations) { -%>
+<%   for (const a of op.args) { -%>
+<%     const resolved = it.resolveType(a.type); -%>
+<%     if (it.enumNames.has(a.type) || it.inputNames.has(a.type)) importedTypes.add(a.type); -%>
+<%   } -%>
+<% } -%>
+<% if (importedTypes.size > 0) { -%>
+import type { <%= [...importedTypes].join(', ') %> } from './gql-types';
+<% } %>
+
+// ─── Runtime ──────────────────────────────────────────────
+
+type FieldEntry = { name: string; sub?: SelectorBase };
+
+interface SelectorBase {
+  readonly __fields: FieldEntry[];
+  __buildSelection(indent: string): string;
+}
+
+function createSelector(): SelectorBase {
+  const fields: FieldEntry[] = [];
+  const self: SelectorBase = new Proxy({} as SelectorBase, {
+    get(_, prop: string) {
+      if (prop === '__fields') return fields;
+      if (prop === '__buildSelection') return (indent: string) =>
+        fields.map(f => f.sub
+          ? `${indent}${f.name} {\n${f.sub.__buildSelection(indent + '  ')}\n${indent}}`
+          : `${indent}${f.name}`
+        ).join('\n');
+      return (...args: unknown[]) => {
+        const fn = args.find(a => typeof a === 'function') as ((s: SelectorBase) => SelectorBase) | undefined;
+        if (fn) {
+          const sub = createSelector();
+          fn(sub);
+          fields.push({ name: prop, sub });
+        } else {
+          fields.push({ name: prop });
+        }
+        return self;
+      };
+    },
+  });
+  return self;
+}
+
+interface RootEntry {
+  field: string;
+  args: Record<string, unknown>;
+  argDefs: Array<{ name: string; gqlType: string }>;
+  selector?: SelectorBase;
+}
+
+function createRootProxy<I>(argDefsMap: Record<string, Array<{ name: string; gqlType: string }>>): I & { __entries: RootEntry[]; __buildDocument(kind: string): { query: string; variables: Record<string, unknown> } } {
+  const entries: RootEntry[] = [];
+  const self = new Proxy({} as any, {
+    get(_, prop: string) {
+      if (prop === '__entries') return entries;
+      if (prop === '__buildDocument') return (kind: string) => {
+        const variables: Record<string, unknown> = {};
+        const varDefs: string[] = [];
+        const parts: string[] = [];
+        let vi = 0;
+        for (const e of entries) {
+          const argParts: string[] = [];
+          for (const ad of e.argDefs) {
+            if (e.args[ad.name] !== undefined) {
+              const vn = `v${vi++}`;
+              varDefs.push(`$${vn}: ${ad.gqlType}`);
+              argParts.push(`${ad.name}: $${vn}`);
+              variables[vn] = e.args[ad.name];
+            }
+          }
+          const argsStr = argParts.length > 0 ? `(${argParts.join(', ')})` : '';
+          parts.push(e.selector
+            ? `    ${e.field}${argsStr} {\n${e.selector.__buildSelection('      ')}\n    }`
+            : `    ${e.field}${argsStr}`);
+        }
+        const vd = varDefs.length > 0 ? `(${varDefs.join(', ')})` : '';
+        return { query: `${kind}${vd} {\n${parts.join('\n')}\n  }`, variables };
+      };
+      return (...methodArgs: unknown[]) => {
+        const fn = methodArgs.find(a => typeof a === 'function') as ((s: SelectorBase) => SelectorBase) | undefined;
+        const args = methodArgs.length > 0 && typeof methodArgs[0] !== 'function' ? methodArgs[0] as Record<string, unknown> : {};
+        let selector: SelectorBase | undefined;
+        if (fn) {
+          selector = createSelector();
+          fn(selector);
+        }
+        entries.push({ field: prop as string, args, argDefs: argDefsMap[prop as string] || [], selector });
+        return self;
+      };
+    },
+  });
+  return self;
+}
+
+// ─── Selector Interfaces ─────────────────────────────────
+<% for (const t of it.types) { %>
+
+export interface <%= t.name %>Selector<T extends {} = {}> {
+<% for (const f of t.fields) { -%>
+<% if (it.isScalarType(f.type) || it.enumNames.has(f.type)) { -%>
+<% const base = it.resolveType(f.type); const ft = f.required ? base : `${base} | null`; -%>
+  <%= f.name %>(): <%= t.name %>Selector<T & { <%= f.name %>: <%= ft %> }>;
+<% } else if (it.typesByName.has(f.type)) { -%>
+<% let ws = 'S'; if (f.isList) ws = 'S[]'; if (!f.required) ws = `${ws} | null`; -%>
+  <%= f.name %><S extends {}>(fn: (s: <%= f.type %>Selector) => <%= f.type %>Selector<S>): <%= t.name %>Selector<T & { <%= f.name %>: <%= ws %> }>;
+<% } -%>
+<% } -%>
+}
+<% } %>
+
+// ─── Root Builder Interfaces ─────────────────────────────
+<% const opKinds = [
+  { name: 'QueryBuilder', ops: it.queries, kind: 'Query' },
+  { name: 'MutationBuilder', ops: it.mutations, kind: 'Mutation' },
+  { name: 'SubscriptionBuilder', ops: it.subscriptions, kind: 'Subscription' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+export interface <%= bk.name %><T extends {} = {}> {
+<% for (const op of bk.ops) { -%>
+<% const returnType = op.returnType; -%>
+<% const raw = op.returnTypeRaw.trim(); -%>
+<% const returnReq = raw.endsWith('!'); -%>
+<% const returnList = raw.replace(/!$/, '').startsWith('['); -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const argsStr = op.args.map(a => `${a.name}${a.required ? '' : '?'}: ${it.resolveType(a.type)}`).join('; '); -%>
+<% const allOptional = op.args.length === 0 || op.args.every(a => !a.required); -%>
+<% if (isScalarReturn) { -%>
+<% const resolvedRet = it.resolveType(returnType); const retType = returnReq ? resolvedRet : `${resolvedRet} | null`; -%>
+<% if (op.args.length > 0) { -%>
+  <%= op.name %>(args: { <%= argsStr %> }): <%= bk.name %><T & { <%= op.name %>: <%= retType %> }>;
+<% } else { -%>
+  <%= op.name %>(): <%= bk.name %><T & { <%= op.name %>: <%= retType %> }>;
+<% } -%>
+<% } else { -%>
+<% let ws = 'S'; if (returnList) ws = 'S[]'; if (!returnReq) ws = `${ws} | null`; -%>
+<% if (op.args.length > 0) { -%>
+  <%= op.name %><S extends {}>(args: { <%= argsStr %> }, fn: (s: <%= returnType %>Selector) => <%= returnType %>Selector<S>): <%= bk.name %><T & { <%= op.name %>: <%= ws %> }>;
+<% } -%>
+<% if (allOptional) { -%>
+  <%= op.name %><S extends {}>(fn: (s: <%= returnType %>Selector) => <%= returnType %>Selector<S>): <%= bk.name %><T & { <%= op.name %>: <%= ws %> }>;
+<% } -%>
+<% } -%>
+<% } -%>
+}
+<% } %>
+
+// ─── Builder Factories ───────────────────────────────────
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; -%>
+
+const <%= bk.kind.toLowerCase() %>ArgDefs: Record<string, Array<{ name: string; gqlType: string }>> = {
+<% for (const op of bk.ops) { -%>
+  <%= op.name %>: [<%= op.args.map(a => `{ name: '${a.name}', gqlType: '${a.typeRaw}' }`).join(', ') %>],
+<% } -%>
+};
+
+export function create<%= bk.name %>(): <%= bk.name %> {
+  return createRootProxy<<%= bk.name %>>(<%= bk.kind.toLowerCase() %>ArgDefs);
+}
+<% } %>

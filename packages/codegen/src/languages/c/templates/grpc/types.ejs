@@ -1,0 +1,152 @@
+<% const messageNames = new Set(it.messages.map(m => m.name)); -%>
+<% const isMessageType = (type) => messageNames.has(type); -%>
+<% const isRepeatedMessage = (f) => f.repeated && isMessageType(f.type); -%>
+#ifndef SDK_GRPC_TYPES_H
+#define SDK_GRPC_TYPES_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include "cjson/cJSON.h"
+
+<% for (const e of it.enums) { %>
+typedef enum {
+<% for (const v of e.values) { %>
+  GRPC_<%= it.naming.enumValue(String(v.name)) %> = <%= v.number %>,
+<% } %>
+} grpc_<%= it.naming.propertyName(e.name) %>_t;
+
+static inline const char* grpc_<%= it.naming.propertyName(e.name) %>_to_string(grpc_<%= it.naming.propertyName(e.name) %>_t v) {
+  switch (v) {
+<% for (const val of e.values) { %>
+    case GRPC_<%= it.naming.enumValue(String(val.name)) %>: return "<%= val.name %>";
+<% } %>
+    default: return "";
+  }
+}
+
+static inline grpc_<%= it.naming.propertyName(e.name) %>_t grpc_<%= it.naming.propertyName(e.name) %>_from_string(const char* s) {
+<% for (const val of e.values) { %>
+  if (strcmp(s, "<%= val.name %>") == 0) return GRPC_<%= it.naming.enumValue(String(val.name)) %>;
+<% } %>
+  return 0;
+}
+
+<% } %>
+<% /* Forward-declare all message structs so repeated fields can reference them */ -%>
+<% for (const msg of it.messages) { -%>
+typedef struct grpc_<%= it.naming.propertyName(msg.name) %>_s grpc_<%= it.naming.propertyName(msg.name) %>_t;
+<% } -%>
+
+<% for (const msg of it.messages) { %>
+<% if (msg.description) { %>
+/* <%= msg.description %> */
+<% } %>
+struct grpc_<%= it.naming.propertyName(msg.name) %>_s {
+<% for (const f of msg.fields) { %>
+<% if (isRepeatedMessage(f)) { %>
+  grpc_<%= it.naming.propertyName(f.type) %>_t* <%= it.naming.propertyName(f.name) %>;
+  int <%= it.naming.propertyName(f.name) %>_count;
+<% } else { %>
+<% const mapped = it.mapProtoType(f.type, f.repeated, f.optional); -%>
+<% if (mapped === 'char*' || mapped === 'String') { %>
+  char* <%= it.naming.propertyName(f.name) %>;
+<% } else if (mapped === 'int64_t' || mapped === 'i64') { %>
+  int64_t <%= it.naming.propertyName(f.name) %>;
+<% } else if (mapped === 'double' || mapped === 'f64') { %>
+  double <%= it.naming.propertyName(f.name) %>;
+<% } else if (mapped === 'int' || mapped === 'bool') { %>
+  int <%= it.naming.propertyName(f.name) %>;
+<% } else { %>
+  cJSON* <%= it.naming.propertyName(f.name) %>;
+<% } %>
+<% } %>
+<% } %>
+};
+
+static inline cJSON* grpc_<%= it.naming.propertyName(msg.name) %>_to_json(const grpc_<%= it.naming.propertyName(msg.name) %>_t* v) {
+  cJSON* j = cJSON_CreateObject();
+<% for (const f of msg.fields) { %>
+<% if (isRepeatedMessage(f)) { %>
+  if (v-><%= it.naming.propertyName(f.name) %> && v-><%= it.naming.propertyName(f.name) %>_count > 0) {
+    cJSON* arr = cJSON_CreateArray();
+    for (int i = 0; i < v-><%= it.naming.propertyName(f.name) %>_count; i++) {
+      cJSON_AddItemToArray(arr, grpc_<%= it.naming.propertyName(f.type) %>_to_json(&v-><%= it.naming.propertyName(f.name) %>[i]));
+    }
+    cJSON_AddItemToObject(j, "<%= f.name %>", arr);
+  }
+<% } else { %>
+<% const mapped = it.mapProtoType(f.type, f.repeated, f.optional); -%>
+<% if (mapped === 'char*' || mapped === 'String') { %>
+  if (v-><%= it.naming.propertyName(f.name) %>) cJSON_AddStringToObject(j, "<%= f.name %>", v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (mapped === 'int64_t' || mapped === 'i64') { %>
+  cJSON_AddNumberToObject(j, "<%= f.name %>", (double)v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (mapped === 'double' || mapped === 'f64') { %>
+  cJSON_AddNumberToObject(j, "<%= f.name %>", v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (mapped === 'int' || mapped === 'bool') { %>
+  cJSON_AddBoolToObject(j, "<%= f.name %>", v-><%= it.naming.propertyName(f.name) %>);
+<% } else { %>
+  if (v-><%= it.naming.propertyName(f.name) %>) cJSON_AddItemToObject(j, "<%= f.name %>", cJSON_Duplicate(v-><%= it.naming.propertyName(f.name) %>, 1));
+<% } %>
+<% } %>
+<% } %>
+  return j;
+}
+
+static inline void grpc_<%= it.naming.propertyName(msg.name) %>_from_json(const cJSON* j, grpc_<%= it.naming.propertyName(msg.name) %>_t* v);
+
+<% } %>
+<% /* Now define from_json separately to handle forward references */ -%>
+<% for (const msg of it.messages) { %>
+static inline void grpc_<%= it.naming.propertyName(msg.name) %>_from_json(const cJSON* j, grpc_<%= it.naming.propertyName(msg.name) %>_t* v) {
+  memset(v, 0, sizeof(*v));
+  if (!j) return;
+<% for (const f of msg.fields) { %>
+<% if (isRepeatedMessage(f)) { %>
+  { cJSON* arr = cJSON_GetObjectItem(j, "<%= f.name %>");
+    if (arr && cJSON_IsArray(arr)) {
+      v-><%= it.naming.propertyName(f.name) %>_count = cJSON_GetArraySize(arr);
+      v-><%= it.naming.propertyName(f.name) %> = (grpc_<%= it.naming.propertyName(f.type) %>_t*)calloc(v-><%= it.naming.propertyName(f.name) %>_count, sizeof(grpc_<%= it.naming.propertyName(f.type) %>_t));
+      for (int i = 0; i < v-><%= it.naming.propertyName(f.name) %>_count; i++) {
+        grpc_<%= it.naming.propertyName(f.type) %>_from_json(cJSON_GetArrayItem(arr, i), &v-><%= it.naming.propertyName(f.name) %>[i]);
+      }
+    }
+  }
+<% } else { %>
+<% const mapped = it.mapProtoType(f.type, f.repeated, f.optional); -%>
+<% if (mapped === 'char*' || mapped === 'String') { %>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_ && cJSON_IsString(f_)) v-><%= it.naming.propertyName(f.name) %> = strdup(f_->valuestring); }
+<% } else if (mapped === 'int64_t' || mapped === 'i64') { %>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_ && cJSON_IsNumber(f_)) v-><%= it.naming.propertyName(f.name) %> = (int64_t)f_->valuedouble; }
+<% } else if (mapped === 'double' || mapped === 'f64') { %>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_ && cJSON_IsNumber(f_)) v-><%= it.naming.propertyName(f.name) %> = f_->valuedouble; }
+<% } else if (mapped === 'int' || mapped === 'bool') { %>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_) v-><%= it.naming.propertyName(f.name) %> = cJSON_IsTrue(f_); }
+<% } else { %>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_) v-><%= it.naming.propertyName(f.name) %> = cJSON_Duplicate(f_, 1); }
+<% } %>
+<% } %>
+<% } %>
+}
+
+static inline void grpc_<%= it.naming.propertyName(msg.name) %>_free(grpc_<%= it.naming.propertyName(msg.name) %>_t* v) {
+  if (!v) return;
+<% for (const f of msg.fields) { %>
+<% if (isRepeatedMessage(f)) { %>
+  if (v-><%= it.naming.propertyName(f.name) %>) {
+    for (int i = 0; i < v-><%= it.naming.propertyName(f.name) %>_count; i++) grpc_<%= it.naming.propertyName(f.type) %>_free(&v-><%= it.naming.propertyName(f.name) %>[i]);
+    free(v-><%= it.naming.propertyName(f.name) %>);
+  }
+<% } else { %>
+<% const mapped = it.mapProtoType(f.type, f.repeated, f.optional); -%>
+<% if (mapped === 'char*' || mapped === 'String') { %>
+  free(v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (mapped !== 'int64_t' && mapped !== 'i64' && mapped !== 'double' && mapped !== 'f64' && mapped !== 'int' && mapped !== 'bool') { %>
+  if (v-><%= it.naming.propertyName(f.name) %>) cJSON_Delete(v-><%= it.naming.propertyName(f.name) %>);
+<% } %>
+<% } %>
+<% } %>
+}
+
+<% } %>
+#endif /* SDK_GRPC_TYPES_H */

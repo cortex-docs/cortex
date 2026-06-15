@@ -1,0 +1,26 @@
+<% for (const schema of it.schemas) { %>
+export interface <%= schema.className %> {
+<% for (const prop of schema.properties) { %>
+  <%= prop.originalName %><%= prop.required ? '' : '?' %>: <%= prop.type %>;
+<% } %>
+}
+
+<% } %>
+<% for (const ch of it.channels) { %>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %>
+export interface <%= ch.className %>Message {
+<% for (const prop of ch.subscribeSchema.properties) { %>
+  <%= prop.originalName %><%= prop.required ? '' : '?' %>: <%= prop.type %>;
+<% } %>
+}
+
+<% } %>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { %>
+export interface <%= ch.className %>Payload {
+<% for (const prop of ch.publishSchema.properties) { %>
+  <%= prop.originalName %><%= prop.required ? '' : '?' %>: <%= prop.type %>;
+<% } %>
+}
+
+<% } %>
+<% } %>

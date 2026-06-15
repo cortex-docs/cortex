@@ -1,0 +1,56 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example.ws'; -%>
+package <%= pkg %>
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+
+<% for (const schema of it.schemas) { -%>
+@Serializable
+data class <%= schema.className %>(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+<% const prop = schema.properties[i]; -%>
+<% const nullable = prop.required ? '' : '?'; -%>
+<% const default_ = prop.required ? '' : ' = null'; -%>
+<% const needsSerialName = prop.name !== prop.originalName; -%>
+<% if (needsSerialName) { -%>
+    @SerialName("<%= prop.originalName %>")
+<% } -%>
+    val <%= prop.name %>: <%= prop.type %><%= nullable %><%= default_ %><%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+)
+
+<% } -%>
+<% for (const ch of it.channels) { -%>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { -%>
+@Serializable
+data class <%= ch.className %>Message(
+<% for (let i = 0; i < ch.subscribeSchema.properties.length; i++) { -%>
+<% const prop = ch.subscribeSchema.properties[i]; -%>
+<% const nullable = prop.required ? '' : '?'; -%>
+<% const default_ = prop.required ? '' : ' = null'; -%>
+<% const needsSerialName = prop.name !== prop.originalName; -%>
+<% if (needsSerialName) { -%>
+    @SerialName("<%= prop.originalName %>")
+<% } -%>
+    val <%= prop.name %>: <%= prop.type %><%= nullable %><%= default_ %><%= i < ch.subscribeSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+)
+
+<% } -%>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { -%>
+@Serializable
+data class <%= ch.className %>Payload(
+<% for (let i = 0; i < ch.publishSchema.properties.length; i++) { -%>
+<% const prop = ch.publishSchema.properties[i]; -%>
+<% const nullable = prop.required ? '' : '?'; -%>
+<% const default_ = prop.required ? '' : ' = null'; -%>
+<% const needsSerialName = prop.name !== prop.originalName; -%>
+<% if (needsSerialName) { -%>
+    @SerialName("<%= prop.originalName %>")
+<% } -%>
+    val <%= prop.name %>: <%= prop.type %><%= nullable %><%= default_ %><%= i < ch.publishSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+)
+
+<% } -%>
+<% } -%>

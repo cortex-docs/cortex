@@ -1,0 +1,11 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+#include "client.h"
+#include "types.h"
+<% for (const resource of it.resources) { -%>
+#include "resources/<%= it.naming.propertyName(resource.name) %>.h"
+<% } -%>
+
+sdk_client_t client;
+sdk_client_init(&client, "<%= baseUrl %>");
+// client.bearer_token = strdup("your-token");
+// client.api_key = strdup("your-api-key");

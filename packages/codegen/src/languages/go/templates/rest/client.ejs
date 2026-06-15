@@ -1,0 +1,132 @@
+<% const clientClass = it.clientClass; %>
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; %>
+<% const parts = it.config.languageConfig.package_name.split('/'); %>
+<% const pkgName = parts[parts.length - 1].replace(/-/g, ''); %>
+package <%= pkgName %>
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"time"
+)
+
+// <%= clientClass %> is the API client used to interact with the service.
+type <%= clientClass %> struct {
+	BaseURL    string
+	HTTPClient *http.Client
+	headers    map[string]string
+<% for (const r of it.resources) { %>
+	<%= r.className %> *<%= r.className %>
+<% } %>
+}
+
+// <%= clientClass %>Option is a functional option for configuring the <%= clientClass %>.
+type <%= clientClass %>Option func(*<%= clientClass %>)
+
+// WithBaseURL sets a custom base URL for API requests.
+func WithBaseURL(baseURL string) <%= clientClass %>Option {
+	return func(c *<%= clientClass %>) { c.BaseURL = baseURL }
+}
+
+// WithBearerToken sets the Authorization header with a Bearer token.
+func WithBearerToken(token string) <%= clientClass %>Option {
+	return func(c *<%= clientClass %>) { c.headers["Authorization"] = "Bearer " + token }
+}
+
+// WithAPIKey sets the X-API-Key header.
+func WithAPIKey(key string) <%= clientClass %>Option {
+	return func(c *<%= clientClass %>) { c.headers["X-API-Key"] = key }
+}
+
+// WithTimeout sets the HTTP client timeout.
+func WithTimeout(d time.Duration) <%= clientClass %>Option {
+	return func(c *<%= clientClass %>) { c.HTTPClient.Timeout = d }
+}
+
+// WithHTTPClient sets a custom http.Client.
+func WithHTTPClient(httpClient *http.Client) <%= clientClass %>Option {
+	return func(c *<%= clientClass %>) { c.HTTPClient = httpClient }
+}
+
+// WithHeader sets a custom header on all requests.
+func WithHeader(key, value string) <%= clientClass %>Option {
+	return func(c *<%= clientClass %>) { c.headers[key] = value }
+}
+
+// New<%= clientClass %> creates a new API client with the given options.
+func New<%= clientClass %>(opts ...<%= clientClass %>Option) *<%= clientClass %> {
+	c := &<%= clientClass %>{
+		BaseURL:    "<%= baseUrl %>",
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+<% for (const r of it.resources) { %>
+	c.<%= r.className %> = &<%= r.className %>{client: c}
+<% } %>
+
+	return c
+}
+
+// Request performs an HTTP request and unmarshals the response into result.
+func (c *<%= clientClass %>) Request(method, path string, query url.Values, body interface{}, result interface{}) error {
+	u, err := url.Parse(c.BaseURL + path)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	if query != nil {
+		u.RawQuery = query.Encode()
+	}
+
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal body: %w", err)
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequest(method, u.String(), bodyReader)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
+	}
+
+	if result != nil && len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("unmarshal response: %w", err)
+		}
+	}
+
+	return nil
+}

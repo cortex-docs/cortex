@@ -1,0 +1,33 @@
+<% const method = it.method; -%>
+<% const serviceName = it.service.serviceName; -%>
+<% const clientVar = serviceName.charAt(0).toLowerCase() + serviceName.slice(1).replace(/Service$/, '') + 'Client'; -%>
+<% const methodCall = method.methodName; -%>
+<% const inputType = method.inputType; -%>
+<% const fields = (method.inputFields ?? []).map(f => `${f.name.charAt(0).toUpperCase() + f.name.slice(1)}: ${f.type === 'number' || f.type === 'integer' ? '0' : '"value"'}`); -%>
+<% const args = fields.length > 0 ? `{\n\t${fields.join(',\n\t')},\n}` : '{}'; -%>
+<% if (method.serverStreaming) { -%>
+stream, err := <%= clientVar %>.<%= methodCall %>(ctx, &grpcclient.<%= inputType %><%= args %>)
+if err != nil {
+	log.Fatal(err)
+}
+
+for {
+	item, err := stream.Recv()
+	if err == io.EOF {
+		break
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(item)
+}
+<% } else if (method.clientStreaming) { -%>
+stream, err := <%= clientVar %>.<%= methodCall %>(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+stream.Send(&grpcclient.<%= inputType %><%= args %>)
+result, err := stream.CloseAndRecv()
+<% } else { -%>
+result, err := <%= clientVar %>.<%= methodCall %>(ctx, &grpcclient.<%= inputType %><%= args %>)
+<% } -%>

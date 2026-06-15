@@ -1,0 +1,33 @@
+<% const r = it.resource; -%>
+<% const clientClass = it.clientClass; -%>
+<% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+package <%= pkg %>
+
+import kotlinx.serialization.encodeToString
+
+class <%= r.className %>(private val client: <%= clientClass %>) {
+
+<% for (const op of r.operations) { -%>
+<% const isVoid = op.responseType === 'Unit'; -%>
+<% const isList = !!op.listItemType; -%>
+<% const returnType = isList ? `PaginatedResponse<${op.listItemType}>` : (isVoid ? 'Unit' : op.responseType); -%>
+<% const bodyParam = op.hasBody ? `body: ${op.bodyType}` : ''; -%>
+<% const uniqueParams = [...op.pathParams.map(p => `${p.name}: String`), ...(bodyParam ? [bodyParam] : []), ...(op.queryParams.length > 0 ? ['query: Map<String, String>? = null'] : [])]; -%>
+<% let pathExpr = `"${op.path}"`; for (const p of op.pathParams) { pathExpr = pathExpr + `.replace("{${p.originalName}}", ${p.name})`; } -%>
+<% if (op.summary) { -%>
+    /**
+     * <%= op.summary %>
+     */
+<% } -%>
+<% if (isVoid) { -%>
+    fun <%= op.name %>(<%= uniqueParams.join(', ') %>) {
+        client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'client.json.encodeToString(body)' : 'null' %>)
+    }
+<% } else { -%>
+    fun <%= op.name %>(<%= uniqueParams.join(', ') %>): <%= returnType %> {
+        return client.typedRequest<<%= returnType %>>("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'client.json.encodeToString(body)' : 'null' %>)
+    }
+<% } -%>
+
+<% } -%>
+}

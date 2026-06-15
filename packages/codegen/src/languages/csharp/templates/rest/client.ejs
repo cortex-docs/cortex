@@ -1,0 +1,107 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const ns = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const clientClass = it.clientClass; -%>
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using <%= ns %>.Models;
+
+namespace <%= ns %>;
+
+public class ApiListResult<T>
+{
+    [JsonPropertyName("data")]
+    public List<T> Data { get; set; } = new();
+
+    [JsonPropertyName("next_cursor")]
+    public string? NextCursor { get; set; }
+}
+
+public class <%= clientClass %> : IDisposable
+{
+    private readonly HttpClient _httpClient;
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+    public string BaseUrl { get; }
+
+<% for (const r of it.resources) { -%>
+    public <%= r.className %> <%= it.naming.className(r.name) %> { get; }
+<% } -%>
+
+    public <%= clientClass %>(
+        string baseUrl = "<%= baseUrl %>",
+        string? bearerToken = null,
+        string? apiKey = null,
+        TimeSpan? timeout = null)
+    {
+        BaseUrl = baseUrl;
+        _httpClient = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) };
+        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        if (bearerToken is not null)
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        if (apiKey is not null)
+            _httpClient.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+
+<% for (const r of it.resources) { -%>
+        <%= it.naming.className(r.name) %> = new <%= r.className %>(this);
+<% } -%>
+    }
+
+    internal async Task<T> RequestAsync<T>(
+        HttpMethod method,
+        string path,
+        Dictionary<string, string>? query = null,
+        object? body = null)
+    {
+        var responseBody = await SendAsync(method, path, query, body);
+        return JsonSerializer.Deserialize<T>(responseBody, JsonOpts)!;
+    }
+
+    internal async Task RequestVoidAsync(
+        HttpMethod method,
+        string path,
+        Dictionary<string, string>? query = null,
+        object? body = null)
+    {
+        await SendAsync(method, path, query, body);
+    }
+
+    private async Task<string> SendAsync(
+        HttpMethod method,
+        string path,
+        Dictionary<string, string>? query,
+        object? body)
+    {
+        var url = BaseUrl + path;
+        if (query is { Count: > 0 })
+        {
+            var qs = string.Join("&", query.Select(kv => $"{kv.Key}={Uri.EscapeDataString(kv.Value)}"));
+            url += "?" + qs;
+        }
+
+        var request = new HttpRequestMessage(method, url);
+
+        if (body is not null && method != HttpMethod.Get && method != HttpMethod.Delete)
+        {
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(body),
+                Encoding.UTF8,
+                "application/json");
+        }
+
+        var response = await _httpClient.SendAsync(request);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+            throw new ApiException((int)response.StatusCode, responseBody);
+
+        return responseBody;
+    }
+
+    public void Dispose() => _httpClient.Dispose();
+}

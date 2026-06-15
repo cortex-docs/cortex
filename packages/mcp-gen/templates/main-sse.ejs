@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse';
+import { createServer } from './server';
+import http from 'node:http';
+
+const server = createServer();
+const PORT = parseInt(process.env.PORT ?? '3200', 10);
+
+const httpServer = http.createServer(async (req, res) => {
+  if (req.url === '/sse') {
+    const transport = new SSEServerTransport('/messages', res);
+    await server.connect(transport);
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+httpServer.listen(PORT, () => {
+  console.log(`MCP SSE server listening on port ${PORT}`);
+});

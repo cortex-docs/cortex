@@ -1,0 +1,126 @@
+# frozen_string_literal: true
+
+<% for (const e of it.enums) { -%>
+module <%= e.name %>
+<% for (const v of e.values) { -%>
+  <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %> = "<%= v %>"
+<% } -%>
+
+  ALL = [
+<% for (const v of e.values) { -%>
+    <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %>,
+<% } -%>
+  ].freeze
+end
+
+<% } -%>
+<% for (const t of it.types) { -%>
+<%= t.name %> = Struct.new(
+<% for (let i = 0; i < t.fields.length; i++) { -%>
+  :<%= it.naming.propertyName(t.fields[i].name) %><%= i < t.fields.length - 1 ? ',' : '' %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    return nil if hash.nil?
+    new(
+<% for (let i = 0; i < t.fields.length; i++) {
+  const field = t.fields[i];
+  const isScalar = it.isScalarType(field.type) || it.enumNames.has(field.type);
+  const isKnownType = it.typesByName.has(field.type);
+-%>
+<% if (!isScalar && isKnownType && field.isList) { -%>
+      (hash["<%= field.name %>"] || []).map { |item| <%= field.type %>.from_hash(item) }<%= i < t.fields.length - 1 ? ',' : '' %>
+<% } else if (!isScalar && isKnownType) { -%>
+      <%= field.type %>.from_hash(hash["<%= field.name %>"])<%= i < t.fields.length - 1 ? ',' : '' %>
+<% } else { -%>
+      hash["<%= field.name %>"]<%= i < t.fields.length - 1 ? ',' : '' %>
+<% } -%>
+<% } -%>
+    )
+  end
+
+  def to_hash
+    {
+<% for (let i = 0; i < t.fields.length; i++) { -%>
+      "<%= t.fields[i].name %>" => <%= it.naming.propertyName(t.fields[i].name) %><%= i < t.fields.length - 1 ? ',' : '' %>
+<% } -%>
+    }
+  end
+end
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+<%= inp.name %> = Struct.new(
+<% for (let i = 0; i < inp.fields.length; i++) { -%>
+  :<%= it.naming.propertyName(inp.fields[i].name) %><%= i < inp.fields.length - 1 ? ',' : '' %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    return nil if hash.nil?
+    new(
+<% for (let i = 0; i < inp.fields.length; i++) { -%>
+      hash["<%= inp.fields[i].name %>"]<%= i < inp.fields.length - 1 ? ',' : '' %>
+<% } -%>
+    )
+  end
+
+  def to_hash
+    {
+<% for (let i = 0; i < inp.fields.length; i++) { -%>
+      "<%= inp.fields[i].name %>" => <%= it.naming.propertyName(inp.fields[i].name) %><%= i < inp.fields.length - 1 ? ',' : '' %>
+<% } -%>
+    }
+  end
+end
+
+<% } -%>
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+<%= op.variablesTypeName %> = Struct.new(
+<% for (let i = 0; i < op.args.length; i++) { -%>
+  :<%= it.naming.propertyName(op.args[i].name) %><%= i < op.args.length - 1 ? ',' : '' %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    return nil if hash.nil?
+    new(
+<% for (let i = 0; i < op.args.length; i++) { -%>
+      hash["<%= op.args[i].name %>"]<%= i < op.args.length - 1 ? ',' : '' %>
+<% } -%>
+    )
+  end
+
+  def to_hash
+    {
+<% for (let i = 0; i < op.args.length; i++) { -%>
+      "<%= op.args[i].name %>" => <%= it.naming.propertyName(op.args[i].name) %><%= i < op.args.length - 1 ? ',' : '' %>
+<% } -%>
+    }
+  end
+end
+<% } -%>
+
+<%
+const isScalar = it.isScalarType(op.returnTypeName) || it.enumNames.has(op.returnTypeName);
+const isKnownType = it.typesByName.has(op.returnTypeName);
+-%>
+<%= op.resultTypeName %> = Struct.new(
+  :<%= it.naming.propertyName(op.name) %>
+) do
+  def self.from_hash(hash)
+    return nil if hash.nil?
+<% if (!isScalar && isKnownType) { -%>
+    new(<%= op.returnTypeName %>.from_hash(hash["<%= op.name %>"]))
+<% } else { -%>
+    new(hash["<%= op.name %>"])
+<% } -%>
+  end
+
+  def to_hash
+    {
+      "<%= op.name %>" => <%= it.naming.propertyName(op.name) %>
+    }
+  end
+end
+
+<% } -%>

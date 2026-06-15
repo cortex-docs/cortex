@@ -1,0 +1,7 @@
+{
+  "markdown.preview.openMarkdownLinks": "inPreview",
+  "markdown.preview.doubleClickToSwitchToEditor": false,
+  "markdown.preview.markEditorSelection": true,
+  "rust-analyzer.linkedProjects": ["e2e/docker/tests/test-rust/Cargo.toml"],
+  "rust-analyzer.cargo.cfgs": ["test"]
+}

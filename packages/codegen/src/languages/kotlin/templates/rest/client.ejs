@@ -1,0 +1,82 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const clientClass = it.clientClass; -%>
+<% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+package <%= pkg %>
+
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+
+class <%= clientClass %>(
+    val baseUrl: String = "<%= baseUrl %>",
+    bearerToken: String? = null,
+    apiKey: String? = null,
+) {
+    private val httpClient: HttpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .connectTimeout(Duration.ofSeconds(30))
+        .build()
+
+    private val headers: MutableMap<String, String> = mutableMapOf("Content-Type" to "application/json")
+
+    val json: Json = Json { ignoreUnknownKeys = true }
+
+    init {
+        bearerToken?.let { headers["Authorization"] = "Bearer $it" }
+        apiKey?.let { headers["X-API-Key"] = it }
+    }
+
+<% for (const r of it.resources) { -%>
+    val <%= it.naming.propertyName(r.name) %>: <%= r.className %> = <%= r.className %>(this)
+<% } -%>
+
+    fun request(method: String, path: String, query: Map<String, String>? = null, body: String? = null): String {
+        val urlBuilder = StringBuilder(baseUrl).append(path)
+        if (!query.isNullOrEmpty()) {
+            urlBuilder.append("?")
+            urlBuilder.append(query.entries.joinToString("&") { "${it.key}=${it.value}" })
+        }
+
+        val reqBuilder = HttpRequest.newBuilder().uri(URI.create(urlBuilder.toString()))
+        headers.forEach { (k, v) -> reqBuilder.header(k, v) }
+
+        when (method) {
+            "GET" -> reqBuilder.GET()
+            "DELETE" -> reqBuilder.DELETE()
+            else -> reqBuilder.method(
+                method,
+                if (body != null) HttpRequest.BodyPublishers.ofString(body)
+                else HttpRequest.BodyPublishers.noBody()
+            )
+        }
+
+        val response = httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString())
+
+        if (response.statusCode() >= 400) {
+            throw ApiException(response.statusCode(), response.body())
+        }
+
+        return response.body()
+    }
+
+    inline fun <reified T> typedRequest(method: String, path: String, query: Map<String, String>? = null, body: String? = null): T {
+        val raw = request(method, path, query, body)
+        return json.decodeFromString<T>(raw)
+    }
+}
+
+class ApiException(val statusCode: Int, val body: String) :
+    Exception("API error $statusCode: $body")
+
+@Serializable
+data class PaginatedResponse<T>(
+    val data: List<T>,
+    @SerialName("next_cursor")
+    val nextCursor: String? = null,
+)

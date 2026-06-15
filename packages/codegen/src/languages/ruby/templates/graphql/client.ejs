@@ -1,0 +1,235 @@
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+<% const allOps = [...it.queries, ...it.mutations, ...it.subscriptions]; -%>
+# frozen_string_literal: true
+
+require "faraday"
+require "json"
+require "ostruct"
+<% if (hasSubscriptions) { -%>
+require "socket"
+require "uri"
+require "websocket"
+<% } -%>
+require_relative "gql-types"
+require_relative "gql-query-builder"
+
+GQL_RETURN_TYPES = {
+<% for (const op of allOps) {
+  const isScalar = it.isScalarType(op.returnType) || it.enumNames.has(op.returnType);
+  if (!isScalar && it.typesByName.has(op.returnType)) { -%>
+  "<%= op.name %>" => <%= op.returnType %>,
+<% } } -%>
+}.freeze
+
+class <%= it.clientClass %>
+  class GqlError < StandardError
+    attr_reader :errors
+
+    def initialize(errors)
+      @errors = errors
+      super(errors.map { |e| e["message"] }.join("; "))
+    end
+  end
+
+  attr_reader :endpoint
+
+  def initialize(endpoint: "<%= it.endpoint %>", ws_endpoint: nil, bearer_token: nil, headers: {})
+    @endpoint = endpoint
+<% if (hasSubscriptions) { -%>
+    @ws_endpoint = ws_endpoint || endpoint.sub(/\Ahttp/, "ws")
+<% } -%>
+    @headers = { "Content-Type" => "application/json" }.merge(headers)
+    @headers["Authorization"] = "Bearer #{bearer_token}" if bearer_token
+    @connection = Faraday.new(url: endpoint) do |f|
+      f.options.timeout = 30
+    end
+  end
+<% if (hasQueries) { %>
+  def query(&block)
+    builder = create_query_builder
+    block.call(builder)
+    doc, variables = builder._build_document("query")
+    _structify(_execute(doc, variables))
+  end
+<% } -%>
+<% if (hasMutations) { %>
+  def mutate(&block)
+    builder = create_mutation_builder
+    block.call(builder)
+    doc, variables = builder._build_document("mutation")
+    _structify(_execute(doc, variables))
+  end
+<% } -%>
+<% if (hasSubscriptions) { %>
+  def subscribe_once(timeout: 10, &block)
+    builder = create_subscription_builder
+    block.call(builder)
+    doc, variables = builder._build_document("subscription")
+
+    uri = URI(@ws_endpoint)
+    socket = TCPSocket.new(uri.host, uri.port || 80)
+
+    hs = WebSocket::Handshake::Client.new(url: @ws_endpoint, protocols: ["graphql-transport-ws"])
+    socket.write(hs.to_s)
+    while (line = socket.gets)
+      hs << line
+      break if hs.finished?
+    end
+    raise GqlError.new([{ "message" => "WebSocket handshake failed" }]) unless hs.valid?
+
+    version = hs.version
+    _ws_send(socket, version, { type: "connection_init" })
+
+    incoming = WebSocket::Frame::Incoming::Client.new(version: version)
+    deadline = Time.now + timeout
+
+    begin
+      loop do
+        remaining = deadline - Time.now
+        raise GqlError.new([{ "message" => "subscribe_once timed out" }]) if remaining <= 0
+
+        ready = IO.select([socket], nil, nil, [remaining, 1].min)
+        next unless ready
+
+        data = socket.readpartial(8192)
+        incoming << data
+
+        while (frame = incoming.next)
+          msg = JSON.parse(frame.data)
+          case msg["type"]
+          when "connection_ack"
+            _ws_send(socket, version, {
+              type: "subscribe", id: "1",
+              payload: { query: doc, variables: variables }
+            })
+          when "next"
+            result = msg.dig("payload", "data")
+            _ws_send(socket, version, { type: "complete", id: "1" })
+            return _structify(result)
+          when "error"
+            raise GqlError.new(msg["payload"] || [{ "message" => "subscription error" }])
+          when "complete"
+            raise GqlError.new([{ "message" => "subscription completed without data" }])
+          end
+        end
+      end
+    ensure
+      socket.close rescue nil
+    end
+  end
+
+  def subscribe(builder_fn, on_data, on_error = nil)
+    builder = create_subscription_builder
+    builder_fn.call(builder)
+    doc, variables = builder._build_document("subscription")
+
+    stopped = false
+    client = self
+
+    thread = Thread.new do
+      uri = URI(@ws_endpoint)
+      socket = TCPSocket.new(uri.host, uri.port || 80)
+      hs = WebSocket::Handshake::Client.new(url: @ws_endpoint, protocols: ["graphql-transport-ws"])
+      socket.write(hs.to_s)
+      while (line = socket.gets)
+        hs << line
+        break if hs.finished?
+      end
+      next unless hs.valid?
+
+      version = hs.version
+      client.send(:_ws_send, socket, version, { type: "connection_init" })
+
+      incoming = WebSocket::Frame::Incoming::Client.new(version: version)
+
+      until stopped
+        ready = IO.select([socket], nil, nil, 0.5)
+        next unless ready
+
+        begin
+          data = socket.readpartial(8192)
+          incoming << data
+
+          while (frame = incoming.next)
+            break if stopped
+            msg = JSON.parse(frame.data)
+            case msg["type"]
+            when "connection_ack"
+              client.send(:_ws_send, socket, version, {
+                type: "subscribe", id: "1",
+                payload: { query: doc, variables: variables }
+              })
+            when "next"
+              on_data.call(client.send(:_structify, msg.dig("payload", "data"))) unless stopped
+            when "error"
+              on_error&.call(GqlError.new(msg["payload"] || [])) unless stopped
+            when "complete"
+              break
+            end
+          end
+        rescue EOFError, IOError
+          break
+        end
+      end
+
+      socket.close rescue nil
+    end
+
+    -> {
+      stopped = true
+      thread.join(2) rescue nil
+      thread.kill rescue nil
+    }
+  end
+
+  def dispose
+    # no-op; available for cleanup if needed
+  end
+<% } -%>
+
+  private
+
+  def _execute(query, variables = {})
+    body = { query: query, variables: variables }
+
+    response = @connection.post do |req|
+      @headers.each { |k, v| req.headers[k] = v }
+      req.body = JSON.generate(body)
+    end
+
+    json = JSON.parse(response.body)
+
+    if json["errors"]&.any?
+      raise GqlError.new(json["errors"])
+    end
+
+    json["data"]
+  rescue Faraday::ClientError, Faraday::ServerError => e
+    raise GqlError.new([{ "message" => e.message }])
+  end
+
+  def _structify(data)
+    return data unless data.is_a?(Hash)
+    converted = {}
+    data.each do |key, value|
+      snake_key = key.gsub(/([a-z])([A-Z])/, '\1_\2').downcase
+      type_class = GQL_RETURN_TYPES[key]
+      if type_class && value.is_a?(Hash)
+        converted[snake_key] = type_class.from_hash(value)
+      elsif type_class && value.is_a?(Array)
+        converted[snake_key] = value.map { |item| item.is_a?(Hash) ? type_class.from_hash(item) : item }
+      else
+        converted[snake_key] = value
+      end
+    end
+    OpenStruct.new(converted)
+  end
+<% if (hasSubscriptions) { %>
+  def _ws_send(socket, version, data)
+    frame = WebSocket::Frame::Outgoing::Client.new(data: JSON.generate(data), type: :text, version: version)
+    socket.write(frame.to_s)
+  end
+<% } -%>
+end

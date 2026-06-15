@@ -1,0 +1,48 @@
+<% const opType = it.opType ?? 'query'; -%>
+<% const op = it.op; -%>
+<% const opName = op?.name ?? it.opName ?? 'items'; -%>
+<% const args = op?.args ?? it.args ?? []; -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return '1'; if (a.type === 'ID') return `"example_${a.name}"`; return '"value"'; }; -%>
+<% const argsStr = (typeof args === 'string') ? `, &(gql_${opName}_args_t){${args}}` : (args.length > 0 ? `, &(gql_${opName}_args_t){${args.map(a => `.${a.name} = ${exVal(a)}`).join(', ')}}` : ''); -%>
+<% if (opType === 'query') { -%>
+// Query <%= opName %>
+gql_query_builder_t q;
+gql_qb_init(&q);
+gql_qb_<%= opName %>(&q<%= argsStr %>, &(gql_<%= opName %>_fields_t){
+  .id = 1, .name = 1
+});
+gql_query_result_t r = gql_query(&gql, &q);
+gql_builder_free(&q);
+// Use r.<%= opName %> ...
+gql_query_result_free(&r);
+<% } else if (opType === 'mutation') { -%>
+// Mutation <%= opName %>
+gql_mutation_builder_t m;
+gql_mb_init(&m);
+gql_mb_<%= opName %>(&m<%= argsStr %>, &(gql_<%= opName %>_fields_t){
+  .id = 1, .name = 1
+});
+gql_mutation_result_t mr = gql_mutate(&gql, &m);
+gql_builder_free(&m);
+gql_mutation_result_free(&mr);
+<% } else { -%>
+// One-shot subscription
+gql_subscription_builder_t s;
+gql_sb_init(&s);
+gql_sb_<%= opName %>(&s<%= argsStr %>, &(gql_<%= opName %>_fields_t){
+  .id = 1, .name = 1
+});
+gql_subscription_result_t event = gql_subscribe_once(&gql, &s, 10000);
+gql_builder_free(&s);
+gql_subscription_result_free(&event);
+
+// Continuous subscription
+gql_subscription_builder_t s2;
+gql_sb_init(&s2);
+gql_sb_<%= opName %>(&s2<%= argsStr %>, &(gql_<%= opName %>_fields_t){
+  .id = 1, .name = 1
+});
+gql_subscription_handle_t handle = gql_subscribe(&gql, &s2, NULL);
+gql_builder_free(&s2);
+// Later: gql_subscription_unsubscribe(&handle);
+<% } -%>

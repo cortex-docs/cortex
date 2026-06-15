@@ -1,0 +1,13 @@
+<% const moduleName = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const gemName = it.naming.fileName(it.config.languageConfig.package_name); -%>
+# frozen_string_literal: true
+
+require_relative "<%= gemName %>/client"
+require_relative "<%= gemName %>/errors"
+<% for (const r of it.resources) { -%>
+require_relative "<%= gemName %>/resources/<%= it.naming.fileName(r.name) %>"
+<% } -%>
+
+module <%= moduleName %>
+  VERSION = "0.1.0"
+end

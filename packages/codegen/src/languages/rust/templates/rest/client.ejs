@@ -1,0 +1,98 @@
+<% const clientClass = it.clientClass; -%>
+use reqwest::Client as HttpClient;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::time::Duration;
+<% for (const r of it.resources) { %>
+use super::<%= it.naming.fileName(r.name) %>::<%= r.className %>;
+<% } %>
+
+pub struct <%= clientClass %> {
+    base_url: String,
+    http: HttpClient,
+    headers: HashMap<String, String>,
+<% for (const r of it.resources) { %>
+    pub <%= it.naming.propertyName(r.name) %>: <%= r.className %>,
+<% } %>
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ApiError {
+    #[error("HTTP error {status}: {body}")]
+    Http { status: u16, body: String },
+    #[error("Request error: {0}")]
+    Request(#[from] reqwest::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+impl <%= clientClass %> {
+    pub fn new(base_url: &str) -> Self {
+        let http = HttpClient::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
+
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        Self {
+            base_url: base_url.to_string(),
+            http,
+            headers,
+<% for (const r of it.resources) { %>
+            <%= it.naming.propertyName(r.name) %>: <%= r.className %>::new(),
+<% } %>
+        }
+    }
+
+    pub fn with_bearer_token(mut self, token: &str) -> Self {
+        self.headers.insert("Authorization".to_string(), format!("Bearer {}", token));
+        self
+    }
+
+    pub fn with_api_key(mut self, key: &str) -> Self {
+        self.headers.insert("X-API-Key".to_string(), key.to_string());
+        self
+    }
+
+    pub async fn request<T: DeserializeOwned>(&self, method: &str, path: &str, query: Option<&HashMap<String, String>>, body: Option<&Value>) -> Result<T, ApiError> {
+        let url = format!("{}{}", self.base_url, path);
+
+        let mut req = match method {
+            "GET" => self.http.get(&url),
+            "POST" => self.http.post(&url),
+            "PUT" => self.http.put(&url),
+            "PATCH" => self.http.patch(&url),
+            "DELETE" => self.http.delete(&url),
+            _ => self.http.get(&url),
+        };
+
+        for (k, v) in &self.headers {
+            req = req.header(k.as_str(), v.as_str());
+        }
+
+        if let Some(q) = query {
+            req = req.query(q);
+        }
+
+        if let Some(b) = body {
+            req = req.json(b);
+        }
+
+        let response = req.send().await?;
+        let status = response.status().as_u16();
+
+        if status >= 400 {
+            let body = response.text().await.unwrap_or_default();
+            return Err(ApiError::Http { status, body });
+        }
+
+        if status == 204 {
+            return serde_json::from_value(Value::Null).map_err(Into::into);
+        }
+
+        Ok(response.json::<T>().await?)
+    }
+}

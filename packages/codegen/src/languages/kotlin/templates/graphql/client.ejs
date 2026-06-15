@@ -1,0 +1,394 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() + '.graphql' : 'com.example.graphql'; -%>
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+package <%= pkg %>
+
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+<% if (hasSubscriptions) { -%>
+import java.net.http.WebSocket
+<% } -%>
+import java.time.Duration
+<% if (hasSubscriptions) { -%>
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionStage
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+<% } -%>
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.serializer
+import kotlin.reflect.full.starProjectedType
+
+<% for (const op of it.operations) { -%>
+const val <%= op.documentConstName %> = "<%= op.documentEscaped.replace(/\$/g, '\\$') %>"
+<% } -%>
+
+class <%= it.clientClass %>(
+    val endpoint: String = "<%= it.endpoint %>",
+<% if (hasSubscriptions) { -%>
+    val wsEndpoint: String = "<%= it.endpoint %>".replace("http", "ws"),
+<% } -%>
+    bearerToken: String? = null,
+) {
+    private val httpClient: HttpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .connectTimeout(Duration.ofSeconds(30))
+        .build()
+
+    private val headers: MutableMap<String, String> = mutableMapOf("Content-Type" to "application/json")
+
+    val json: Json = Json { ignoreUnknownKeys = true }
+
+<% if (hasSubscriptions) { -%>
+    private val activeWebSockets: MutableList<WebSocket> = mutableListOf()
+
+<% } -%>
+    init {
+        bearerToken?.let { headers["Authorization"] = "Bearer $it" }
+    }
+
+    fun setHeader(key: String, value: String) {
+        headers[key] = value
+    }
+
+    private fun anyToJsonElement(value: Any?): JsonElement {
+        return when (value) {
+            null -> JsonNull
+            is String -> JsonPrimitive(value)
+            is Int -> JsonPrimitive(value)
+            is Long -> JsonPrimitive(value)
+            is Double -> JsonPrimitive(value)
+            is Float -> JsonPrimitive(value)
+            is Boolean -> JsonPrimitive(value)
+            is JsonElement -> value
+            is Map<*, *> -> {
+                val entries = value.entries.associate { (k, v) -> k.toString() to anyToJsonElement(v) }
+                JsonObject(entries)
+            }
+            is List<*> -> JsonArray(value.map { anyToJsonElement(it) })
+            is Enum<*> -> JsonPrimitive(value.name)
+            else -> {
+                try {
+                    val serializer = serializer(value::class.starProjectedType)
+                    json.encodeToJsonElement(serializer, value)
+                } catch (_: Exception) {
+                    JsonPrimitive(value.toString())
+                }
+            }
+        }
+    }
+
+    private fun execute(query: String, variables: Map<String, Any?>): JsonObject {
+        val varsJson = if (variables.isNotEmpty()) {
+            JsonObject(variables.entries.associate { (k, v) -> k to anyToJsonElement(v) })
+        } else {
+            null
+        }
+
+        val requestBody = buildJsonObject {
+            put("query", query)
+            if (varsJson != null) {
+                put("variables", varsJson)
+            }
+        }
+
+        val reqBuilder = HttpRequest.newBuilder()
+            .uri(URI.create(endpoint))
+            .POST(HttpRequest.BodyPublishers.ofString(json.encodeToString(requestBody)))
+
+        headers.forEach { (k, v) -> reqBuilder.header(k, v) }
+
+        val response = httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString())
+        val jsonResponse = json.parseToJsonElement(response.body()).jsonObject
+
+        val errors = jsonResponse["errors"]?.jsonArray
+        if (errors != null && errors.isNotEmpty()) {
+            val messages = errors.map { it.jsonObject["message"]?.jsonPrimitive?.content ?: "Unknown error" }
+            throw GqlException(messages.joinToString("; "))
+        }
+
+        return jsonResponse["data"]?.jsonObject ?: JsonObject(emptyMap())
+    }
+
+<% for (const op of it.operations) { -%>
+    /**
+     * Execute the <%= op.name %> <%= op.kind.toLowerCase() %>.
+     */
+<% if (op.hasArgs) { -%>
+    fun <%= it.naming.methodName(op.name) %>(variables: <%= op.variablesTypeName %>? = null): JsonObject {
+        val vars = variables?.let {
+            json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(json.encodeToString(it))
+        } ?: emptyMap()
+        return execute(<%= op.documentConstName %>, vars)
+    }
+<% } else { -%>
+    fun <%= it.naming.methodName(op.name) %>(): JsonObject {
+        return execute(<%= op.documentConstName %>, emptyMap())
+    }
+<% } -%>
+
+<% } -%>
+<% if (hasQueries) { -%>
+    /**
+     * Execute a GraphQL query using the builder pattern.
+     */
+    fun query(fn: (QueryBuilder) -> QueryBuilder): JsonObject {
+        val builder = createQueryBuilder()
+        fn(builder)
+        val (query, variables) = builder.buildDocument("query")
+        return execute(query, variables)
+    }
+
+<% } -%>
+<% if (hasMutations) { -%>
+    /**
+     * Execute a GraphQL mutation using the builder pattern.
+     */
+    fun mutate(fn: (MutationBuilder) -> MutationBuilder): JsonObject {
+        val builder = createMutationBuilder()
+        fn(builder)
+        val (query, variables) = builder.buildDocument("mutation")
+        return execute(query, variables)
+    }
+
+<% } -%>
+<% if (hasSubscriptions) { -%>
+    /**
+     * Subscribe to a GraphQL subscription and return the first event.
+     */
+    fun subscribeOnce(
+        timeoutMs: Long = 10000,
+        fn: (SubscriptionBuilder) -> SubscriptionBuilder,
+    ): JsonObject {
+        val builder = createSubscriptionBuilder()
+        fn(builder)
+        val (query, variables) = builder.buildDocument("subscription")
+
+        val result = AtomicReference<JsonObject?>()
+        val error = AtomicReference<Exception?>()
+        val latch = CountDownLatch(1)
+
+        val varsJson = if (variables.isNotEmpty()) {
+            JsonObject(variables.entries.associate { (k, v) -> k to anyToJsonElement(v) })
+        } else {
+            JsonObject(emptyMap())
+        }
+
+        val listener = object : WebSocket.Listener {
+            private val buffer = StringBuilder()
+
+            override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*> {
+                buffer.append(data)
+                if (!last) {
+                    webSocket.request(1)
+                    return CompletableFuture.completedFuture(null)
+                }
+                val text = buffer.toString()
+                buffer.clear()
+                val msg = json.parseToJsonElement(text).jsonObject
+                val type = msg["type"]?.jsonPrimitive?.content
+
+                when (type) {
+                    "connection_ack" -> {
+                        val subscribePayload = buildJsonObject {
+                            put("type", "subscribe")
+                            put("id", "1")
+                            put("payload", buildJsonObject {
+                                put("query", query)
+                                put("variables", varsJson)
+                            })
+                        }
+                        webSocket.sendText(json.encodeToString(subscribePayload), true)
+                    }
+                    "next" -> {
+                        val payload = msg["payload"]?.jsonObject
+                        val data = payload?.get("data")?.jsonObject
+                        if (data != null) {
+                            result.set(data)
+                        }
+                        webSocket.sendText(json.encodeToString(buildJsonObject {
+                            put("type", "complete")
+                            put("id", "1")
+                        }), true)
+                        webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "done")
+                        latch.countDown()
+                    }
+                    "error" -> {
+                        val payload = msg["payload"]
+                        error.set(GqlException("Subscription error: $payload"))
+                        latch.countDown()
+                    }
+                    "complete" -> {
+                        if (result.get() == null) {
+                            error.set(GqlException("Subscription completed without data"))
+                        }
+                        latch.countDown()
+                    }
+                }
+                webSocket.request(1)
+                return CompletableFuture.completedFuture(null)
+            }
+
+            override fun onError(webSocket: WebSocket, throwable: Throwable) {
+                error.set(GqlException("WebSocket error: ${throwable.message}"))
+                latch.countDown()
+            }
+        }
+
+        val ws = httpClient.newWebSocketBuilder()
+            .subprotocols("graphql-transport-ws")
+            .buildAsync(URI.create(wsEndpoint), listener)
+            .get(timeoutMs, TimeUnit.MILLISECONDS)
+
+        synchronized(activeWebSockets) { activeWebSockets.add(ws) }
+
+        val initPayload = buildJsonObject { put("type", "connection_init") }
+        ws.sendText(json.encodeToString(initPayload), true)
+
+        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "timeout")
+            throw GqlException("Subscription timed out after ${timeoutMs}ms")
+        }
+
+        synchronized(activeWebSockets) { activeWebSockets.remove(ws) }
+
+        error.get()?.let { throw it }
+        return result.get() ?: throw GqlException("Subscription completed without data")
+    }
+
+    /**
+     * Subscribe to a GraphQL subscription with a callback.
+     * Returns an unsubscribe function.
+     */
+    fun subscribe(
+        builderFn: (SubscriptionBuilder) -> SubscriptionBuilder,
+        onData: (JsonObject) -> Unit,
+        onError: ((Exception) -> Unit)? = null,
+    ): () -> Unit {
+        val builder = createSubscriptionBuilder()
+        builderFn(builder)
+        val (query, variables) = builder.buildDocument("subscription")
+
+        val stopped = AtomicBoolean(false)
+
+        val varsJson = if (variables.isNotEmpty()) {
+            JsonObject(variables.entries.associate { (k, v) -> k to anyToJsonElement(v) })
+        } else {
+            JsonObject(emptyMap())
+        }
+
+        val wsRef = AtomicReference<WebSocket?>()
+
+        val listener = object : WebSocket.Listener {
+            private val buffer = StringBuilder()
+
+            override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*> {
+                buffer.append(data)
+                if (!last) {
+                    webSocket.request(1)
+                    return CompletableFuture.completedFuture(null)
+                }
+                val text = buffer.toString()
+                buffer.clear()
+
+                if (stopped.get()) return CompletableFuture.completedFuture(null)
+
+                val msg = json.parseToJsonElement(text).jsonObject
+                val type = msg["type"]?.jsonPrimitive?.content
+
+                when (type) {
+                    "connection_ack" -> {
+                        val subscribePayload = buildJsonObject {
+                            put("type", "subscribe")
+                            put("id", "1")
+                            put("payload", buildJsonObject {
+                                put("query", query)
+                                put("variables", varsJson)
+                            })
+                        }
+                        webSocket.sendText(json.encodeToString(subscribePayload), true)
+                    }
+                    "next" -> {
+                        if (!stopped.get()) {
+                            val payload = msg["payload"]?.jsonObject
+                            val eventData = payload?.get("data")?.jsonObject
+                            if (eventData != null) {
+                                onData(eventData)
+                            }
+                        }
+                    }
+                    "error" -> {
+                        if (!stopped.get() && onError != null) {
+                            val payload = msg["payload"]
+                            onError(GqlException("Subscription error: $payload"))
+                        }
+                    }
+                }
+                webSocket.request(1)
+                return CompletableFuture.completedFuture(null)
+            }
+
+            override fun onError(webSocket: WebSocket, throwable: Throwable) {
+                if (!stopped.get() && onError != null) {
+                    onError(GqlException("WebSocket error: ${throwable.message}"))
+                }
+            }
+        }
+
+        val ws = httpClient.newWebSocketBuilder()
+            .subprotocols("graphql-transport-ws")
+            .buildAsync(URI.create(wsEndpoint), listener)
+            .get(10, TimeUnit.SECONDS)
+
+        wsRef.set(ws)
+        synchronized(activeWebSockets) { activeWebSockets.add(ws) }
+
+        val initPayload = buildJsonObject { put("type", "connection_init") }
+        ws.sendText(json.encodeToString(initPayload), true)
+
+        return {
+            stopped.set(true)
+            try {
+                ws.sendText(json.encodeToString(buildJsonObject {
+                    put("type", "complete")
+                    put("id", "1")
+                }), true)
+                ws.sendClose(WebSocket.NORMAL_CLOSURE, "unsubscribed")
+            } catch (_: Exception) {}
+            synchronized(activeWebSockets) { activeWebSockets.remove(ws) }
+        }
+    }
+
+    /**
+     * Close all active WebSocket connections.
+     */
+    fun dispose() {
+        synchronized(activeWebSockets) {
+            for (ws in activeWebSockets) {
+                try {
+                    ws.sendClose(WebSocket.NORMAL_CLOSURE, "disposed")
+                } catch (_: Exception) {}
+            }
+            activeWebSockets.clear()
+        }
+    }
+<% } -%>
+}
+
+class GqlException(message: String) : Exception(message)

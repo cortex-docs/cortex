@@ -1,0 +1,8 @@
+<% const gemName = it.gemName ?? it.config.languageConfig.package_name; -%>
+<% const baseUrl = it.baseUrl ?? it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+require '<%= gemName %>'
+
+gql = <%= it.clientClass %>.new(
+  endpoint: '<%= baseUrl.replace(/\/v\d+$/, '') %>/graphql',
+  ws_endpoint: '<%= baseUrl.replace(/\/v\d+$/, '').replace(/^http/, 'ws') %>/graphql',
+)

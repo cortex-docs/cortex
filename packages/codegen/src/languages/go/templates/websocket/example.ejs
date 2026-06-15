@@ -1,0 +1,17 @@
+<% const _parts = (it.pkgName ?? it.config.languageConfig.package_name).split('/'); -%>
+<% const pkgShort = _parts[_parts.length - 1].replace(/-/g, ''); -%>
+<% const channel = it.channel ?? {}; -%>
+<% const channelId = channel.channelId ?? 'channel'; -%>
+<% const pascalName = channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(''); -%>
+<% if (channel.canSubscribe !== false && channel.subscribeMessage) { -%>
+// Subscribe to <%= channelId %>
+ws.On<%= pascalName %>(func(msg <%= pkgShort %>.<%= pascalName %>Message) {
+	fmt.Println(msg)
+})
+
+<% } -%>
+<% if (channel.canPublish !== false && channel.publishMessage) { -%>
+// Send to <%= channelId %>
+<% const props = (channel.publishMessage.properties ?? []).map(p => `${p.name.charAt(0).toUpperCase() + p.name.slice(1)}: ${p.type === 'number' || p.type === 'integer' ? '0' : '"value"'}`).join(', '); -%>
+ws.Send<%= pascalName %>(<%= pkgShort %>.<%= pascalName %>Payload{<%= props %>})
+<% } -%>

@@ -1,0 +1,63 @@
+<?php
+
+declare(strict_types=1);
+
+<% for (const e of it.enums) { -%>
+/**
+ * <%= e.name %> protobuf enum.
+ */
+enum <%= e.name %>: int
+{
+<% for (const v of e.values) { -%>
+    case <%= v.name %> = <%= v.number %>;
+<% } -%>
+}
+
+<% } -%>
+<% for (const msg of it.messages) { -%>
+/**
+ * <%= msg.name %> protobuf message.
+<% if (msg.description) { -%>
+ * <%= msg.description %>
+<% } -%>
+ */
+class <%= msg.name %>
+{
+    public function __construct(
+<% for (let i = 0; i < msg.fields.length; i++) { -%>
+<% const f = msg.fields[i]; -%>
+<% if (f.description) { -%>
+        /** <%= f.description %> */
+<% } -%>
+<% if (f.mapKeyType) { -%>
+        public readonly array $<%= it.naming.propertyName(f.name) %> = []<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else if (f.optional) { -%>
+        public readonly <%= it.mapProtoType(f.type, f.repeated, false) %>|null $<%= it.naming.propertyName(f.name) %> = null<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else if (f.repeated) { -%>
+        public readonly array $<%= it.naming.propertyName(f.name) %> = []<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else { -%>
+        public readonly <%= it.mapProtoType(f.type, false, false) %> $<%= it.naming.propertyName(f.name) %><%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } -%>
+<% } -%>
+    ) {}
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+<% for (let i = 0; i < msg.fields.length; i++) { -%>
+            $data['<%= msg.fields[i].name %>'] ?? null<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } -%>
+        );
+    }
+
+    public function toArray(): array
+    {
+        return [
+<% for (let i = 0; i < msg.fields.length; i++) { -%>
+            '<%= msg.fields[i].name %>' => $this-><%= it.naming.propertyName(msg.fields[i].name) %><%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } -%>
+        ];
+    }
+}
+
+<% } -%>

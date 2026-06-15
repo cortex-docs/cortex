@@ -1,0 +1,73 @@
+<% const pkgName = 'gqlclient'; -%>
+package <%= pkgName %>
+<% for (const e of it.enums) { %>
+
+// <%= e.name %> represents the allowed values for the <%= e.name %> enum.
+type <%= e.name %> string
+
+const (
+<% for (const v of e.values) { -%>
+	<%= e.name %><%= it.naming.className(String(v)) %> <%= e.name %> = "<%= v %>"
+<% } -%>
+)
+<% } -%>
+<% for (const t of it.types) { %>
+
+// <%= t.name %> represents the <%= t.name %> GraphQL type.
+<% if (t.description) { -%>
+// <%= t.description %>
+<% } -%>
+type <%= t.name %> struct {
+<% for (const f of t.fields) { -%>
+<% const mapped = it.mapSchemaField(f); -%>
+<% const omitempty = f.required ? '' : ',omitempty'; -%>
+	<%= it.naming.className(f.name) %> <%= mapped %> `json:"<%= f.name %><%= omitempty %>"`
+<% } -%>
+}
+<% } -%>
+<% for (const inp of it.inputs) { %>
+
+// <%= inp.name %> represents the <%= inp.name %> GraphQL input type.
+type <%= inp.name %> struct {
+<% for (const f of inp.fields) { -%>
+<% const mapped = it.mapInputField(f); -%>
+<% const omitempty = f.required ? '' : ',omitempty'; -%>
+	<%= it.naming.className(f.name) %> <%= mapped %> `json:"<%= f.name %><%= omitempty %>"`
+<% } -%>
+}
+<% } -%>
+<%
+const queryOps = it.operations.filter(op => op.kind === 'Query');
+const mutationOps = it.operations.filter(op => op.kind === 'Mutation');
+const subscriptionOps = it.operations.filter(op => op.kind === 'Subscription');
+-%>
+<% if (queryOps.length > 0) { %>
+
+// QueryResult holds the result of a GraphQL query.
+type QueryResult struct {
+<% for (const op of queryOps) { -%>
+<% const goType = op.returnRequired ? '*' + op.returnTypeStr : op.returnTypeStr; -%>
+	<%= it.naming.className(op.name) %> <%= goType %> `json:"<%= op.name %>,omitempty"`
+<% } -%>
+}
+<% } -%>
+<% if (mutationOps.length > 0) { %>
+
+// MutationResult holds the result of a GraphQL mutation.
+type MutationResult struct {
+<% for (const op of mutationOps) { -%>
+<% const goType = op.returnRequired ? '*' + op.returnTypeStr : op.returnTypeStr; -%>
+	<%= it.naming.className(op.name) %> <%= goType %> `json:"<%= op.name %>,omitempty"`
+<% } -%>
+}
+<% } -%>
+<% if (subscriptionOps.length > 0) { %>
+
+// SubscriptionResult holds the result of a GraphQL subscription event.
+type SubscriptionResult struct {
+<% for (const op of subscriptionOps) { -%>
+<% const goType = op.returnRequired ? '*' + op.returnTypeStr : op.returnTypeStr; -%>
+	<%= it.naming.className(op.name) %> <%= goType %> `json:"<%= op.name %>,omitempty"`
+<% } -%>
+}
+<% } %>

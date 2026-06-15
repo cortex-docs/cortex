@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Optional
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CortexModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+<% for (const e of it.enums) { -%>
+class <%= e.name %>(str, Enum):
+<% for (const v of e.values) { -%>
+    <%= v %> = "<%= v %>"
+<% } -%>
+
+<% } -%>
+<% for (const t of it.types) { -%>
+class <%= t.name %>(CortexModel):
+<% if (t.fields.length === 0) { -%>
+    pass
+<% } else { -%>
+<% for (const f of t.fields) { -%>
+<% const fieldName = it.naming.propertyName(f.name); const needsAlias = fieldName !== f.name; -%>
+    <%= fieldName %>: <%= it.mapSchemaField(f) %><% if (needsAlias) { %> = Field(<%= !f.required ? 'None, ' : '' %>alias="<%= f.name %>")<% } else { %><%= !f.required ? ' = None' : '' %><% } %>
+<% } -%>
+<% } -%>
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+class <%= inp.name %>(CortexModel):
+<% for (const f of inp.fields) { -%>
+<% const fieldName = it.naming.propertyName(f.name); const needsAlias = fieldName !== f.name; -%>
+    <%= fieldName %>: <%= it.mapInputField(f) %><% if (needsAlias) { %> = Field(<%= !f.required ? 'None, ' : '' %>alias="<%= f.name %>")<% } else { %><%= !f.required ? ' = None' : '' %><% } %>
+<% } -%>
+
+<% } -%>
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+class <%= op.variablesTypeName %>(CortexModel):
+<% for (const arg of op.args) { -%>
+<% const fieldName = it.naming.propertyName(arg.name); const needsAlias = fieldName !== arg.name; -%>
+    <%= fieldName %>: <%= it.mapInputField(arg) %><% if (needsAlias) { %> = Field(<%= !arg.required ? 'None, ' : '' %>alias="<%= arg.name %>")<% } else { %><%= !arg.required ? ' = None' : '' %><% } %>
+<% } -%>
+<% } else { -%>
+class <%= op.variablesTypeName %>(CortexModel):
+    pass
+<% } -%>
+
+class <%= op.resultTypeName %>(CortexModel):
+<% const opFieldName = it.naming.propertyName(op.name); const opNeedsAlias = opFieldName !== op.name; -%>
+    <%= opFieldName %>: <%= op.returnRequired ? it.resolveType(op.returnTypeName) : `Optional[${it.resolveType(op.returnTypeName)}]` %><% if (opNeedsAlias) { %> = Field(<%= !op.returnRequired ? 'None, ' : '' %>alias="<%= op.name %>")<% } else { %><%= !op.returnRequired ? ' = None' : '' %><% } %>
+
+<% } -%>

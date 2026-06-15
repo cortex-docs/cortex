@@ -1,0 +1,37 @@
+{
+  "name": "cortex-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"packages/*/src/**/*.{ts,tsx}\"",
+    "clean": "turbo run clean",
+    "test:sdk": "docker build -t cortex-base -f Dockerfile . && docker compose -f e2e/docker/docker-compose.yml up --build --abort-on-container-exit"
+  },
+  "devDependencies": {
+    "@apollo/server": "^5.5.1",
+    "@graphql-tools/schema": "^10.0.33",
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.8.1",
+    "@playwright/test": "^1.60.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "graphql-ws": "^6.0.8",
+    "prettier": "^3.5.0",
+    "tsx": "^4.22.3",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.1",
+    "ws": "^8.21.0"
+  },
+  "packageManager": "npm@10.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

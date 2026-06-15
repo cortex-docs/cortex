@@ -1,0 +1,17 @@
+<% for (const schema of it.schemas) { %>
+<% if (schema.isEnum) { %>
+export enum <%= schema.className %> {
+<% for (const v of schema.enumValues) { %>
+  <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %> = <%= typeof v === 'string' ? `'${v}'` : v %>,
+<% } %>
+}
+
+<% } else { %>
+export interface <%= schema.className %> {
+<% for (const prop of schema.properties) { %>
+  <%= prop.originalName %><%= prop.required ? '' : '?' %>: <%= prop.type %>;<% if (prop.description) { %> // <%= prop.description %><% } %>
+<% } %>
+}
+
+<% } %>
+<% } %>

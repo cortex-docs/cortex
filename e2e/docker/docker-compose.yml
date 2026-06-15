@@ -1,0 +1,10 @@
+services:
+  sdk-tests:
+    build:
+      context: ../..
+      dockerfile: e2e/docker/Dockerfile
+    environment:
+      - MOCK_PORT=4010
+      - TEST_LANGUAGES=${TEST_LANGUAGES:-}
+    volumes:
+      - /tmp/cortex-e2e-results:/results

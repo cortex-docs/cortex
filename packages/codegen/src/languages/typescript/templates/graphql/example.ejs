@@ -1,0 +1,35 @@
+<% const opType = it.opType ?? 'query'; -%>
+<% const op = it.op; -%>
+<% const opName = op?.name ?? it.opName ?? 'items'; -%>
+<% const args = op?.args ?? it.args ?? []; -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return 'true'; if (a.type === 'ID') return `'example-${a.name}'`; return `'value'`; }; -%>
+<% const argsObj = args.length > 0 ? `{ ${args.map(a => `${a.name}: ${exVal(a)}`).join(', ')} }` : '{}'; -%>
+<% if (opType === 'query') { -%>
+// Query <%= opName %>
+const result = await gql.query(q =>
+  q.<%= opName %>(<%= argsObj %>, p =>
+    p.id().name()
+  )
+);
+<% } else if (opType === 'mutation') { -%>
+// Mutation <%= opName %>
+const result = await gql.mutate(m =>
+  m.<%= opName %>(<%= argsObj %>, p =>
+    p.id().name()
+  )
+);
+<% } else { -%>
+// One-shot subscription
+const event = await gql.subscribeOnce(s =>
+  s.<%= opName %>(<%= argsObj %>, p =>
+    p.id().name()
+  )
+);
+
+// Continuous subscription
+const unsubscribe = gql.subscribe(
+  s => s.<%= opName %>(p => p.id().name()),
+  (data) => console.log('Event:', data),
+);
+// Later: unsubscribe();
+<% } -%>

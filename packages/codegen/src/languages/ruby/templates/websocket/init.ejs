@@ -1,0 +1,7 @@
+<% const gemName = it.gemName ?? it.config.languageConfig.package_name; -%>
+<% const baseUrl = it.baseUrl ?? it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+require '<%= gemName %>'
+
+ws = <%= it.clientClass %>.new(
+  url: '<%= baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') %>/ws',
+)

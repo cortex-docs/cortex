@@ -1,0 +1,223 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example.ws'; -%>
+package <%= pkg %>;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.Consumer;
+
+public class <%= it.clientClass %> {
+
+    @FunctionalInterface
+    public interface MessageHandler<T> {
+        void handle(T data);
+    }
+
+    @FunctionalInterface
+    public interface WsEventListener {
+        void onEvent(Object data);
+    }
+
+    private WebSocket webSocket;
+    private final String url;
+    private final Gson gson;
+    private final HttpClient httpClient;
+    private boolean reconnect;
+    private final int reconnectInterval;
+    private final int maxReconnectAttempts;
+    private int reconnectAttempts;
+    private final Map<String, Set<MessageHandler<String>>> handlers;
+    private final Map<String, Set<WsEventListener>> eventListeners;
+    private final StringBuilder messageBuffer;
+
+    public <%= it.clientClass %>() {
+        this("<%= it.serverUrl %>", true, 3000, 10);
+    }
+
+    public <%= it.clientClass %>(String url) {
+        this(url, true, 3000, 10);
+    }
+
+    public <%= it.clientClass %>(String url, boolean reconnect, int reconnectInterval, int maxReconnectAttempts) {
+        this.url = url;
+        this.reconnect = reconnect;
+        this.reconnectInterval = reconnectInterval;
+        this.maxReconnectAttempts = maxReconnectAttempts;
+        this.reconnectAttempts = 0;
+        this.gson = new Gson();
+        this.httpClient = HttpClient.newHttpClient();
+        this.handlers = new ConcurrentHashMap<>();
+        this.eventListeners = new ConcurrentHashMap<>();
+        this.messageBuffer = new StringBuilder();
+    }
+
+    public CompletableFuture<Void> connect() {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        httpClient.newWebSocketBuilder()
+            .buildAsync(URI.create(url), new WebSocket.Listener() {
+
+                @Override
+                public void onOpen(WebSocket ws) {
+                    reconnectAttempts = 0;
+                    webSocket = ws;
+                    emit("connected", null);
+                    ws.request(1);
+                    future.complete(null);
+                }
+
+                @Override
+                public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last) {
+                    messageBuffer.append(data);
+                    if (last) {
+                        String fullMessage = messageBuffer.toString();
+                        messageBuffer.setLength(0);
+                        handleMessage(fullMessage);
+                    }
+                    ws.request(1);
+                    return null;
+                }
+
+                @Override
+                public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason) {
+                    webSocket = null;
+                    emit("disconnected", Map.of("code", statusCode, "reason", reason != null ? reason : ""));
+                    if (reconnect && reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                Thread.sleep(reconnectInterval);
+                            } catch (InterruptedException ignored) {
+                                Thread.currentThread().interrupt();
+                            }
+                            connect();
+                        });
+                    }
+                    return null;
+                }
+
+                @Override
+                public void onError(WebSocket ws, Throwable error) {
+                    emit("error", error);
+                    if (!future.isDone()) {
+                        future.completeExceptionally(error);
+                    }
+                }
+            })
+            .whenComplete((ws, ex) -> {
+                if (ex != null && !future.isDone()) {
+                    future.completeExceptionally(ex);
+                }
+            });
+
+        return future;
+    }
+
+    public void disconnect() {
+        this.reconnect = false;
+        if (webSocket != null) {
+            webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "");
+            webSocket = null;
+        }
+    }
+
+    public CompletableFuture<WebSocket> send(String channel, Object payload) {
+        if (webSocket == null) {
+            throw new IllegalStateException("WebSocket is not connected");
+        }
+        JsonObject message = new JsonObject();
+        message.addProperty("channel", channel);
+        message.add("payload", gson.toJsonTree(payload));
+        return webSocket.sendText(gson.toJson(message), true);
+    }
+
+    public Runnable subscribe(String channel, MessageHandler<String> handler) {
+        handlers.computeIfAbsent(channel, k -> new CopyOnWriteArraySet<>()).add(handler);
+        return () -> {
+            Set<MessageHandler<String>> channelHandlers = handlers.get(channel);
+            if (channelHandlers != null) {
+                channelHandlers.remove(handler);
+            }
+        };
+    }
+
+    public void on(String event, WsEventListener listener) {
+        eventListeners.computeIfAbsent(event, k -> new CopyOnWriteArraySet<>()).add(listener);
+    }
+
+    public boolean isConnected() {
+        return webSocket != null;
+    }
+
+    public Gson getGson() {
+        return gson;
+    }
+
+    private void emit(String event, Object data) {
+        Set<WsEventListener> listeners = eventListeners.get(event);
+        if (listeners != null) {
+            for (WsEventListener listener : listeners) {
+                listener.onEvent(data);
+            }
+        }
+    }
+
+    private void handleMessage(String text) {
+        try {
+            JsonObject data = JsonParser.parseString(text).getAsJsonObject();
+            emit("message", data);
+
+            String channel = null;
+            if (data.has("channel")) {
+                channel = data.get("channel").getAsString();
+            } else if (data.has("type")) {
+                channel = data.get("type").getAsString();
+            } else if (data.has("event")) {
+                channel = data.get("event").getAsString();
+            }
+
+            if (channel != null && handlers.containsKey(channel)) {
+                String payload;
+                if (data.has("payload")) {
+                    payload = gson.toJson(data.get("payload"));
+                } else if (data.has("data")) {
+                    payload = gson.toJson(data.get("data"));
+                } else {
+                    payload = text;
+                }
+                for (MessageHandler<String> handler : handlers.get(channel)) {
+                    handler.handle(payload);
+                }
+            }
+        } catch (Exception e) {
+            emit("message", text);
+        }
+    }
+
+<% for (const ch of it.channels) { -%>
+<% if (ch.canSubscribe) { -%>
+    /** Subscribe to <%= ch.name %><%= ch.description ? ' - ' + ch.description : '' %> */
+    public Runnable on<%= ch.className %>(MessageHandler<String> handler) {
+        return subscribe("<%= ch.name %>", handler);
+    }
+
+<% } -%>
+<% if (ch.canPublish) { -%>
+    /** Publish to <%= ch.name %><%= ch.description ? ' - ' + ch.description : '' %> */
+    public CompletableFuture<WebSocket> send<%= ch.className %>(Object payload) {
+        return send("<%= ch.name %>", payload);
+    }
+
+<% } -%>
+<% } -%>
+}

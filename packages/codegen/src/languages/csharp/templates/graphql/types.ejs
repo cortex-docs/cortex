@@ -1,0 +1,69 @@
+using System.Text.Json.Serialization;
+
+namespace <%= it.naming.className(it.packageName) %>.Gql;
+
+<% for (const e of it.enums) { -%>
+public enum <%= e.name %>
+{
+<% for (let i = 0; i < e.values.length; i++) { -%>
+    <%= String(e.values[i]).replace(/[^a-zA-Z0-9_]/g, '_') %><%= i < e.values.length - 1 ? ',' : '' %>
+<% } -%>
+}
+
+<% } -%>
+<% for (const t of it.types) { -%>
+/// <summary>
+/// <%= t.name %> GraphQL type.
+<% if (t.description) { -%>
+/// <%= t.description %>
+<% } -%>
+/// </summary>
+public class <%= t.name %>
+{
+<% for (const f of t.fields) { -%>
+    [JsonPropertyName("<%= f.name %>")]
+    public <%= it.mapSchemaField(f) %> <%= it.naming.className(f.name) %> { get; set; }
+
+<% } -%>
+}
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+/// <summary>
+/// <%= inp.name %> GraphQL input type.
+/// </summary>
+public class <%= inp.name %>
+{
+<% for (const f of inp.fields) { -%>
+    [JsonPropertyName("<%= f.name %>")]
+    public <%= it.mapInputField(f) %> <%= it.naming.className(f.name) %> { get; set; }
+
+<% } -%>
+}
+
+<% } -%>
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+/// <summary>
+/// Variables for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+/// </summary>
+public class <%= op.variablesTypeName %>
+{
+<% for (const a of op.args) { -%>
+    [JsonPropertyName("<%= a.name %>")]
+    public <%= it.mapInputField(a) %> <%= it.naming.className(a.name) %> { get; set; }
+
+<% } -%>
+}
+
+<% } -%>
+/// <summary>
+/// Result type for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+/// </summary>
+public class <%= op.resultTypeName %>
+{
+    [JsonPropertyName("<%= op.name %>")]
+    public <%= op.returnTypeStr %> <%= it.naming.className(op.name) %> { get; set; }
+}
+
+<% } -%>

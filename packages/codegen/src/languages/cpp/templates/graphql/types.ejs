@@ -1,0 +1,151 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <optional>
+#include <cstdint>
+#include <nlohmann/json.hpp>
+
+namespace sdk::gql {
+
+template<typename T>
+using Maybe = std::optional<T>;
+
+template<typename T>
+using InputMaybe = std::optional<T>;
+
+<% for (const e of it.enums) { -%>
+<% if (e.description) { -%>
+/// <%= e.description %>
+<% } -%>
+enum class <%= e.name %> {
+<% for (const v of e.values) { -%>
+  <%= it.naming.enumValue(String(v)) %>,
+<% } -%>
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(<%= e.name %>, {
+<% for (const v of e.values) { -%>
+  { <%= e.name %>::<%= it.naming.enumValue(String(v)) %>, "<%= v %>" },
+<% } -%>
+})
+
+<% } -%>
+<% for (const t of it.types) { -%>
+<% if (t.description) { -%>
+/// <%= t.description %>
+<% } -%>
+struct <%= t.name %> {
+<% for (const f of t.fields) { -%>
+<% const mapped = it.mapSchemaField(f); -%>
+<% if (f.required) { -%>
+  <%= mapped %> <%= it.naming.propertyName(f.name) %>;
+<% } else { -%>
+  std::optional<<%= it.resolveType(f.type) %>> <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+<% } -%>
+};
+
+inline void to_json(nlohmann::json& j, const <%= t.name %>& v) {
+  j = nlohmann::json{};
+<% for (const f of t.fields) { -%>
+<% if (f.required) { -%>
+  j["<%= f.name %>"] = v.<%= it.naming.propertyName(f.name) %>;
+<% } else { -%>
+  if (v.<%= it.naming.propertyName(f.name) %>.has_value()) j["<%= f.name %>"] = v.<%= it.naming.propertyName(f.name) %>.value();
+<% } -%>
+<% } -%>
+}
+
+inline void from_json(const nlohmann::json& j, <%= t.name %>& v) {
+<% for (const f of t.fields) { -%>
+<% if (f.required) { -%>
+  if (j.contains("<%= f.name %>")) j.at("<%= f.name %>").get_to(v.<%= it.naming.propertyName(f.name) %>);
+<% } else { -%>
+  if (j.contains("<%= f.name %>") && !j["<%= f.name %>"].is_null()) v.<%= it.naming.propertyName(f.name) %> = j["<%= f.name %>"].get<<%= it.resolveType(f.type) %>>();
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+<% if (inp.description) { -%>
+/// <%= inp.description %>
+<% } -%>
+struct <%= inp.name %> {
+<% for (const f of inp.fields) { -%>
+<% if (f.required) { -%>
+  <%= it.resolveType(f.type) %> <%= it.naming.propertyName(f.name) %>;
+<% } else { -%>
+  std::optional<<%= it.resolveType(f.type) %>> <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+<% } -%>
+};
+
+inline void to_json(nlohmann::json& j, const <%= inp.name %>& v) {
+  j = nlohmann::json{};
+<% for (const f of inp.fields) { -%>
+<% if (f.required) { -%>
+  j["<%= f.name %>"] = v.<%= it.naming.propertyName(f.name) %>;
+<% } else { -%>
+  if (v.<%= it.naming.propertyName(f.name) %>.has_value()) j["<%= f.name %>"] = v.<%= it.naming.propertyName(f.name) %>.value();
+<% } -%>
+<% } -%>
+}
+
+inline void from_json(const nlohmann::json& j, <%= inp.name %>& v) {
+<% for (const f of inp.fields) { -%>
+<% if (f.required) { -%>
+  if (j.contains("<%= f.name %>")) j.at("<%= f.name %>").get_to(v.<%= it.naming.propertyName(f.name) %>);
+<% } else { -%>
+  if (j.contains("<%= f.name %>") && !j["<%= f.name %>"].is_null()) v.<%= it.naming.propertyName(f.name) %> = j["<%= f.name %>"].get<<%= it.resolveType(f.type) %>>();
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+struct <%= op.variablesTypeName %> {
+<% for (const arg of op.args) { -%>
+<% const baseType = it.resolveType(arg.type); -%>
+<% if (arg.required) { -%>
+  <%= baseType %> <%= it.naming.propertyName(arg.name) %>;
+<% } else { -%>
+  std::optional<<%= baseType %>> <%= it.naming.propertyName(arg.name) %>;
+<% } -%>
+<% } -%>
+};
+
+inline void to_json(nlohmann::json& j, const <%= op.variablesTypeName %>& v) {
+  j = nlohmann::json{};
+<% for (const arg of op.args) { -%>
+<% if (arg.required) { -%>
+  j["<%= arg.name %>"] = v.<%= it.naming.propertyName(arg.name) %>;
+<% } else { -%>
+  if (v.<%= it.naming.propertyName(arg.name) %>.has_value()) j["<%= arg.name %>"] = v.<%= it.naming.propertyName(arg.name) %>.value();
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+struct <%= op.resultTypeName %> {
+<% if (op.returnRequired) { -%>
+  <%= op.returnTypeStr %> <%= it.naming.propertyName(op.name) %>;
+<% } else { -%>
+  std::optional<<%= it.resolveType(op.returnTypeName) %>> <%= it.naming.propertyName(op.name) %>;
+<% } -%>
+};
+
+inline void from_json(const nlohmann::json& j, <%= op.resultTypeName %>& v) {
+<% if (op.returnRequired) { -%>
+  if (j.contains("<%= op.name %>")) j.at("<%= op.name %>").get_to(v.<%= it.naming.propertyName(op.name) %>);
+<% } else { -%>
+  if (j.contains("<%= op.name %>") && !j["<%= op.name %>"].is_null()) v.<%= it.naming.propertyName(op.name) %> = j["<%= op.name %>"].get<<%= it.resolveType(op.returnTypeName) %>>();
+<% } -%>
+}
+
+<% } -%>
+
+} // namespace sdk::gql

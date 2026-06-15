@@ -1,0 +1,329 @@
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+#pragma once
+
+#include <string>
+#include <map>
+#include <functional>
+#include <stdexcept>
+#include <type_traits>
+#include <nlohmann/json.hpp>
+#include <httplib.h>
+#include "gql-types.hpp"
+#include "gql-query-builder.hpp"
+<% if (hasSubscriptions) { -%>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <cstring>
+#include <random>
+<% } -%>
+
+namespace sdk::gql {
+
+struct <%= it.clientClass %>Options {
+  std::string endpoint = "<%= it.endpoint %>";
+<% if (hasSubscriptions) { -%>
+  std::string ws_endpoint;
+<% } -%>
+  std::map<std::string, std::string> headers;
+  std::string bearer_token;
+};
+
+class GqlError : public std::runtime_error {
+public:
+  std::vector<std::string> errors;
+  GqlError(const std::string& msg, std::vector<std::string> errs = {})
+    : std::runtime_error(msg), errors(std::move(errs)) {}
+};
+<% if (hasSubscriptions) { %>
+
+struct SubscriptionHandle {
+  std::atomic<bool>* cancelled;
+  std::thread worker;
+
+  void unsubscribe() {
+    if (cancelled) cancelled->store(true);
+    if (worker.joinable()) worker.detach();
+  }
+
+  ~SubscriptionHandle() {
+    if (worker.joinable()) worker.detach();
+  }
+};
+<% } %>
+
+class <%= it.clientClass %> {
+  std::string endpoint_;
+<% if (hasSubscriptions) { -%>
+  std::string ws_endpoint_;
+<% } -%>
+  std::map<std::string, std::string> headers_;
+
+  nlohmann::json execute(const std::string& query, const nlohmann::json& variables) {
+    std::string base_url = endpoint_;
+    std::string gql_path = "/graphql";
+    auto scheme_end = base_url.find("://");
+    if (scheme_end != std::string::npos) {
+      auto path_start = base_url.find('/', scheme_end + 3);
+      if (path_start != std::string::npos) {
+        gql_path = base_url.substr(path_start);
+        base_url = base_url.substr(0, path_start);
+      }
+    }
+    httplib::Client cli(base_url);
+    nlohmann::json req_body = {{"query", query}};
+    if (!variables.empty() && !variables.is_null()) {
+      req_body["variables"] = variables;
+    }
+    httplib::Headers hdrs(headers_.begin(), headers_.end());
+    auto res = cli.Post(gql_path, hdrs, req_body.dump(), "application/json");
+    if (!res) throw GqlError("GraphQL request failed");
+
+    auto json = nlohmann::json::parse(res->body);
+    if (json.contains("errors") && json["errors"].is_array() && !json["errors"].empty()) {
+      std::vector<std::string> msgs;
+      for (const auto& e : json["errors"]) {
+        msgs.push_back(e.value("message", "unknown error"));
+      }
+      std::string combined;
+      for (size_t i = 0; i < msgs.size(); ++i) {
+        if (i > 0) combined += "; ";
+        combined += msgs[i];
+      }
+      throw GqlError(combined, std::move(msgs));
+    }
+
+    return json.value("data", nlohmann::json{});
+  }
+
+public:
+  explicit <%= it.clientClass %>(const <%= it.clientClass %>Options& opts = {})
+    : endpoint_(opts.endpoint)
+<% if (hasSubscriptions) { -%>
+    , ws_endpoint_(opts.ws_endpoint.empty()
+        ? [](std::string e) { if (e.substr(0, 5) == "https") return "wss" + e.substr(5); if (e.substr(0, 4) == "http") return "ws" + e.substr(4); return e; }(opts.endpoint)
+        : opts.ws_endpoint)
+<% } -%>
+  {
+    headers_["Content-Type"] = "application/json";
+    for (const auto& [k, v] : opts.headers) {
+      headers_[k] = v;
+    }
+    if (!opts.bearer_token.empty()) {
+      headers_["Authorization"] = "Bearer " + opts.bearer_token;
+    }
+  }
+<% if (hasQueries) { %>
+
+  template<typename T = nlohmann::json, typename Fn>
+  T query(Fn fn) {
+    QueryBuilder builder;
+    fn(builder);
+    auto [q, vars] = builder.build_document();
+    auto result = execute(q, vars);
+    if constexpr (std::is_same_v<T, nlohmann::json>) return result;
+    else return result.get<T>();
+  }
+<% } -%>
+<% if (hasMutations) { %>
+
+  template<typename T = nlohmann::json, typename Fn>
+  T mutate(Fn fn) {
+    MutationBuilder builder;
+    fn(builder);
+    auto [q, vars] = builder.build_document();
+    auto result = execute(q, vars);
+    if constexpr (std::is_same_v<T, nlohmann::json>) return result;
+    else return result.get<T>();
+  }
+<% } -%>
+<% if (hasSubscriptions) { %>
+
+  template<typename Fn, typename OnData>
+  SubscriptionHandle subscribe(Fn fn, OnData on_data) {
+    SubscriptionBuilder builder;
+    fn(builder);
+    auto doc = builder.build_document();
+    std::string query = doc.first;
+    nlohmann::json variables = doc.second;
+    std::string ws_url = ws_endpoint_;
+
+    auto cancelled = new std::atomic<bool>(false);
+
+    auto worker = std::thread([query, variables, ws_url, on_data, cancelled]() {
+      // Parse ws_url
+      std::string host, path = "/graphql";
+      int port = 80;
+      std::string url = ws_url;
+      if (url.substr(0, 5) == "ws://") url = url.substr(5);
+      else if (url.substr(0, 6) == "wss://") url = url.substr(6);
+      auto slash = url.find('/');
+      if (slash != std::string::npos) {
+        path = url.substr(slash);
+        url = url.substr(0, slash);
+      }
+      auto colon = url.find(':');
+      if (colon != std::string::npos) {
+        host = url.substr(0, colon);
+        port = std::stoi(url.substr(colon + 1));
+      } else {
+        host = url;
+      }
+
+      struct addrinfo hints{}, *res;
+      hints.ai_family = AF_INET;
+      hints.ai_socktype = SOCK_STREAM;
+      if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) return;
+
+      int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+      if (sock < 0) { freeaddrinfo(res); return; }
+      if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) { close(sock); freeaddrinfo(res); return; }
+      freeaddrinfo(res);
+
+      // WebSocket handshake
+      std::string key = "dGhlIHNhbXBsZSBub25jZQ==";
+      std::string handshake = "GET " + path + " HTTP/1.1\r\n"
+        "Host: " + host + ":" + std::to_string(port) + "\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: " + key + "\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Protocol: graphql-transport-ws\r\n"
+        "\r\n";
+      ::send(sock, handshake.c_str(), handshake.size(), 0);
+
+      // Read handshake response
+      char buf[4096];
+      int n = recv(sock, buf, sizeof(buf) - 1, 0);
+      if (n <= 0) { close(sock); return; }
+      buf[n] = 0;
+
+      auto ws_send = [&](const std::string& data) {
+        std::vector<uint8_t> frame;
+        frame.push_back(0x81); // FIN + text
+        uint8_t mask_bit = 0x80;
+        if (data.size() < 126) {
+          frame.push_back(mask_bit | (uint8_t)data.size());
+        } else if (data.size() < 65536) {
+          frame.push_back(mask_bit | 126);
+          frame.push_back((data.size() >> 8) & 0xFF);
+          frame.push_back(data.size() & 0xFF);
+        } else {
+          frame.push_back(mask_bit | 127);
+          for (int i = 7; i >= 0; --i) frame.push_back((data.size() >> (i * 8)) & 0xFF);
+        }
+        uint8_t mask[4] = {0x12, 0x34, 0x56, 0x78};
+        frame.insert(frame.end(), mask, mask + 4);
+        for (size_t i = 0; i < data.size(); ++i) {
+          frame.push_back(data[i] ^ mask[i % 4]);
+        }
+        ::send(sock, frame.data(), frame.size(), 0);
+      };
+
+      auto ws_recv = [&]() -> std::string {
+        uint8_t header[2];
+        if (recv(sock, header, 2, MSG_WAITALL) != 2) return "";
+        uint64_t len = header[1] & 0x7F;
+        bool masked = header[1] & 0x80;
+        if (len == 126) {
+          uint8_t ext[2];
+          recv(sock, ext, 2, MSG_WAITALL);
+          len = (ext[0] << 8) | ext[1];
+        } else if (len == 127) {
+          uint8_t ext[8];
+          recv(sock, ext, 8, MSG_WAITALL);
+          len = 0;
+          for (int i = 0; i < 8; ++i) len = (len << 8) | ext[i];
+        }
+        uint8_t mask[4] = {};
+        if (masked) recv(sock, mask, 4, MSG_WAITALL);
+        std::string data(len, 0);
+        size_t received = 0;
+        while (received < len) {
+          int r = recv(sock, &data[received], len - received, 0);
+          if (r <= 0) return "";
+          received += r;
+        }
+        if (masked) for (size_t i = 0; i < len; ++i) data[i] ^= mask[i % 4];
+        return data;
+      };
+
+      // connection_init
+      ws_send(nlohmann::json{{"type", "connection_init"}}.dump());
+
+      // Wait for connection_ack
+      while (true) {
+        auto msg = ws_recv();
+        if (msg.empty()) { close(sock); return; }
+        auto parsed = nlohmann::json::parse(msg, nullptr, false);
+        if (!parsed.is_discarded() && parsed.value("type", "") == "connection_ack") break;
+      }
+
+      // subscribe
+      ws_send(nlohmann::json{
+        {"id", "1"},
+        {"type", "subscribe"},
+        {"payload", {{"query", query}, {"variables", variables}}}
+      }.dump());
+
+      // Read events
+      while (!cancelled->load()) {
+        auto msg = ws_recv();
+        if (msg.empty()) break;
+        auto parsed = nlohmann::json::parse(msg, nullptr, false);
+        if (parsed.is_discarded()) continue;
+        auto type = parsed.value("type", "");
+        if (type == "next") {
+          auto data = parsed.value("payload", nlohmann::json{}).value("data", nlohmann::json{});
+          on_data(data);
+        } else if (type == "complete") {
+          break;
+        }
+      }
+
+      ws_send(nlohmann::json{{"id", "1"}, {"type", "complete"}}.dump());
+      close(sock);
+    });
+
+    return SubscriptionHandle{cancelled, std::move(worker)};
+  }
+
+  template<typename T = nlohmann::json, typename Fn>
+  T subscribe_once(Fn fn, int timeout_ms = 10000) {
+    nlohmann::json result;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool received = false;
+
+    auto handle = subscribe(fn, [&](const nlohmann::json& data) {
+      std::lock_guard<std::mutex> lock(mtx);
+      if (!received) {
+        result = data;
+        received = true;
+        cv.notify_one();
+      }
+    });
+
+    {
+      std::unique_lock<std::mutex> lock(mtx);
+      if (!cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&] { return received; })) {
+        handle.unsubscribe();
+        throw GqlError("subscription timeout");
+      }
+    }
+
+    handle.unsubscribe();
+    if constexpr (std::is_same_v<T, nlohmann::json>) return result;
+    else return result.get<T>();
+  }
+
+  void dispose() {}
+<% } -%>
+};
+
+} // namespace sdk::gql

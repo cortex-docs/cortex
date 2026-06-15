@@ -1,0 +1,35 @@
+<% const opType = it.opType ?? 'query'; -%>
+<% const op = it.op; -%>
+<% const opName = op?.name ?? it.opName ?? 'items'; -%>
+<% const args = op?.args ?? it.args ?? []; -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return 'true'; if (a.type === 'ID') return `"example_${a.name}"`; return '"value"'; }; -%>
+<% const argsStr = (typeof args === 'string') ? `{${args}}` : (args.length > 0 ? `{${args.map(a => `.${a.name} = ${exVal(a)}`).join(', ')}}` : '{}'); -%>
+<% if (opType === 'query') { -%>
+// Query <%= opName %>
+auto result = gql.query<sdk::gql::<%= it.utils.toPascalCase(opName) %>Query>([](sdk::gql::QueryBuilder& q) {
+  q.<%= opName %>(<%= argsStr %>, [](auto& p) {
+    p.id().name();
+  });
+});
+<% } else if (opType === 'mutation') { -%>
+// Mutation <%= opName %>
+auto result = gql.mutate<sdk::gql::<%= it.utils.toPascalCase(opName) %>Mutation>([](sdk::gql::MutationBuilder& m) {
+  m.<%= opName %>(<%= argsStr %>, [](auto& p) {
+    p.id().name();
+  });
+});
+<% } else { -%>
+// One-shot subscription
+auto event = gql.subscribe_once<sdk::gql::<%= it.utils.toPascalCase(opName) %>Subscription>([](sdk::gql::SubscriptionBuilder& s) {
+  s.<%= opName %>(<%= argsStr %>, [](auto& p) { p.id().name(); });
+});
+
+// Continuous subscription with callback
+auto handle = gql.subscribe(
+  [](sdk::gql::SubscriptionBuilder& s) {
+    s.<%= opName %>(<%= args.length > 0 ? `${argsStr}, ` : '' %>[](auto& p) { p.id().name(); });
+  },
+  [](const nlohmann::json& data) { std::cout << "Event: " << data.dump() << std::endl; }
+);
+// Later: handle.unsubscribe();
+<% } -%>

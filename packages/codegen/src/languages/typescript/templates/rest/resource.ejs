@@ -1,0 +1,23 @@
+<% const r = it.resource; %>
+<% const clientClass = it.clientClass; %>
+<% const schemaTypeNames = new Set(it.schemas.map(s => s.className)); %>
+<% const toSdkType = (type) => type.replace(/\b[A-Z][A-Za-z0-9_]*\b/g, (name) => schemaTypeNames.has(name) ? `Types.${name}` : name); %>
+<% const queryKey = (name) => /^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name); %>
+import type { <%= clientClass %> } from '../client';
+import type * as Types from '../types';
+
+export class <%= r.className %> {
+  constructor(private readonly client: <%= clientClass %>) {}
+
+<% for (const op of r.operations) { %>
+<% const params = [...op.pathParams.map(p => `${p.name}: ${toSdkType(p.type)}`), ...(op.hasBody ? [`body: ${toSdkType(op.bodyType)}`] : []), ...op.queryParams.map(p => `${p.name}?: ${toSdkType(p.type)}`)]; %>
+<% let pathExpr = op.path; for (const p of op.pathParams) { pathExpr = pathExpr.replace(`{${p.originalName}}`, `\${${p.name}}`); } %>
+<% if (op.summary) { %>
+  /** <%= op.summary %> */
+<% } %>
+  async <%= op.name %>(<%= params.join(', ') %>): Promise<<%= toSdkType(op.responseType) %>> {
+    return this.client.request<<%= toSdkType(op.responseType) %>>('<%= op.method %>', `<%= pathExpr %>`<% if (op.queryParams.length || op.hasBody) { %>, { <% if (op.queryParams.length) { %>query: { <%= op.queryParams.map(p => `${queryKey(p.originalName)}: ${p.name}`).join(', ') %> }<% } %><% if (op.hasBody) { %><% if (op.queryParams.length) { %>, <% } %>body<% } %> }<% } %>);
+  }
+
+<% } %>
+}

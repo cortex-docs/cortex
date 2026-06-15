@@ -1,0 +1,7 @@
+<% const clientClass = it.clientClass; %>
+export { <%= clientClass %>, ApiError } from './client';
+export type { ClientOptions } from './client';
+export * from './types';
+<% for (const r of it.resources) { %>
+export { <%= r.className %> } from './resources/<%= it.naming.fileName(r.name) %>';
+<% } %>

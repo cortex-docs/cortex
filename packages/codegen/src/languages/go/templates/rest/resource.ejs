@@ -1,0 +1,58 @@
+<% const clientClass = it.clientClass; %>
+<% const r = it.resource; %>
+<% const parts = it.config.languageConfig.package_name.split('/'); %>
+<% const pkgName = parts[parts.length - 1].replace(/-/g, ''); %>
+package <%= pkgName %>
+
+import (
+	"fmt"
+	"net/url"
+)
+
+// <%= r.className %> provides access to the <%= r.name %> API endpoints.
+type <%= r.className %> struct {
+	client *<%= clientClass %>
+}
+<% for (const op of r.operations) { %>
+
+<% const goMethodName = it.naming.className(op.name); %>
+<% const allParams = []; %>
+<% for (const p of op.pathParams) { allParams.push(`${p.name} ${p.type}`); } %>
+<% if (op.hasBody) { allParams.push(`body ${op.bodyType}`); } %>
+<% for (const p of op.queryParams) { allParams.push(`${p.name} ${p.required ? p.type : `*${p.type}`}`); } %>
+<% let pathExpr = `"${op.path}"`; %>
+<% if (op.pathParams.length > 0) { %>
+<%   const fmtPath = op.path.replace(/\{([^}]+)\}/g, '%s'); %>
+<%   const fmtArgs = op.pathParams.map(p => p.name).join(', '); %>
+<%   pathExpr = `fmt.Sprintf("${fmtPath}", ${fmtArgs})`; %>
+<% } %>
+<% const bodyArg = op.hasBody ? 'body' : 'nil'; %>
+<% if (op.summary) { %>
+// <%= goMethodName %> <%= op.summary.charAt(0).toLowerCase() + op.summary.slice(1).replace(/\.$/, '') %>.
+<% } %>
+<% if (op.responseType) { -%>
+func (r *<%= r.className %>) <%= goMethodName %>(<%= allParams.join(', ') %>) (*<%= op.responseType %>, error) {
+	var result <%= op.responseType %>
+<% } else { -%>
+func (r *<%= r.className %>) <%= goMethodName %>(<%= allParams.join(', ') %>) error {
+<% } -%>
+<% if (op.queryParams.length > 0) { -%>
+	query := url.Values{}
+<% for (const p of op.queryParams) { -%>
+<% if (p.required) { -%>
+	query.Set("<%= p.originalName %>", fmt.Sprint(<%= p.name %>))
+<% } else { -%>
+	if <%= p.name %> != nil {
+		query.Set("<%= p.originalName %>", fmt.Sprint(*<%= p.name %>))
+	}
+<% } -%>
+<% } -%>
+<% } -%>
+	err := r.client.Request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'nil' %>, <%= bodyArg %>, <%= op.responseType ? '&result' : 'nil' %>)
+<% if (op.responseType) { -%>
+	return &result, err
+<% } else { -%>
+	return err
+<% } -%>
+}
+<% } %>

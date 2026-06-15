@@ -1,0 +1,99 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; %>
+<% const clientClass = it.clientClass; %>
+<% for (const r of it.resources) { %>
+import { <%= r.className %> } from './resources/<%= it.naming.fileName(r.name) %>';
+<% } %>
+
+export interface ClientOptions {
+  baseUrl?: string;
+  apiKey?: string;
+  bearerToken?: string;
+  headers?: Record<string, string>;
+  timeout?: number;
+}
+
+export class <%= clientClass %> {
+  readonly baseUrl: string;
+  private readonly headers: Record<string, string>;
+  private readonly timeout: number;
+
+<% for (const r of it.resources) { %>
+  readonly <%= it.naming.propertyName(r.name) %>: <%= r.className %>;
+<% } %>
+
+  constructor(options: ClientOptions = {}) {
+    this.baseUrl = options.baseUrl ?? '<%= baseUrl %>';
+    this.timeout = options.timeout ?? 30000;
+    this.headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (options.bearerToken) {
+      this.headers['Authorization'] = `Bearer ${options.bearerToken}`;
+    }
+    if (options.apiKey) {
+      this.headers['X-API-Key'] = options.apiKey;
+    }
+
+<% for (const r of it.resources) { %>
+    this.<%= it.naming.propertyName(r.name) %> = new <%= r.className %>(this);
+<% } %>
+  }
+
+  async request<T>(
+    method: string,
+    path: string,
+    options: {
+      query?: Record<string, string | number | boolean | undefined>;
+      body?: unknown;
+      headers?: Record<string, string>;
+    } = {},
+  ): Promise<T> {
+    const url = new URL(path, this.baseUrl);
+
+    if (options.query) {
+      for (const [key, value] of Object.entries(options.query)) {
+        if (value !== undefined) {
+          url.searchParams.set(key, String(value));
+        }
+      }
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      const response = await fetch(url.toString(), {
+        method,
+        headers: { ...this.headers, ...options.headers },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new ApiError(response.status, response.statusText, errorBody);
+      }
+
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
+      return (await response.json()) as T;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly statusText: string,
+    public readonly body: string,
+  ) {
+    super(`API Error ${status}: ${statusText}`);
+    this.name = 'ApiError';
+  }
+}

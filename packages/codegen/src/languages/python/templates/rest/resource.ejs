@@ -1,0 +1,45 @@
+<% const r = it.resource; %>
+<% const clientClass = it.clientClass; %>
+<% const isSdkType = (type) => /^[A-Z][A-Za-z0-9_]*$/.test(type) && !['Any', 'None'].includes(type); -%>
+<% const sdkType = (type) => isSdkType(type) ? `Types.${type}` : type; -%>
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
+from pydantic import BaseModel
+
+from .. import types as Types
+
+if TYPE_CHECKING:
+    from ..client import <%= clientClass %>
+
+
+def _dump_body(body: Any) -> Any:
+    if isinstance(body, BaseModel):
+        return body.model_dump(by_alias=True, exclude_none=True)
+    if isinstance(body, Mapping):
+        return dict(body)
+    return body
+
+
+class <%= r.className %>:
+    def __init__(self, client: <%= clientClass %>) -> None:
+        self._client = client
+
+<% for (const op of r.operations) { %>
+<% const params = [...op.pathParams.map(p => `${p.name}: ${p.type}`), ...(op.hasBody ? [`body: ${sdkType(op.bodyType)}`] : []), ...op.queryParams.map(p => `${p.name}: Optional[${p.type}] = None`)]; %>
+<% let pathExpr = op.path; for (const p of op.pathParams) { pathExpr = pathExpr.replace(`{${p.originalName}}`, `{${p.name}}`); } %>
+<% const queryDict = op.queryParams.length > 0 ? `{${op.queryParams.map(p => `"${p.originalName}": ${p.name}`).join(', ')}}` : null; %>
+    def <%= op.name %>(self<% if (params.length) { %>, <%= params.join(', ') %><% } %>) -> <%= sdkType(op.responseType) %>:
+<% if (op.summary) { %>
+        """<%= op.summary %>"""
+<% } %>
+        data = self._client.request("<%= op.method %>", f"<%= pathExpr %>"<% if (queryDict || op.hasBody) { %>, <% if (queryDict) { %>query=<%= queryDict %><% } %><% if (op.hasBody) { %><% if (queryDict) { %>, <% } %>body=_dump_body(<% if (isSdkType(op.bodyType)) { %>Types.<%= op.bodyType %>.model_validate(body)<% } else { %>body<% } %>)<% } %><% } %>)
+<% if (op.responseType === 'None') { -%>
+        return None
+<% } else if (isSdkType(op.responseType)) { -%>
+        return Types.<%= op.responseType %>.model_validate(data)
+<% } else { -%>
+        return data
+<% } -%>
+
+<% } %>

@@ -1,0 +1,10 @@
+<%= JSON.stringify({
+  name: it.serverName,
+  version: '0.1.0',
+  description: `MCP server for ${it.specTitle}`,
+  main: './dist/main.js',
+  bin: { [it.serverName]: './dist/main.js' },
+  scripts: { build: 'tsc', start: 'node dist/main.js', dev: 'tsx src/main.ts' },
+  dependencies: { '@modelcontextprotocol/sdk': '^1.12.0', zod: '^3.25.0' },
+  devDependencies: { '@types/node': '^22.0.0', tsx: '^4.19.0', typescript: '^5.8.0' },
+}, null, 2) %>

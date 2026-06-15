@@ -1,0 +1,7 @@
+#pragma once
+
+#include "client.hpp"
+#include "types.hpp"
+<% for (const r of it.resources) { %>
+#include "resources/<%= it.naming.fileName(r.name) %>.hpp"
+<% } %>

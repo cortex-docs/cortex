@@ -1,0 +1,22 @@
+The following third-party packages are used in this project:
+
+================================================================================
+@scalar/api-reference-react
+https://github.com/scalar/scalar
+License: MIT
+Copyright (c) Scalar
+
+Used in @cortex/docs-ui for rendering OpenAPI specification references.
+================================================================================
+
+================================================================================
+@asyncapi/generator + @asyncapi/nodejs-ws-template
+https://github.com/asyncapi/generator
+License: Apache-2.0
+Copyright (c) AsyncAPI Initiative
+
+Used in @cortex/codegen for generating WebSocket server code from AsyncAPI specs.
+================================================================================
+
+Full license texts for all dependencies are available in their respective
+node_modules/<package>/LICENSE files.

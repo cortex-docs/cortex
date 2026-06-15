@@ -1,0 +1,21 @@
+<% const method = it.method; -%>
+<% const service = it.service ?? {}; -%>
+<% const clientVar = service.clientVar ?? (service.serviceName ? service.serviceName.charAt(0).toLowerCase() + service.serviceName.slice(1).replace(/Service$/, '') + 'Client' : 'client'); -%>
+<% const callName = method.callName ?? (method.methodName.charAt(0).toLowerCase() + method.methodName.slice(1)); -%>
+<% const fields = (method.inputFields ?? []).map(f => `${f.name}: ${f.type === 'number' || f.type === 'integer' ? '0' : f.type === 'boolean' ? 'true' : `'value'`}`); -%>
+<% const args = fields.length > 0 ? `{\n  ${fields.join(',\n  ')},\n}` : '{}'; -%>
+<% if (method.serverStreaming) { -%>
+// <%= method.methodName %> (server streaming)
+const stream = <%= clientVar %>.<%= callName %>(<%= args %>);
+stream.on('data', (item) => console.log(item));
+stream.on('end', () => console.log('Stream ended'));
+stream.on('error', (err) => console.error(err));
+<% } else if (method.clientStreaming) { -%>
+// <%= method.methodName %> (client streaming)
+const stream = <%= clientVar %>.<%= callName %>();
+stream.write(<%= args %>);
+const result = await stream.close();
+<% } else { -%>
+// <%= method.methodName %>
+const <%= callName %>Result = await <%= clientVar %>.<%= callName %>(<%= args %>);
+<% } -%>

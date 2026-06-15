@@ -1,0 +1,10 @@
+<% const clientClass = it.clientClass; -%>
+<% const pkgName = it.pkgName ?? it.config.languageConfig.package_name; -%>
+<% const baseUrl = it.baseUrl ?? it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+import { <%= clientClass %> } from '<%= pkgName %>';
+
+const client = new <%= clientClass %>({
+  baseUrl: '<%= baseUrl %>',
+  bearerToken: 'your-token',
+  // apiKey: 'your-api-key',
+});

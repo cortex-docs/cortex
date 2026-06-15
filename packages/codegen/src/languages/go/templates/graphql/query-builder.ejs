@@ -1,0 +1,191 @@
+<% const pkgName = 'gqlclient'; -%>
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+package <%= pkgName %>
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+type fieldEntry struct {
+	name     string
+	children []fieldEntry
+}
+
+type argDef struct {
+	name    string
+	gqlType string
+}
+
+type rootEntry struct {
+	field   string
+	args    map[string]interface{}
+	argDefs []argDef
+	fields  []fieldEntry
+	scalar  bool
+}
+
+func argsToMap(v interface{}) map[string]interface{} {
+	if v == nil {
+		return nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var m map[string]interface{}
+	_ = json.Unmarshal(data, &m)
+	return m
+}
+
+func buildSelection(fields []fieldEntry, indent string) string {
+	lines := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if len(f.children) > 0 {
+			lines = append(lines, fmt.Sprintf("%s%s {\n%s\n%s}", indent, f.name, buildSelection(f.children, indent+"  "), indent))
+		} else {
+			lines = append(lines, indent+f.name)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func buildDocument(kind string, entries []rootEntry) (string, map[string]interface{}) {
+	variables := make(map[string]interface{})
+	var varDefs []string
+	var parts []string
+	vi := 0
+
+	for _, e := range entries {
+		var argParts []string
+		for _, ad := range e.argDefs {
+			if e.args != nil {
+				if val, ok := e.args[ad.name]; ok {
+					vn := fmt.Sprintf("v%d", vi)
+					vi++
+					varDefs = append(varDefs, fmt.Sprintf("$%s: %s", vn, ad.gqlType))
+					argParts = append(argParts, fmt.Sprintf("%s: $%s", ad.name, vn))
+					variables[vn] = val
+				}
+			}
+		}
+		argsStr := ""
+		if len(argParts) > 0 {
+			argsStr = "(" + strings.Join(argParts, ", ") + ")"
+		}
+		if !e.scalar && len(e.fields) > 0 {
+			parts = append(parts, fmt.Sprintf("    %s%s {\n%s\n    }", e.field, argsStr, buildSelection(e.fields, "      ")))
+		} else {
+			parts = append(parts, fmt.Sprintf("    %s%s", e.field, argsStr))
+		}
+	}
+
+	vd := ""
+	if len(varDefs) > 0 {
+		vd = "(" + strings.Join(varDefs, ", ") + ")"
+	}
+	return fmt.Sprintf("%s%s {\n%s\n  }", kind, vd, strings.Join(parts, "\n")), variables
+}
+<% for (const t of it.types) { %>
+
+// <%= t.name %>Selector selects fields on the <%= t.name %> type.
+type <%= t.name %>Selector struct {
+	fields []fieldEntry
+}
+<% for (const f of t.fields) { -%>
+<% if (it.isScalarType(f.type) || it.enumNames.has(f.type)) { %>
+func (s *<%= t.name %>Selector) <%= it.naming.className(f.name) %>() *<%= t.name %>Selector {
+	s.fields = append(s.fields, fieldEntry{name: "<%= f.name %>"})
+	return s
+}
+<% } else if (it.typesByName.has(f.type)) { %>
+func (s *<%= t.name %>Selector) <%= it.naming.className(f.name) %>(fn func(*<%= f.type %>Selector) *<%= f.type %>Selector) *<%= t.name %>Selector {
+	sub := &<%= f.type %>Selector{}
+	fn(sub)
+	s.fields = append(s.fields, fieldEntry{name: "<%= f.name %>", children: sub.fields})
+	return s
+}
+<% } -%>
+<% } -%>
+<% } -%>
+<%
+const allOps = [...it.queries, ...it.mutations, ...it.subscriptions];
+-%>
+<% for (const op of allOps) { -%>
+<% if (op.args.length > 0) { -%>
+<% const allOptional = op.args.every(a => !a.required); %>
+
+// <%= it.naming.className(op.name) %>Args holds the arguments for the <%= op.name %> operation.
+type <%= it.naming.className(op.name) %>Args struct {
+<% for (const a of op.args) { -%>
+<% const baseType = it.resolveType(a.type); -%>
+<% const goType = a.required ? baseType : '*' + baseType; -%>
+<% const omitempty = a.required ? '' : ',omitempty'; -%>
+	<%= it.naming.className(a.name) %> <%= goType %> `json:"<%= a.name %><%= omitempty %>"`
+<% } -%>
+}
+<% } -%>
+<% } -%>
+<% const opKinds = [
+  { name: 'QueryBuilder', ops: it.queries, kind: 'query' },
+  { name: 'MutationBuilder', ops: it.mutations, kind: 'mutation' },
+  { name: 'SubscriptionBuilder', ops: it.subscriptions, kind: 'subscription' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+// <%= bk.name %> builds GraphQL <%= bk.kind %> documents.
+type <%= bk.name %> struct {
+	entries []rootEntry
+}
+<% for (const op of bk.ops) { -%>
+<% const returnType = op.returnType; -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const hasArgs = op.args.length > 0; -%>
+<% const allOptional = !hasArgs || op.args.every(a => !a.required); -%>
+<% const argsTypeName = hasArgs ? it.naming.className(op.name) + 'Args' : ''; -%>
+<% /* Build the method signature parts */ -%>
+<% const argsParam = hasArgs ? (allOptional ? `args *${argsTypeName}` : `args ${argsTypeName}`) : ''; -%>
+<% const selectorParam = isScalarReturn ? '' : `fn func(*${returnType}Selector) *${returnType}Selector`; -%>
+<% const params = [argsParam, selectorParam].filter(Boolean).join(', '); -%>
+<% /* For argsToMap: pointer types can be passed directly, value types need & */ -%>
+<% const argsMapExpr = hasArgs ? (allOptional ? 'argsToMap(args)' : 'argsToMap(&args)') : 'nil'; -%>
+<% if (isScalarReturn) { %>
+func (b *<%= bk.name %>) <%= it.naming.className(op.name) %>(<%= params %>) *<%= bk.name %> {
+	b.entries = append(b.entries, rootEntry{
+		field: "<%= op.name %>",
+		args:  <%= argsMapExpr %>,
+		argDefs: []argDef{
+<% for (const a of op.args) { -%>
+			{name: "<%= a.name %>", gqlType: "<%= a.typeRaw %>"},
+<% } -%>
+		},
+		scalar: true,
+	})
+	return b
+}
+<% } else { %>
+func (b *<%= bk.name %>) <%= it.naming.className(op.name) %>(<%= params %>) *<%= bk.name %> {
+	s := &<%= returnType %>Selector{}
+	fn(s)
+	b.entries = append(b.entries, rootEntry{
+		field: "<%= op.name %>",
+		args:  <%= argsMapExpr %>,
+		argDefs: []argDef{
+<% for (const a of op.args) { -%>
+			{name: "<%= a.name %>", gqlType: "<%= a.typeRaw %>"},
+<% } -%>
+		},
+		fields: s.fields,
+	})
+	return b
+}
+<% } -%>
+<% } %>
+func (b *<%= bk.name %>) BuildDocument() (string, map[string]interface{}) {
+	return buildDocument("<%= bk.kind %>", b.entries)
+}
+<% } %>

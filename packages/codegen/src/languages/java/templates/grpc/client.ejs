@@ -1,0 +1,70 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example'; -%>
+package <%= pkg %>.grpc;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonParser;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+
+/**
+ * Unified gRPC client for all services.
+ */
+public class <%= it.clientClass %> implements AutoCloseable {
+
+    private final String baseUrl;
+    private final HttpClient httpClient;
+    private final Gson gson;
+
+    public <%= it.clientClass %>(String baseUrl) {
+        this.baseUrl = baseUrl;
+        this.httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(30))
+            .build();
+        this.gson = new Gson();
+    }
+
+    @Override
+    public void close() {}
+
+<% for (const service of it.services) { -%>
+    private String callRaw<%= service.name %>(String method, Object request) throws GrpcException {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/grpc/<%= service.name %>/" + method))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(request != null ? gson.toJson(request) : "{}"))
+                .build();
+            HttpResponse<String> res = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() >= 400) {
+                throw new GrpcException("gRPC error " + res.statusCode() + ": " + res.body());
+            }
+            return res.body();
+        } catch (IOException | InterruptedException e) {
+            throw new GrpcException(e.getMessage());
+        }
+    }
+
+<% for (const method of service.methods) { -%>
+<% if (method.description) { -%>
+    /**
+     * <%= method.description %>
+     */
+<% } -%>
+    public <%= method.outputType %> <%= it.naming.methodName(method.name) %>(<%= method.inputType %> request) throws GrpcException {
+        return gson.fromJson(callRaw<%= service.name %>("<%= method.name %>", request), <%= method.outputType %>.class);
+    }
+
+<% } -%>
+<% } -%>
+}
+
+public class GrpcException extends Exception {
+    public GrpcException(String message) {
+        super(message);
+    }
+}

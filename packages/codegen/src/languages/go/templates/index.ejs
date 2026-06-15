@@ -1,0 +1,11 @@
+<% const clientClass = it.clientClass; %>
+<% const parts = it.config.languageConfig.package_name.split('/'); %>
+<% const pkgName = parts[parts.length - 1].replace(/-/g, ''); %>
+// Package <%= pkgName %> provides a Go client for the <%= it.spec.info.title %> API.
+//
+// Usage:
+//
+//	client := <%= pkgName %>.New<%= clientClass %>(
+//		<%= pkgName %>.WithBearerToken("your-token"),
+//	)
+package <%= pkgName %>

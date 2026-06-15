@@ -1,0 +1,5 @@
+<%~ include("grpc/init", it) %>
+
+<%~ include("grpc/example", it) %>
+
+grpc_<%= it.utils.toSnakeCase((typeof it.service === 'object' ? it.service.serviceName : it.service) ?? 'PetService') %>_client_free(&<%= (typeof it.service === 'object' && it.service.clientVar) ? it.service.clientVar : 'client' %>);

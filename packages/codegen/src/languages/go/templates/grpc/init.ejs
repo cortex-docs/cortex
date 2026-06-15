@@ -1,0 +1,14 @@
+<% const pkgFull = it.pkgName ?? it.config.languageConfig.package_name; -%>
+import (
+	"context"
+
+	grpcclient "<%= pkgFull %>/grpcclient"
+)
+
+client, err := grpcclient.New<%= it.clientClass %>(
+	grpcclient.WithTarget("localhost:50051"),
+)
+if err != nil {
+	log.Fatal(err)
+}
+defer client.Close()

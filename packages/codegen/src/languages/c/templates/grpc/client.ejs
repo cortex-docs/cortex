@@ -1,0 +1,134 @@
+#ifndef SDK_GRPC_CLIENT_H
+#define SDK_GRPC_CLIENT_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <curl/curl.h>
+#include "cjson/cJSON.h"
+#include "grpc-types.h"
+
+typedef struct {
+  char* data;
+  size_t size;
+} grpc_resp_buf_t;
+
+static size_t grpc_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+  size_t total = size * nmemb;
+  grpc_resp_buf_t* buf = (grpc_resp_buf_t*)userp;
+  char* tmp = (char*)realloc(buf->data, buf->size + total + 1);
+  if (!tmp) return 0;
+  buf->data = tmp;
+  memcpy(buf->data + buf->size, contents, total);
+  buf->size += total;
+  buf->data[buf->size] = '\0';
+  return total;
+}
+
+static inline cJSON* grpc_post(const char* base_url, const char* service, const char* method, const cJSON* request) {
+  CURL* curl = curl_easy_init();
+  if (!curl) return NULL;
+
+  char url[2048];
+  snprintf(url, sizeof(url), "%s/grpc/%s/%s", base_url, service, method);
+
+  char* body_str = cJSON_PrintUnformatted(request);
+  grpc_resp_buf_t resp = {NULL, 0};
+  struct curl_slist* headers = NULL;
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_POST, 1L);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, grpc_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+  CURLcode res = curl_easy_perform(curl);
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  free(body_str);
+
+  if (res != CURLE_OK) { free(resp.data); return NULL; }
+
+  cJSON* json = cJSON_Parse(resp.data);
+  free(resp.data);
+  return json;
+}
+
+<% const clientPrefix = 'grpc_' + it.naming.propertyName(it.clientClass); %>
+typedef struct {
+  char* base_url;
+} <%= clientPrefix %>_client_t;
+
+static inline void <%= clientPrefix %>_client_init(<%= clientPrefix %>_client_t* c, const char* endpoint) {
+  c->base_url = strdup(endpoint);
+}
+
+static inline void <%= clientPrefix %>_client_free(<%= clientPrefix %>_client_t* c) {
+  free(c->base_url);
+  c->base_url = NULL;
+}
+
+<% for (const service of it.services) { %>
+<% for (const method of service.methods) { %>
+<% const methodName = it.naming.propertyName(method.name); -%>
+<% const inputType = 'grpc_' + it.naming.propertyName(method.inputType) + '_t'; -%>
+<% const outputType = 'grpc_' + it.naming.propertyName(method.outputType) + '_t'; -%>
+<% if (method.description) { %>
+/* <%= method.description %> */
+<% } %>
+<% if (!method.clientStreaming && !method.serverStreaming) { %>
+static inline <%= outputType %> <%= clientPrefix %>_<%= methodName %>(<%= clientPrefix %>_client_t* client, const <%= inputType %>* request) {
+  cJSON* req_json = grpc_<%= it.naming.propertyName(method.inputType) %>_to_json(request);
+  cJSON* resp_json = grpc_post(client->base_url, "<%= service.name %>", "<%= method.name %>", req_json);
+  cJSON_Delete(req_json);
+  <%= outputType %> out;
+  grpc_<%= it.naming.propertyName(method.outputType) %>_from_json(resp_json, &out);
+  if (resp_json) cJSON_Delete(resp_json);
+  return out;
+}
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { %>
+typedef struct {
+  <%= outputType %>* items;
+  int count;
+  int index;
+} <%= clientPrefix %>_<%= methodName %>_stream_t;
+
+static inline <%= clientPrefix %>_<%= methodName %>_stream_t <%= clientPrefix %>_<%= methodName %>(<%= clientPrefix %>_client_t* client, const <%= inputType %>* request) {
+  cJSON* req_json = grpc_<%= it.naming.propertyName(method.inputType) %>_to_json(request);
+  cJSON* resp_json = grpc_post(client->base_url, "<%= service.name %>", "<%= method.name %>", req_json);
+  cJSON_Delete(req_json);
+  <%= clientPrefix %>_<%= methodName %>_stream_t stream;
+  memset(&stream, 0, sizeof(stream));
+  cJSON* items_json = cJSON_GetObjectItem(resp_json, "data");
+  if (!items_json) items_json = resp_json;
+  if (cJSON_IsArray(items_json)) {
+    stream.count = cJSON_GetArraySize(items_json);
+    stream.items = (<%= outputType %>*)calloc(stream.count, sizeof(<%= outputType %>));
+    for (int i = 0; i < stream.count; i++) {
+      grpc_<%= it.naming.propertyName(method.outputType) %>_from_json(cJSON_GetArrayItem(items_json, i), &stream.items[i]);
+    }
+  }
+  if (resp_json) cJSON_Delete(resp_json);
+  return stream;
+}
+
+static inline int <%= clientPrefix %>_<%= methodName %>_next(<%= clientPrefix %>_<%= methodName %>_stream_t* s, <%= outputType %>* out) {
+  if (s->index >= s->count) return 0;
+  *out = s->items[s->index++];
+  return 1;
+}
+
+static inline void <%= clientPrefix %>_<%= methodName %>_stream_free(<%= clientPrefix %>_<%= methodName %>_stream_t* s) {
+  free(s->items);
+  memset(s, 0, sizeof(*s));
+}
+
+<% } %>
+<% } %>
+<% } %>
+#endif /* SDK_GRPC_CLIENT_H */

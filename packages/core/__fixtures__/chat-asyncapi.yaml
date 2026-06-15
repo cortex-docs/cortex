@@ -1,0 +1,126 @@
+asyncapi: '2.6.0'
+info:
+  title: Chat WebSocket API
+  version: 1.0.0
+  description: A real-time chat API using WebSockets.
+
+servers:
+  production:
+    url: wss://chat.example.com/ws
+    protocol: ws
+    description: Production WebSocket server
+
+channels:
+  chat/messages:
+    description: Channel for chat messages
+    subscribe:
+      operationId: onMessage
+      summary: Receive a chat message
+      message:
+        name: ChatMessage
+        contentType: application/json
+        payload:
+          type: object
+          required:
+            - id
+            - userId
+            - text
+            - timestamp
+          properties:
+            id:
+              type: string
+            userId:
+              type: string
+            text:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+    publish:
+      operationId: sendMessage
+      summary: Send a chat message
+      message:
+        name: SendMessagePayload
+        contentType: application/json
+        payload:
+          type: object
+          required:
+            - text
+          properties:
+            text:
+              type: string
+            replyTo:
+              type: string
+
+  chat/typing:
+    description: Channel for typing indicators
+    subscribe:
+      operationId: onTyping
+      summary: Receive typing indicator
+      message:
+        name: TypingEvent
+        payload:
+          type: object
+          required:
+            - userId
+            - isTyping
+          properties:
+            userId:
+              type: string
+            isTyping:
+              type: boolean
+    publish:
+      operationId: startTyping
+      summary: Send typing indicator
+      message:
+        name: TypingPayload
+        payload:
+          type: object
+          required:
+            - isTyping
+          properties:
+            isTyping:
+              type: boolean
+
+  chat/presence:
+    description: Channel for user presence updates
+    subscribe:
+      operationId: onPresence
+      summary: Receive presence updates
+      message:
+        name: PresenceEvent
+        payload:
+          type: object
+          required:
+            - userId
+            - status
+          properties:
+            userId:
+              type: string
+            status:
+              type: string
+              enum:
+                - online
+                - offline
+                - away
+
+components:
+  schemas:
+    User:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        avatar:
+          type: string
+        status:
+          type: string
+          enum:
+            - online
+            - offline
+            - away

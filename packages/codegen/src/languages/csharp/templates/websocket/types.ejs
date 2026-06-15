@@ -1,0 +1,42 @@
+using System.Text.Json.Serialization;
+
+<% for (const schema of it.schemas) { -%>
+<% if (schema.properties.length === 0) { -%>
+public record <%= schema.className %>;
+
+<% } else { -%>
+public class <%= schema.className %>
+{
+<% for (const prop of schema.properties) { -%>
+    [JsonPropertyName("<%= prop.originalName %>")]
+    public <%= prop.type %><%= !prop.required ? '?' : '' %> <%= it.naming.propertyName(prop.originalName) %> { get; set; }<%= prop.required ? ' = default!;' : '' %>
+
+<% } -%>
+}
+
+<% } -%>
+<% } -%>
+<% for (const ch of it.channels) { -%>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { -%>
+public class <%= ch.className %>Message
+{
+<% for (const prop of ch.subscribeSchema.properties) { -%>
+    [JsonPropertyName("<%= prop.originalName %>")]
+    public <%= prop.type %><%= !prop.required ? '?' : '' %> <%= it.naming.propertyName(prop.originalName) %> { get; set; }<%= prop.required ? ' = default!;' : '' %>
+
+<% } -%>
+}
+
+<% } -%>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { -%>
+public class <%= ch.className %>Payload
+{
+<% for (const prop of ch.publishSchema.properties) { -%>
+    [JsonPropertyName("<%= prop.originalName %>")]
+    public <%= prop.type %><%= !prop.required ? '?' : '' %> <%= it.naming.propertyName(prop.originalName) %> { get; set; }<%= prop.required ? ' = default!;' : '' %>
+
+<% } -%>
+}
+
+<% } -%>
+<% } -%>

@@ -1,0 +1,30 @@
+pub mod client;
+pub mod types;
+<% for (const r of it.resources) { %>
+#[path = "resources/<%= it.naming.fileName(r.name) %>.rs"]
+pub mod <%= it.naming.fileName(r.name) %>;
+<% } %>
+<% if (it.config.config.sources.some(s => s.type === 'graphql-spec')) { %>
+#[path = "gql-client.rs"]
+pub mod gql_client;
+#[path = "gql-query-builder.rs"]
+pub mod gql_query_builder;
+#[path = "gql-types.rs"]
+pub mod gql_types;
+<% } %>
+<% if (it.config.config.sources.some(s => s.type === 'grpc-spec')) { %>
+#[path = "grpc-client.rs"]
+pub mod grpc_client;
+#[path = "grpc-types.rs"]
+pub mod grpc_types;
+<% } %>
+<% if (it.config.config.sources.some(s => s.type === 'asyncapi-spec')) { %>
+#[path = "ws-client.rs"]
+pub mod ws_client;
+#[path = "ws-types.rs"]
+pub mod ws_types;
+<% } %>
+
+<% const clientClass = it.clientClass; -%>
+pub use client::<%= clientClass %>;
+pub use types::*;

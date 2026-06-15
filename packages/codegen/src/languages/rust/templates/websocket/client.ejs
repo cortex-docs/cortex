@@ -1,0 +1,222 @@
+use futures_util::{SinkExt, StreamExt};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::time::{sleep, Duration};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+type MessageHandler = Box<dyn Fn(Value) + Send + Sync>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum WsError {
+    #[error("WebSocket error: {0}")]
+    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+    #[error("Connection closed")]
+    ConnectionClosed,
+    #[error("Send error: {0}")]
+    Send(String),
+}
+
+pub struct <%= it.clientClass %> {
+    url: String,
+    handlers: Arc<RwLock<HashMap<String, Vec<Arc<MessageHandler>>>>>,
+    sender: Arc<Mutex<Option<mpsc::UnboundedSender<Message>>>>,
+    reconnect: Arc<Mutex<bool>>,
+    reconnect_interval: Duration,
+    max_reconnect_attempts: u32,
+}
+
+impl <%= it.clientClass %> {
+    pub fn new(url: &str) -> Self {
+        let url = if url.is_empty() {
+            "<%= it.serverUrl %>".to_string()
+        } else {
+            url.to_string()
+        };
+
+        Self {
+            url,
+            handlers: Arc::new(RwLock::new(HashMap::new())),
+            sender: Arc::new(Mutex::new(None)),
+            reconnect: Arc::new(Mutex::new(true)),
+            reconnect_interval: Duration::from_secs(3),
+            max_reconnect_attempts: 10,
+        }
+    }
+
+    pub fn default() -> Self {
+        Self::new("<%= it.serverUrl %>")
+    }
+
+    pub async fn connect(&self) -> Result<(), WsError> {
+        let (ws_stream, _) = connect_async(&self.url).await?;
+        let (mut write, mut read) = ws_stream.split();
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+        {
+            let mut sender = self.sender.lock().await;
+            *sender = Some(tx);
+        }
+
+        // Spawn writer task
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                if write.send(msg).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Spawn reader task
+        let handlers = self.handlers.clone();
+        let sender = self.sender.clone();
+        let reconnect = self.reconnect.clone();
+        let url = self.url.clone();
+        let reconnect_interval = self.reconnect_interval;
+        let max_attempts = self.max_reconnect_attempts;
+
+        tokio::spawn(async move {
+            let mut attempts: u32 = 0;
+
+            loop {
+                while let Some(Ok(msg)) = read.next().await {
+                    attempts = 0;
+                    if let Message::Text(text) = msg {
+                        if let Ok(data) = serde_json::from_str::<Value>(&text) {
+                            let channel = data.get("channel")
+                                .or_else(|| data.get("type"))
+                                .or_else(|| data.get("event"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+
+                            let payload = data.get("payload")
+                                .or_else(|| data.get("data"))
+                                .cloned()
+                                .unwrap_or(data.clone());
+
+                            let handlers_read = handlers.read().await;
+                            if let Some(channel_handlers) = handlers_read.get(channel) {
+                                for handler in channel_handlers {
+                                    handler(payload.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Connection lost - attempt reconnect
+                let should_reconnect = *reconnect.lock().await;
+                if !should_reconnect || attempts >= max_attempts {
+                    break;
+                }
+
+                attempts += 1;
+                sleep(reconnect_interval).await;
+
+                match connect_async(&url).await {
+                    Ok((new_ws, _)) => {
+                        let (mut new_write, new_read) = new_ws.split();
+                        read = new_read;
+
+                        let (tx, mut new_rx) = mpsc::unbounded_channel::<Message>();
+                        {
+                            let mut s = sender.lock().await;
+                            *s = Some(tx);
+                        }
+
+                        tokio::spawn(async move {
+                            while let Some(msg) = new_rx.recv().await {
+                                if new_write.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                    Err(_) => continue,
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    pub async fn disconnect(&self) {
+        {
+            let mut reconnect = self.reconnect.lock().await;
+            *reconnect = false;
+        }
+        let mut sender = self.sender.lock().await;
+        *sender = None;
+    }
+
+    pub async fn send(&self, channel: &str, payload: Value) -> Result<(), WsError> {
+        let message = serde_json::json!({
+            "channel": channel,
+            "payload": payload,
+        });
+
+        let sender = self.sender.lock().await;
+        if let Some(tx) = sender.as_ref() {
+            tx.send(Message::Text(message.to_string()))
+                .map_err(|e| WsError::Send(e.to_string()))?;
+            Ok(())
+        } else {
+            Err(WsError::ConnectionClosed)
+        }
+    }
+
+    pub async fn subscribe<F>(&self, channel: &str, handler: F)
+    where
+        F: Fn(Value) + Send + Sync + 'static,
+    {
+        let mut handlers = self.handlers.write().await;
+        handlers
+            .entry(channel.to_string())
+            .or_insert_with(Vec::new)
+            .push(Arc::new(Box::new(handler)));
+    }
+
+    pub async fn unsubscribe(&self, channel: &str) {
+        let mut handlers = self.handlers.write().await;
+        handlers.remove(channel);
+    }
+
+<% for (const ch of it.channels) { %>
+<% if (ch.canSubscribe) { %>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %>
+    pub async fn on_<%= ch.methodName %><F>(&self, handler: F)
+    where
+        F: Fn(crate::ws_types::<%= ch.className %>Message) + Send + Sync + 'static,
+    {
+        self.subscribe("<%= ch.name %>", move |value| {
+            if let Ok(msg) = serde_json::from_value(value) {
+                handler(msg);
+            }
+        }).await;
+    }
+<% } else { %>
+    pub async fn on_<%= ch.methodName %><F>(&self, handler: F)
+    where
+        F: Fn(Value) + Send + Sync + 'static,
+    {
+        self.subscribe("<%= ch.name %>", handler).await;
+    }
+<% } %>
+
+<% } %>
+<% if (ch.canPublish) { %>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { %>
+    pub async fn send_<%= ch.methodName %>(&self, payload: &crate::ws_types::<%= ch.className %>Payload) -> Result<(), WsError> {
+        let value = serde_json::to_value(payload).unwrap();
+        self.send("<%= ch.name %>", value).await
+    }
+<% } else { %>
+    pub async fn send_<%= ch.methodName %>(&self, payload: Value) -> Result<(), WsError> {
+        self.send("<%= ch.name %>", payload).await
+    }
+<% } %>
+
+<% } %>
+<% } %>
+}

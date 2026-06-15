@@ -1,0 +1,77 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const ns = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const clientClass = it.clientClass; -%>
+<?php
+
+declare(strict_types=1);
+
+namespace <%= ns %>;
+
+use GuzzleHttp\Client as HttpClient;
+use GuzzleHttp\Exception\RequestException;
+
+class <%= clientClass %>
+{
+    private string $baseUrl;
+    private HttpClient $httpClient;
+    private array $headers;
+
+    public function __construct(
+        string $baseUrl = '<%= baseUrl %>',
+        ?string $bearerToken = null,
+        ?string $apiKey = null,
+        float $timeout = 30.0,
+    ) {
+        $this->baseUrl = $baseUrl;
+        $this->headers = ['Content-Type' => 'application/json'];
+
+        if ($bearerToken !== null) {
+            $this->headers['Authorization'] = "Bearer {$bearerToken}";
+        }
+        if ($apiKey !== null) {
+            $this->headers['X-API-Key'] = $apiKey;
+        }
+
+        $this->httpClient = new HttpClient([
+            'base_uri' => $this->baseUrl,
+            'timeout' => $timeout,
+            'headers' => $this->headers,
+        ]);
+    }
+
+<% for (const r of it.resources) { -%>
+    public function <%= it.naming.methodName(r.name) %>(): <%= r.className %>
+    {
+        return new <%= r.className %>($this);
+    }
+
+<% } -%>
+    public function request(string $method, string $path, ?array $query = null, mixed $body = null): mixed
+    {
+        $options = [];
+
+        if ($query !== null) {
+            $options['query'] = $query;
+        }
+        if ($body !== null) {
+            $options['json'] = $body;
+        }
+
+        try {
+            $response = $this->httpClient->request($method, $path, $options);
+            $statusCode = $response->getStatusCode();
+
+            if ($statusCode === 204) {
+                return null;
+            }
+
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (RequestException $e) {
+            $response = $e->getResponse();
+            throw new ApiException(
+                $response ? $response->getStatusCode() : 0,
+                $response ? $response->getBody()->getContents() : $e->getMessage(),
+            );
+        }
+    }
+}

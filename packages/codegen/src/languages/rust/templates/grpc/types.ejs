@@ -1,0 +1,39 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+<% for (const e of it.enums) { %>
+/// <%= e.name %> protobuf enum.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[repr(i32)]
+pub enum <%= e.name %> {
+<% for (const v of e.values) { %>
+    <%= it.naming.enumValue(String(v.name)) %> = <%= v.number %>,
+<% } %>
+}
+
+<% } %>
+<% for (const msg of it.messages) { %>
+/// <%= msg.name %> protobuf message.
+<% if (msg.description) { %>/// <%= msg.description %>
+<% } %>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct <%= msg.name %> {
+<% for (const f of msg.fields) { %>
+<% if (f.description) { %>
+    /// <%= f.description %>
+<% } %>
+<% if (it.naming.propertyName(f.name) !== f.name) { %>
+    #[serde(rename = "<%= f.name %>")]
+<% } %>
+<% if (f.mapKeyType) { %>
+    pub <%= it.naming.propertyName(f.name) %>: HashMap<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>>,
+<% } else if (f.optional) { %>
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub <%= it.naming.propertyName(f.name) %>: Option<<%= it.mapProtoType(f.type, f.repeated, false) %>>,
+<% } else { %>
+    pub <%= it.naming.propertyName(f.name) %>: <%= it.mapProtoType(f.type, f.repeated, false) %>,
+<% } %>
+<% } %>
+}
+
+<% } %>

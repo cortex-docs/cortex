@@ -1,0 +1,177 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example.ws'; -%>
+package <%= pkg %>
+
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.WebSocket
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionStage
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.encodeToString
+
+typealias MessageHandler = (payload: String) -> Unit
+typealias EventListener = (data: Any?) -> Unit
+
+class <%= it.clientClass %>(
+    private val url: String = "<%= it.serverUrl %>",
+    private var reconnect: Boolean = true,
+    private val reconnectInterval: Long = 3000L,
+    private val maxReconnectAttempts: Int = 10
+) {
+    private var webSocket: WebSocket? = null
+    private val httpClient: HttpClient = HttpClient.newHttpClient()
+    private val handlers = ConcurrentHashMap<String, CopyOnWriteArraySet<MessageHandler>>()
+    private val eventListeners = ConcurrentHashMap<String, CopyOnWriteArraySet<EventListener>>()
+    private var reconnectAttempts = 0
+    private val messageBuffer = StringBuilder()
+    private val scope = CoroutineScope(Dispatchers.IO)
+
+    val json: Json = Json { ignoreUnknownKeys = true }
+
+    val isConnected: Boolean
+        get() = webSocket != null
+
+    suspend fun connect() {
+        val deferred = CompletableDeferred<Unit>()
+
+        httpClient.newWebSocketBuilder()
+            .buildAsync(URI.create(url), object : WebSocket.Listener {
+
+                override fun onOpen(ws: WebSocket) {
+                    reconnectAttempts = 0
+                    webSocket = ws
+                    emit("connected", null)
+                    ws.request(1)
+                    deferred.complete(Unit)
+                }
+
+                override fun onText(ws: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+                    messageBuffer.append(data)
+                    if (last) {
+                        val fullMessage = messageBuffer.toString()
+                        messageBuffer.clear()
+                        handleMessage(fullMessage)
+                    }
+                    ws.request(1)
+                    return null
+                }
+
+                override fun onClose(ws: WebSocket, statusCode: Int, reason: String?): CompletionStage<*>? {
+                    webSocket = null
+                    emit("disconnected", mapOf("code" to statusCode, "reason" to (reason ?: "")))
+                    if (reconnect && reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++
+                        scope.launch {
+                            delay(reconnectInterval)
+                            connect()
+                        }
+                    }
+                    return null
+                }
+
+                override fun onError(ws: WebSocket, error: Throwable) {
+                    emit("error", error)
+                    if (!deferred.isCompleted) {
+                        deferred.completeExceptionally(error)
+                    }
+                }
+            })
+            .whenComplete { _, ex ->
+                if (ex != null && !deferred.isCompleted) {
+                    deferred.completeExceptionally(ex)
+                }
+            }
+
+        deferred.await()
+    }
+
+    fun disconnect() {
+        reconnect = false
+        webSocket?.sendClose(WebSocket.NORMAL_CLOSURE, "")
+        webSocket = null
+    }
+
+    suspend fun send(channel: String, payload: Any) {
+        val ws = webSocket ?: throw IllegalStateException("WebSocket is not connected")
+        val payloadElement = when (payload) {
+            is kotlinx.serialization.json.JsonElement -> payload
+            is String -> kotlinx.serialization.json.JsonPrimitive(payload)
+            is Number -> kotlinx.serialization.json.JsonPrimitive(payload)
+            is Boolean -> kotlinx.serialization.json.JsonPrimitive(payload)
+            else -> json.parseToJsonElement(payload.toString())
+        }
+        val message = buildJsonObject {
+            put("channel", channel)
+            put("payload", payloadElement)
+        }
+        ws.sendText(json.encodeToString(message), true).await()
+    }
+
+    fun subscribe(channel: String, handler: MessageHandler): () -> Unit {
+        handlers.computeIfAbsent(channel) { CopyOnWriteArraySet() }.add(handler)
+        return {
+            handlers[channel]?.remove(handler)
+        }
+    }
+
+    fun on(event: String, listener: EventListener) {
+        eventListeners.computeIfAbsent(event) { CopyOnWriteArraySet() }.add(listener)
+    }
+
+    private fun emit(event: String, data: Any?) {
+        eventListeners[event]?.forEach { it(data) }
+    }
+
+    private fun handleMessage(text: String) {
+        try {
+            val data = json.parseToJsonElement(text).jsonObject
+
+            emit("message", data)
+
+            val channel = data["channel"]?.jsonPrimitive?.content
+                ?: data["type"]?.jsonPrimitive?.content
+                ?: data["event"]?.jsonPrimitive?.content
+
+            if (channel != null && handlers.containsKey(channel)) {
+                val payload = when {
+                    data.containsKey("payload") -> json.encodeToString(JsonObject.serializer(), data["payload"]!!.jsonObject)
+                    data.containsKey("data") -> json.encodeToString(JsonObject.serializer(), data["data"]!!.jsonObject)
+                    else -> text
+                }
+                handlers[channel]?.forEach { it(payload) }
+            }
+        } catch (_: Exception) {
+            emit("message", text)
+        }
+    }
+
+<% for (const ch of it.channels) { -%>
+<% if (ch.canSubscribe) { -%>
+    /** Subscribe to <%= ch.name %><%= ch.description ? ' - ' + ch.description : '' %> */
+    fun on<%= ch.className %>(handler: MessageHandler): () -> Unit {
+        return subscribe("<%= ch.name %>", handler)
+    }
+
+<% } -%>
+<% if (ch.canPublish) { -%>
+    /** Publish to <%= ch.name %><%= ch.description ? ' - ' + ch.description : '' %> */
+    suspend fun send<%= ch.className %>(payload: Any) {
+        send("<%= ch.name %>", payload)
+    }
+
+<% } -%>
+<% } -%>
+}

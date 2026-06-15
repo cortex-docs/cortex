@@ -1,0 +1,37 @@
+{
+  "name": "@cortex/cli",
+  "version": "0.1.0",
+  "description": "CLI tool for Cortex — OpenAPI SDK generator",
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "bin": {
+    "cortex": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@cortex/codegen": "*",
+    "@cortex/core": "*",
+    "@cortex/mcp-gen": "*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "chalk": "^5.4.0",
+    "js-yaml": "^4.1.0",
+    "nest-commander": "^3.20.0",
+    "ora": "^8.2.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/node": "^22.0.0",
+    "nest-commander-testing": "^3.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

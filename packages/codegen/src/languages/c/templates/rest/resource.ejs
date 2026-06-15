@@ -1,0 +1,85 @@
+<% const r = it.resource; -%>
+<% const cKeywords = new Set(['auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if', 'inline', 'int', 'long', 'register', 'restrict', 'return', 'short', 'signed', 'sizeof', 'static', 'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while', 'delete']); -%>
+<% const safeName = (name) => cKeywords.has(name) ? name + '_' : name; -%>
+<% const schemaTypeNames = new Set(it.schemas.map(s => 'sdk_' + it.naming.propertyName(s.name) + '_t')); -%>
+<% const isTypedResponse = (type) => { const cType = 'sdk_' + it.naming.propertyName(type) + '_t'; return type !== 'cJSON*' && type !== 'void' && (schemaTypeNames.has(cType) || it.schemas.some(s => it.naming.className(s.name) === type)); }; -%>
+<% const isVoid = (type) => type === 'void'; -%>
+<% const prefix = 'sdk_' + it.naming.propertyName(r.name); -%>
+<% const guardName = 'SDK_RESOURCE_' + it.naming.enumValue(r.name) + '_H'; -%>
+#ifndef <%= guardName %>
+#define <%= guardName %>
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include "../types.h"
+#include "../client.h"
+
+<% for (const op of r.operations) { -%>
+<% const bodyTyped = op.hasBody && isTypedResponse(op.bodyType); -%>
+<% const respTyped = isTypedResponse(op.responseType); -%>
+<% const respVoid = isVoid(op.responseType); -%>
+<% const respCType = respTyped ? 'sdk_' + it.naming.propertyName(op.responseType) + '_t' : 'cJSON*'; -%>
+<% const params = ['sdk_client_t* client']; -%>
+<% for (const p of op.pathParams) { params.push('const char* ' + p.name); } -%>
+<% if (op.hasBody) { -%>
+<%   if (bodyTyped) { params.push('const sdk_' + it.naming.propertyName(op.bodyType) + '_t* body'); } -%>
+<%   else { params.push('const cJSON* body'); } -%>
+<% } -%>
+<% for (const p of op.queryParams) { params.push('const char* ' + p.name); } -%>
+<% let pathExpr = '"' + op.path + '"'; -%>
+<% for (const p of op.pathParams) { -%>
+<%   pathExpr = null; -%>
+<% } -%>
+<% if (op.summary) { -%>
+/* <%= op.summary %> */
+<% } -%>
+<% if (respVoid) { -%>
+static inline void <%= prefix %>_<%= safeName(op.name) %>(<%= params.join(', ') %>) {
+<% } else if (respTyped) { -%>
+static inline <%= respCType %> <%= prefix %>_<%= safeName(op.name) %>(<%= params.join(', ') %>) {
+<% } else { -%>
+static inline cJSON* <%= prefix %>_<%= safeName(op.name) %>(<%= params.join(', ') %>) {
+<% } -%>
+<% /* Build path string */ -%>
+<% if (op.pathParams.length > 0) { -%>
+  char path_buf[512];
+<% let fmt = op.path; let fmtArgs = []; -%>
+<% for (const p of op.pathParams) { fmt = fmt.replace('{' + p.originalName + '}', '%s'); fmtArgs.push(p.name); } -%>
+  snprintf(path_buf, sizeof(path_buf), "<%= fmt %>", <%= fmtArgs.join(', ') %>);
+<% } -%>
+<% const pathArg = op.pathParams.length > 0 ? 'path_buf' : '"' + op.path + '"'; -%>
+<% /* Build body JSON */ -%>
+<% if (op.hasBody && bodyTyped) { -%>
+  cJSON* body_json = sdk_<%= it.naming.propertyName(op.bodyType) %>_to_json(body);
+<% } -%>
+<% /* Build query params */ -%>
+<% if (op.queryParams.length > 0) { -%>
+  char query_buf[1024] = "";
+  int qoff = 0;
+<% for (let i = 0; i < op.queryParams.length; i++) { const q = op.queryParams[i]; -%>
+  if (<%= q.name %>) qoff += snprintf(query_buf + qoff, sizeof(query_buf) - qoff, "%s<%= q.originalName %>=%s", qoff > 0 ? "&" : "?", <%= q.name %>);
+<% } -%>
+  char full_path[1536];
+  snprintf(full_path, sizeof(full_path), "%s%s", <%= pathArg %>, query_buf);
+<% } -%>
+<% const finalPath = op.queryParams.length > 0 ? 'full_path' : pathArg; -%>
+<% const bodyArg = op.hasBody ? (bodyTyped ? 'body_json' : '(cJSON*)body') : 'NULL'; -%>
+  cJSON* result = sdk_request(client, "<%= op.method %>", <%= finalPath %>, <%= bodyArg %>);
+<% if (op.hasBody && bodyTyped) { -%>
+  cJSON_Delete(body_json);
+<% } -%>
+<% if (respVoid) { -%>
+  if (result) cJSON_Delete(result);
+<% } else if (respTyped) { -%>
+  <%= respCType %> out;
+  sdk_<%= it.naming.propertyName(op.responseType) %>_from_json(result, &out);
+  if (result) cJSON_Delete(result);
+  return out;
+<% } else { -%>
+  return result;
+<% } -%>
+}
+
+<% } -%>
+#endif /* <%= guardName %> */

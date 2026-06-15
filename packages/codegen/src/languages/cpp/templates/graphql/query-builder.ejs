@@ -1,0 +1,188 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <map>
+#include <functional>
+#include <sstream>
+#include <nlohmann/json.hpp>
+#include "gql-types.hpp"
+
+namespace sdk::gql {
+
+// ─── Runtime ──────────────────────────────────────────────
+
+struct FieldEntry {
+  std::string name;
+  std::vector<FieldEntry> children;
+};
+
+inline std::string build_selection(const std::vector<FieldEntry>& entries, const std::string& indent) {
+  std::string result;
+  for (size_t i = 0; i < entries.size(); ++i) {
+    const auto& e = entries[i];
+    if (e.children.empty()) {
+      result += indent + e.name;
+    } else {
+      result += indent + e.name + " {\n";
+      result += build_selection(e.children, indent + "  ");
+      result += indent + "}";
+    }
+    if (i + 1 < entries.size()) result += "\n";
+  }
+  return result;
+}
+
+struct RootEntry {
+  std::string field;
+  nlohmann::json args;
+  std::vector<std::pair<std::string, std::string>> arg_defs;
+  std::vector<FieldEntry> selection;
+};
+
+inline std::pair<std::string, nlohmann::json> build_document(
+  const std::string& kind,
+  const std::vector<RootEntry>& entries
+) {
+  nlohmann::json variables = nlohmann::json::object();
+  std::vector<std::string> var_defs;
+  std::vector<std::string> parts;
+  int vi = 0;
+
+  for (const auto& entry : entries) {
+    std::vector<std::string> arg_parts;
+    if (entry.args.is_object()) {
+      for (const auto& [def_name, def_gql_type] : entry.arg_defs) {
+        if (entry.args.contains(def_name)) {
+          std::string vn = "v" + std::to_string(vi++);
+          var_defs.push_back("$" + vn + ": " + def_gql_type);
+          arg_parts.push_back(def_name + ": $" + vn);
+          variables[vn] = entry.args[def_name];
+        }
+      }
+    }
+    std::string args_str = arg_parts.empty() ? "" : "(" + [&] {
+      std::string s;
+      for (size_t i = 0; i < arg_parts.size(); ++i) {
+        if (i > 0) s += ", ";
+        s += arg_parts[i];
+      }
+      return s;
+    }() + ")";
+
+    if (entry.selection.empty()) {
+      parts.push_back("    " + entry.field + args_str);
+    } else {
+      std::string sel = build_selection(entry.selection, "      ");
+      parts.push_back("    " + entry.field + args_str + " {\n" + sel + "\n    }");
+    }
+  }
+
+  std::string vd = var_defs.empty() ? "" : "(" + [&] {
+    std::string s;
+    for (size_t i = 0; i < var_defs.size(); ++i) {
+      if (i > 0) s += ", ";
+      s += var_defs[i];
+    }
+    return s;
+  }() + ")";
+
+  std::string query = kind + vd + " {\n";
+  for (size_t i = 0; i < parts.size(); ++i) {
+    query += parts[i];
+    if (i + 1 < parts.size()) query += "\n";
+  }
+  query += "\n  }";
+
+  return {query, variables};
+}
+
+// ─── Selector Structs ─────────────────────────────────────
+<% for (const t of it.types) { %>
+
+struct <%= t.name %>Selector {
+  std::vector<FieldEntry> fields_;
+
+<% for (const f of t.fields) { -%>
+<% if (it.isScalarType(f.type) || it.enumNames.has(f.type)) { %>
+  <%= t.name %>Selector& <%= it.naming.propertyName(f.name) %>() {
+    fields_.push_back({"<%= f.name %>", {}});
+    return *this;
+  }
+<% } else if (it.typesByName.has(f.type)) { %>
+  template<typename Fn>
+  <%= t.name %>Selector& <%= it.naming.propertyName(f.name) %>(Fn fn) {
+    <%= f.type %>Selector sub;
+    fn(sub);
+    fields_.push_back({"<%= f.name %>", std::move(sub.fields_)});
+    return *this;
+  }
+<% } -%>
+<% } -%>
+};
+<% } %>
+
+// ─── Root Builders ────────────────────────────────────────
+<% const opKinds = [
+  { name: 'QueryBuilder', ops: it.queries, kind: 'Query' },
+  { name: 'MutationBuilder', ops: it.mutations, kind: 'Mutation' },
+  { name: 'SubscriptionBuilder', ops: it.subscriptions, kind: 'Subscription' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+struct <%= bk.name %> {
+  std::vector<RootEntry> entries_;
+
+  std::pair<std::string, nlohmann::json> build_document() const {
+    return gql::build_document("<%= bk.kind.toLowerCase() %>", entries_);
+  }
+
+<% for (const op of bk.ops) { -%>
+<% const cppName = it.naming.propertyName(op.name); -%>
+<% const returnType = op.returnType; -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const argDefs = op.args.map(a => `{"${a.name}", "${a.typeRaw}"}`).join(', '); -%>
+<% const opHasArgs = op.args.length > 0; -%>
+<% const opTypeName = it.naming.className(op.name); -%>
+<% const varsType = opHasArgs ? `${opTypeName}${bk.kind}Variables` : null; -%>
+<% if (isScalarReturn) { %>
+<% if (varsType) { -%>
+  <%= bk.name %>& <%= cppName %>(const <%= varsType %>& vars) {
+    entries_.push_back({"<%= op.name %>", nlohmann::json(vars), {<%= argDefs %>}, {}});
+    return *this;
+  }
+<% } else { -%>
+  <%= bk.name %>& <%= cppName %>() {
+    entries_.push_back({"<%= op.name %>", nlohmann::json::object(), {<%= argDefs %>}, {}});
+    return *this;
+  }
+<% } -%>
+<% } else { %>
+<% if (varsType) { -%>
+  template<typename Fn>
+  <%= bk.name %>& <%= cppName %>(const <%= varsType %>& vars, Fn fn) {
+    <%= returnType %>Selector sub;
+    fn(sub);
+    entries_.push_back({"<%= op.name %>", nlohmann::json(vars), {<%= argDefs %>}, std::move(sub.fields_)});
+    return *this;
+  }
+<% } -%>
+
+  template<typename Fn>
+  <%= bk.name %>& <%= cppName %>(Fn fn) {
+<% if (varsType) { -%>
+    return <%= cppName %>(<%= varsType %>{}, fn);
+<% } else { -%>
+    <%= returnType %>Selector sub;
+    fn(sub);
+    entries_.push_back({"<%= op.name %>", nlohmann::json::object(), {<%= argDefs %>}, std::move(sub.fields_)});
+    return *this;
+<% } -%>
+  }
+<% } -%>
+<% } -%>
+};
+<% } %>
+
+} // namespace sdk::gql

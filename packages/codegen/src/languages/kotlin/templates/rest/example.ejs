@@ -1,0 +1,28 @@
+<% const op = it.op; -%>
+<% const resource = it.resource; -%>
+// <%= op.summary || op.name %>
+<% if (op.method === 'DELETE' && op.responseType === 'Unit') { -%>
+client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>)
+<% } else if (op.method === 'GET' && op.pathParams.length === 0) { -%>
+val <%= resource.name %> = client.<%= resource.name %>.<%= op.name %>(<% if (op.queryParams.length > 0) { %>mapOf(<%= op.queryParams.map(q => `"${q.name}" to ${q.type === 'Int' || q.type === 'Long' || q.type === 'Double' ? '"10"' : '"value"'}`).join(', ') %>)<% } %>)
+<% } else if (op.method === 'GET' && op.pathParams.length > 0) { -%>
+val <%= it.utils.singularize(resource.name) %> = client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>)
+<% } else if (op.hasBody && op.pathParams.length === 0) { -%>
+val created = client.<%= resource.name %>.<%= op.name %>(<%= op.bodyType %>(
+<% const bodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (bodySchema) { for (const prop of bodySchema.properties.filter(p => p.required)) { -%>
+    <%= prop.name %> = <%= prop.type === 'String' ? '"value"' : prop.type === 'Int' || prop.type === 'Long' || prop.type === 'Double' ? '0' : '"value"' %>,
+<% } } else { -%>
+    // <%= op.bodyType %> fields
+<% } -%>
+))
+<% } else if (op.hasBody && op.pathParams.length > 0) { -%>
+val updated = client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>, <%= op.bodyType %>(
+<% const updBodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (updBodySchema) { for (const prop of updBodySchema.properties.slice(0, 3)) { -%>
+    <%= prop.name %> = <%= prop.type === 'String' ? '"value"' : prop.type === 'Int' || prop.type === 'Long' || prop.type === 'Double' ? '0' : '"value"' %>,
+<% } } else { -%>
+    // <%= op.bodyType %> fields
+<% } -%>
+))
+<% } -%>

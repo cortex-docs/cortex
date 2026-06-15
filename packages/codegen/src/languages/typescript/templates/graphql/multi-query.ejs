@@ -1,0 +1,10 @@
+<% const queries = (it.queries ?? []).slice(0, 2); -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return 'true'; if (a.type === 'ID') return `'example-${a.name}'`; return `'value'`; }; -%>
+// Multi-query: fetch multiple resources in one call
+const multi = await gql.query(q =>
+  q
+<% for (const query of queries) { -%>
+<% const argsObj = query.args.length > 0 ? `{ ${query.args.map(a => `${a.name}: ${exVal(a)}`).join(', ')} }` : '{}'; -%>
+    .<%= query.name %>(<%= argsObj %>, p => p.id().name())
+<% } -%>
+);

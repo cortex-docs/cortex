@@ -1,0 +1,44 @@
+using System.Text.Json.Serialization;
+
+namespace <%= it.naming.className(it.packageName) %>.Grpc;
+
+<% for (const e of it.enums) { -%>
+/// <summary>
+/// <%= e.name %> protobuf enum.
+/// </summary>
+public enum <%= e.name %>
+{
+<% for (let i = 0; i < e.values.length; i++) { -%>
+    <%= e.values[i].name %> = <%= e.values[i].number %><%= i < e.values.length - 1 ? ',' : '' %>
+<% } -%>
+}
+
+<% } -%>
+<% for (const msg of it.messages) { -%>
+/// <summary>
+/// <%= msg.name %> protobuf message.
+<% if (msg.description) { -%>
+/// <%= msg.description %>
+<% } -%>
+/// </summary>
+public class <%= msg.name %>
+{
+<% for (const f of msg.fields) { -%>
+<% if (f.description) { -%>
+    /// <summary><%= f.description %></summary>
+<% } -%>
+    [JsonPropertyName("<%= f.name %>")]
+<% if (f.mapKeyType) { -%>
+    public Dictionary<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>>? <%= it.naming.className(f.name) %> { get; set; }
+
+<% } else if (f.optional) { -%>
+    public <%= it.mapProtoType(f.type, f.repeated, false) %>? <%= it.naming.className(f.name) %> { get; set; }
+
+<% } else { -%>
+    public <%= it.mapProtoType(f.type, f.repeated, false) %> <%= it.naming.className(f.name) %> { get; set; } = default!;
+
+<% } -%>
+<% } -%>
+}
+
+<% } -%>

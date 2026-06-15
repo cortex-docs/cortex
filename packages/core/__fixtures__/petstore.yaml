@@ -1,0 +1,385 @@
+openapi: '3.1.0'
+info:
+  title: Petstore API
+  version: 1.0.0
+  description: A sample API for managing pets in a pet store.
+servers:
+  - url: https://api.petstore.example.com/v1
+    description: Production server
+
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List all pets
+      tags:
+        - pets
+      x-cortex-resource: pets
+      x-cortex-method-name: list
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            maximum: 100
+          description: Maximum number of pets to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Pagination cursor
+      responses:
+        '200':
+          description: A list of pets
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Pet'
+                  next_cursor:
+                    type: string
+                    description: Cursor for the next page
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: createPet
+      summary: Create a pet
+      tags:
+        - pets
+      x-cortex-resource: pets
+      x-cortex-method-name: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePetRequest'
+      responses:
+        '201':
+          description: The created pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      summary: Get a pet by ID
+      tags:
+        - pets
+      x-cortex-resource: pets
+      x-cortex-method-name: get
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the pet
+      responses:
+        '200':
+          description: The pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '404':
+          description: Pet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      operationId: updatePet
+      summary: Update a pet
+      tags:
+        - pets
+      x-cortex-resource: pets
+      x-cortex-method-name: update
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePetRequest'
+      responses:
+        '200':
+          description: The updated pet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '404':
+          description: Pet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deletePet
+      summary: Delete a pet
+      tags:
+        - pets
+      x-cortex-resource: pets
+      x-cortex-method-name: delete
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Pet deleted successfully
+        '404':
+          description: Pet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /owners:
+    get:
+      operationId: listOwners
+      summary: List all owners
+      tags:
+        - owners
+      x-cortex-resource: owners
+      x-cortex-method-name: list
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: A list of owners
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Owner'
+    post:
+      operationId: createOwner
+      summary: Create an owner
+      tags:
+        - owners
+      x-cortex-resource: owners
+      x-cortex-method-name: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOwnerRequest'
+      responses:
+        '201':
+          description: The created owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Owner'
+
+  /owners/{ownerId}:
+    get:
+      operationId: getOwner
+      summary: Get an owner by ID
+      tags:
+        - owners
+      x-cortex-resource: owners
+      x-cortex-method-name: get
+      parameters:
+        - name: ownerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The owner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Owner'
+        '404':
+          description: Owner not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Pet:
+      type: object
+      required:
+        - id
+        - name
+        - species
+        - status
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the pet
+        name:
+          type: string
+          description: Name of the pet
+        species:
+          type: string
+          enum:
+            - dog
+            - cat
+            - bird
+            - fish
+            - reptile
+          description: Species of the pet
+        breed:
+          type: string
+          description: Breed of the pet
+        age:
+          type: integer
+          description: Age of the pet in years
+        status:
+          type: string
+          enum:
+            - available
+            - adopted
+            - pending
+          description: Adoption status
+        owner_id:
+          type: string
+          description: ID of the owner, if adopted
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreatePetRequest:
+      type: object
+      required:
+        - name
+        - species
+      properties:
+        name:
+          type: string
+        species:
+          type: string
+          enum:
+            - dog
+            - cat
+            - bird
+            - fish
+            - reptile
+        breed:
+          type: string
+        age:
+          type: integer
+
+    UpdatePetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        breed:
+          type: string
+        age:
+          type: integer
+        status:
+          type: string
+          enum:
+            - available
+            - adopted
+            - pending
+        owner_id:
+          type: string
+
+    Owner:
+      type: object
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateOwnerRequest:
+      type: object
+      required:
+        - name
+        - email
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []

@@ -1,0 +1,14 @@
+<% const queries = (it.queries ?? []).slice(0, 2); -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return 'true'; if (a.type === 'ID') return `ptr("example_${a.name}")`; return 'ptr("value")'; }; -%>
+// Multi-query: fetch multiple resources in one call
+multi, err := gql.Query(func(q *gqlclient.QueryBuilder) *gqlclient.QueryBuilder {
+	return q.
+<% for (let i = 0; i < queries.length; i++) { const query = queries[i]; -%>
+<% const pascalName = query.name.charAt(0).toUpperCase() + query.name.slice(1); -%>
+<% if (query.args.length > 0) { -%>
+		<%= pascalName %>(&gqlclient.<%= pascalName %>Args{<%= query.args.map(a => `${a.name.charAt(0).toUpperCase() + a.name.slice(1)}: ${exVal(a)}`).join(', ') %>}, func(p *gqlclient.<%= pascalName %>Fields) *gqlclient.<%= pascalName %>Fields { return p.Id().Name() })<%= i < queries.length - 1 ? '.' : '' %>
+<% } else { -%>
+		<%= pascalName %>(nil, func(p *gqlclient.<%= pascalName %>Fields) *gqlclient.<%= pascalName %>Fields { return p.Id().Name() })<%= i < queries.length - 1 ? '.' : '' %>
+<% } -%>
+<% } -%>
+})

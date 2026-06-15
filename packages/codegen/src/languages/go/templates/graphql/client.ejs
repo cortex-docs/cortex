@@ -1,0 +1,373 @@
+<% const pkgName = 'gqlclient'; -%>
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+package <%= pkgName %>
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+<% if (hasSubscriptions) { -%>
+	"strings"
+	"sync"
+<% } -%>
+	"time"
+<% if (hasSubscriptions) { -%>
+
+	"github.com/gorilla/websocket"
+<% } -%>
+)
+
+// <%= it.clientClass %> is the GraphQL API client.
+type <%= it.clientClass %> struct {
+	endpoint   string
+<% if (hasSubscriptions) { -%>
+	wsEndpoint string
+<% } -%>
+	httpClient *http.Client
+	headers    map[string]string
+<% if (hasSubscriptions) { -%>
+	mu         sync.Mutex
+	wsConn     *websocket.Conn
+	nextSubID  int
+	subs       map[string]func(json.RawMessage)
+<% } -%>
+}
+
+// <%= it.clientClass %>Option is a functional option for configuring the <%= it.clientClass %>.
+type <%= it.clientClass %>Option func(*<%= it.clientClass %>)
+
+// WithEndpoint sets a custom GraphQL endpoint URL.
+func WithEndpoint(endpoint string) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.endpoint = endpoint }
+}
+<% if (hasSubscriptions) { %>
+// WithWsEndpoint sets a custom WebSocket endpoint URL for subscriptions.
+func WithWsEndpoint(wsEndpoint string) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.wsEndpoint = wsEndpoint }
+}
+<% } -%>
+
+// WithBearerToken sets the Authorization header with a Bearer token.
+func WithBearerToken(token string) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.headers["Authorization"] = "Bearer " + token }
+}
+
+// WithHeader sets a custom header on all requests.
+func WithHeader(key, value string) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.headers[key] = value }
+}
+
+// WithTimeout sets the HTTP client timeout.
+func WithTimeout(d time.Duration) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.httpClient.Timeout = d }
+}
+
+// WithHTTPClient sets a custom http.Client.
+func WithHTTPClient(httpClient *http.Client) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.httpClient = httpClient }
+}
+
+// New<%= it.clientClass %> creates a new GraphQL client with the given options.
+func New<%= it.clientClass %>(opts ...<%= it.clientClass %>Option) *<%= it.clientClass %> {
+	c := &<%= it.clientClass %>{
+		endpoint:   "<%= it.endpoint %>",
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+<% if (hasSubscriptions) { -%>
+		subs: make(map[string]func(json.RawMessage)),
+<% } -%>
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+<% if (hasSubscriptions) { %>
+	if c.wsEndpoint == "" {
+		c.wsEndpoint = strings.Replace(c.endpoint, "http", "ws", 1)
+	}
+<% } -%>
+
+	return c
+}
+
+type gqlRequest struct {
+	Query     string      `json:"query"`
+	Variables interface{} `json:"variables,omitempty"`
+}
+
+type gqlResponse struct {
+	Data   json.RawMessage `json:"data"`
+	Errors []GqlError      `json:"errors,omitempty"`
+}
+
+// GqlError represents a GraphQL error.
+type GqlError struct {
+	Message string `json:"message"`
+}
+
+func (e GqlError) Error() string {
+	return e.Message
+}
+
+// GqlErrors is a collection of GraphQL errors.
+type GqlErrors []GqlError
+
+func (e GqlErrors) Error() string {
+	msgs := ""
+	for i, err := range e {
+		if i > 0 {
+			msgs += "; "
+		}
+		msgs += err.Message
+	}
+	return msgs
+}
+
+func (c *<%= it.clientClass %>) execute(query string, variables interface{}, result interface{}) error {
+	reqBody := gqlRequest{Query: query, Variables: variables}
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.endpoint, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+
+	var gqlResp gqlResponse
+	if err := json.Unmarshal(body, &gqlResp); err != nil {
+		return fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	if len(gqlResp.Errors) > 0 {
+		return GqlErrors(gqlResp.Errors)
+	}
+
+	if result != nil && len(gqlResp.Data) > 0 {
+		if err := json.Unmarshal(gqlResp.Data, result); err != nil {
+			return fmt.Errorf("unmarshal data: %w", err)
+		}
+	}
+
+	return nil
+}
+<% if (hasQueries) { %>
+// Query executes a GraphQL query built with the QueryBuilder.
+func (c *<%= it.clientClass %>) Query(fn func(*QueryBuilder) *QueryBuilder) (*QueryResult, error) {
+	b := &QueryBuilder{}
+	fn(b)
+	query, variables := b.BuildDocument()
+	var result QueryResult
+	err := c.execute(query, variables, &result)
+	return &result, err
+}
+<% } -%>
+<% if (hasMutations) { %>
+// Mutate executes a GraphQL mutation built with the MutationBuilder.
+func (c *<%= it.clientClass %>) Mutate(fn func(*MutationBuilder) *MutationBuilder) (*MutationResult, error) {
+	b := &MutationBuilder{}
+	fn(b)
+	query, variables := b.BuildDocument()
+	var result MutationResult
+	err := c.execute(query, variables, &result)
+	return &result, err
+}
+<% } -%>
+<% if (hasSubscriptions) { %>
+func (c *<%= it.clientClass %>) ensureWsConn() error {
+	if c.wsConn != nil {
+		return nil
+	}
+
+	header := http.Header{}
+	for k, v := range c.headers {
+		if k != "Content-Type" {
+			header.Set(k, v)
+		}
+	}
+
+	dialer := websocket.Dialer{
+		Subprotocols: []string{"graphql-transport-ws"},
+	}
+	conn, _, err := dialer.Dial(c.wsEndpoint, header)
+	if err != nil {
+		return fmt.Errorf("ws connect: %w", err)
+	}
+	c.wsConn = conn
+
+	initPayload := map[string]interface{}{}
+	if auth, ok := c.headers["Authorization"]; ok {
+		initPayload["Authorization"] = auth
+	}
+	if err := conn.WriteJSON(map[string]interface{}{
+		"type":    "connection_init",
+		"payload": initPayload,
+	}); err != nil {
+		conn.Close()
+		c.wsConn = nil
+		return fmt.Errorf("ws init: %w", err)
+	}
+
+	var ack struct {
+		Type string `json:"type"`
+	}
+	if err := conn.ReadJSON(&ack); err != nil {
+		conn.Close()
+		c.wsConn = nil
+		return fmt.Errorf("ws ack: %w", err)
+	}
+	if ack.Type != "connection_ack" {
+		conn.Close()
+		c.wsConn = nil
+		return fmt.Errorf("expected connection_ack, got %s", ack.Type)
+	}
+
+	go c.readWsMessages(conn)
+	return nil
+}
+
+func (c *<%= it.clientClass %>) readWsMessages(conn *websocket.Conn) {
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var msg struct {
+			Type    string          `json:"type"`
+			ID      string          `json:"id,omitempty"`
+			Payload json.RawMessage `json:"payload,omitempty"`
+		}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			continue
+		}
+
+		switch msg.Type {
+		case "next":
+			c.mu.Lock()
+			handler, ok := c.subs[msg.ID]
+			c.mu.Unlock()
+			if ok {
+				handler(msg.Payload)
+			}
+		case "complete":
+			c.mu.Lock()
+			delete(c.subs, msg.ID)
+			c.mu.Unlock()
+		}
+	}
+}
+
+// Subscribe starts a GraphQL subscription and calls handler for each event.
+// Returns an unsubscribe function.
+func (c *<%= it.clientClass %>) Subscribe(fn func(*SubscriptionBuilder) *SubscriptionBuilder, handler func(*SubscriptionResult)) (func(), error) {
+	b := &SubscriptionBuilder{}
+	fn(b)
+	query, variables := b.BuildDocument()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if err := c.ensureWsConn(); err != nil {
+		return nil, err
+	}
+
+	id := fmt.Sprintf("%d", c.nextSubID)
+	c.nextSubID++
+
+	c.subs[id] = func(payload json.RawMessage) {
+		var envelope struct {
+			Data SubscriptionResult `json:"data"`
+		}
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			return
+		}
+		handler(&envelope.Data)
+	}
+
+	if err := c.wsConn.WriteJSON(map[string]interface{}{
+		"type": "subscribe",
+		"id":   id,
+		"payload": map[string]interface{}{
+			"query":     query,
+			"variables": variables,
+		},
+	}); err != nil {
+		delete(c.subs, id)
+		return nil, fmt.Errorf("ws subscribe: %w", err)
+	}
+
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		delete(c.subs, id)
+		if c.wsConn != nil {
+			c.wsConn.WriteJSON(map[string]interface{}{
+				"type": "complete",
+				"id":   id,
+			})
+		}
+	}, nil
+}
+
+// SubscribeOnce waits for the first event from a subscription and returns it.
+func (c *<%= it.clientClass %>) SubscribeOnce(fn func(*SubscriptionBuilder) *SubscriptionBuilder, timeoutMs ...int) (*SubscriptionResult, error) {
+	timeout := 10000
+	if len(timeoutMs) > 0 {
+		timeout = timeoutMs[0]
+	}
+
+	resultCh := make(chan *SubscriptionResult, 1)
+
+	unsubscribe, err := c.Subscribe(fn, func(data *SubscriptionResult) {
+		select {
+		case resultCh <- data:
+		default:
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case result := <-resultCh:
+		unsubscribe()
+		return result, nil
+	case <-time.After(time.Duration(timeout) * time.Millisecond):
+		unsubscribe()
+		return nil, fmt.Errorf("subscription timeout")
+	}
+}
+
+// Dispose closes the WebSocket connection and cleans up resources.
+func (c *<%= it.clientClass %>) Dispose() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.wsConn != nil {
+		c.wsConn.Close()
+		c.wsConn = nil
+	}
+	c.subs = make(map[string]func(json.RawMessage))
+}
+<% } %>

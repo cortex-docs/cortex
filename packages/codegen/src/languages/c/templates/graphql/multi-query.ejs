@@ -1,0 +1,12 @@
+<% const queries = (it.queries ?? []).slice(0, 2); -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return '1'; if (a.type === 'ID') return `"example_${a.name}"`; return '"value"'; }; -%>
+// Multi-query: fetch multiple resources in one call
+gql_query_builder_t mq;
+gql_qb_init(&mq);
+<% for (const query of queries) { -%>
+<% const argsStr = query.args.length > 0 ? `, &(gql_${query.name}_args_t){${query.args.map(a => `.${a.name} = ${exVal(a)}`).join(', ')}}` : ''; -%>
+gql_qb_<%= query.name %>(&mq<%= argsStr %>, &(gql_<%= query.name %>_fields_t){.id = 1, .name = 1});
+<% } -%>
+gql_query_result_t mr = gql_query(&gql, &mq);
+gql_builder_free(&mq);
+gql_query_result_free(&mr);

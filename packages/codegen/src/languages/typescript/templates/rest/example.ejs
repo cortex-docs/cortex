@@ -1,0 +1,41 @@
+<% const op = it.op; const resource = it.resource; -%>
+// <%= op.summary || op.name %>
+<% if (op.method === 'DELETE' && op.responseType === 'void') { -%>
+await client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>);
+<% } else if (op.method === 'DELETE') { -%>
+const deleted = await client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>);
+<% } else if (op.method === 'GET' && op.pathParams.length === 0) { -%>
+<% if (op.queryParams.length > 0) { -%>
+const <%= resource.name %> = await client.<%= resource.name %>.<%= op.name %>({
+<% for (const q of op.queryParams) { -%>
+  <%= q.name %>: <%= q.type === 'number' || q.type === 'integer' ? '10' : `'value'` %>,
+<% } -%>
+});
+<% } else { -%>
+const <%= resource.name %> = await client.<%= resource.name %>.<%= op.name %>();
+<% } -%>
+<% } else if (op.method === 'GET' && op.pathParams.length > 0) { -%>
+const <%= it.utils.singularize(resource.name) %> = await client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>);
+<% } else if (op.hasBody && op.pathParams.length === 0) { -%>
+<% const bodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+const created = await client.<%= resource.name %>.<%= op.name %>({
+<% if (bodySchema) { for (const prop of bodySchema.properties.filter(p => p.required)) { -%>
+  <%= prop.name %>: <%= prop.type === 'string' ? `'value'` : prop.type === 'number' ? '0' : `'value'` %>,
+<% } } else { -%>
+  // <%= op.bodyType %> fields
+<% } -%>
+});
+<% } else if (op.hasBody && op.pathParams.length > 0) { -%>
+<% const updBodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+const updated = await client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>, {
+<% if (updBodySchema) { for (const prop of updBodySchema.properties.slice(0, 3)) { -%>
+  <%= prop.name %>: <%= prop.type === 'string' ? `'value'` : prop.type === 'number' ? '0' : `'value'` %>,
+<% } } else { -%>
+  // <%= op.bodyType %> fields
+<% } -%>
+});
+<% } else if (op.pathParams.length > 0) { -%>
+const result = await client.<%= resource.name %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>);
+<% } else { -%>
+const result = await client.<%= resource.name %>.<%= op.name %>();
+<% } -%>

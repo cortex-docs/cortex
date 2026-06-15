@@ -1,0 +1,79 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() + '.graphql' : 'com.example.graphql'; -%>
+package <%= pkg %>
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+
+<% for (const e of it.enums) { -%>
+@Serializable
+enum class <%= e.name %>(val value: String) {
+<% for (let i = 0; i < e.values.length; i++) { -%>
+<% const v = e.values[i]; -%>
+    @SerialName("<%= v %>")
+    <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %>("<%= v %>")<%= i < e.values.length - 1 ? ',' : ';' %>
+<% } -%>
+}
+
+<% } -%>
+<% for (const t of it.types) { -%>
+/**
+ * <%= t.name %> GraphQL type.
+<% if (t.description) { -%>
+ * <%= t.description %>
+<% } -%>
+ */
+@Serializable
+data class <%= t.name %>(
+<% for (let i = 0; i < t.fields.length; i++) { -%>
+<% const f = t.fields[i]; -%>
+<% const nullable = f.required ? '' : '?'; -%>
+<% const default_ = f.required ? '' : ' = null'; -%>
+    @SerialName("<%= f.name %>")
+    val <%= it.naming.propertyName(f.name) %>: <%= it.mapGqlType(f.type, f.required, f.isList) %><%= nullable %><%= default_ %><%= i < t.fields.length - 1 ? ',' : '' %>
+<% } -%>
+)
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+/**
+ * <%= inp.name %> GraphQL input type.
+ */
+@Serializable
+data class <%= inp.name %>(
+<% for (let i = 0; i < inp.fields.length; i++) { -%>
+<% const f = inp.fields[i]; -%>
+<% const nullable = f.required ? '' : '?'; -%>
+<% const default_ = f.required ? '' : ' = null'; -%>
+    @SerialName("<%= f.name %>")
+    val <%= it.naming.propertyName(f.name) %>: <%= it.mapGqlType(f.type, f.required, f.isList) %><%= nullable %><%= default_ %><%= i < inp.fields.length - 1 ? ',' : '' %>
+<% } -%>
+)
+
+<% } -%>
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+/**
+ * Variables for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+ */
+@Serializable
+data class <%= op.variablesTypeName %>(
+<% for (let i = 0; i < op.args.length; i++) { -%>
+<% const arg = op.args[i]; -%>
+<% const nullable = arg.required ? '' : '?'; -%>
+<% const default_ = arg.required ? '' : ' = null'; -%>
+    @SerialName("<%= arg.name %>")
+    val <%= it.naming.propertyName(arg.name) %>: <%= it.resolveType(arg.type) %><%= nullable %><%= default_ %><%= i < op.args.length - 1 ? ',' : '' %>
+<% } -%>
+)
+
+<% } -%>
+/**
+ * Result type for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+ */
+@Serializable
+data class <%= op.resultTypeName %>(
+    @SerialName("<%= op.name %>")
+    val <%= it.naming.propertyName(op.name) %>: <%= op.returnTypeStr %>
+)
+
+<% } -%>

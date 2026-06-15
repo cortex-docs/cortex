@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+from typing import Any, Optional
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CortexModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+<% for (const schema of it.schemas) { %>
+class <%= schema.className %>(CortexModel):
+<% if (schema.properties.length === 0) { %>
+    pass
+<% } else { %>
+<% for (const prop of schema.properties) { %>
+<% const needsAlias = prop.name !== prop.originalName; -%>
+    <%= prop.name %>: <% if (!prop.required) { %>Optional[<%= prop.type %>]<% } else { %><%= prop.type %><% } %><% if (needsAlias) { %> = Field(<%= !prop.required ? 'None, ' : '' %>alias="<%= prop.originalName %>")<% } else { %><%= !prop.required ? ' = None' : '' %><% } %>
+<% } %>
+<% } %>
+
+<% } %>
+<% for (const ch of it.channels) { %>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %>
+class <%= ch.className %>Message(CortexModel):
+<% for (const prop of ch.subscribeSchema.properties) { %>
+<% const needsAlias = prop.name !== prop.originalName; -%>
+    <%= prop.name %>: <% if (!prop.required) { %>Optional[<%= prop.type %>]<% } else { %><%= prop.type %><% } %><% if (needsAlias) { %> = Field(<%= !prop.required ? 'None, ' : '' %>alias="<%= prop.originalName %>")<% } else { %><%= !prop.required ? ' = None' : '' %><% } %>
+<% } %>
+
+<% } %>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { %>
+class <%= ch.className %>Payload(CortexModel):
+<% for (const prop of ch.publishSchema.properties) { %>
+<% const needsAlias = prop.name !== prop.originalName; -%>
+    <%= prop.name %>: <% if (!prop.required) { %>Optional[<%= prop.type %>]<% } else { %><%= prop.type %><% } %><% if (needsAlias) { %> = Field(<%= !prop.required ? 'None, ' : '' %>alias="<%= prop.originalName %>")<% } else { %><%= !prop.required ? ' = None' : '' %><% } %>
+<% } %>
+
+<% } %>
+<% } %>

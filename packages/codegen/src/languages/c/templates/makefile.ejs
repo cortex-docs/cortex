@@ -1,0 +1,28 @@
+CC ?= gcc
+CFLAGS = -std=c11 -Wall -Wextra -pedantic -O2
+LDFLAGS = -lcurl -lpthread
+
+CJSON_VERSION = 1.7.18
+CJSON_DIR = src/cjson
+
+SOURCES = $(CJSON_DIR)/cJSON.c
+HEADERS = $(wildcard src/*.h) $(wildcard src/resources/*.h) $(CJSON_DIR)/cJSON.h
+
+.PHONY: all clean
+
+all: lib<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-') %>.a
+
+$(CJSON_DIR)/cJSON.c $(CJSON_DIR)/cJSON.h:
+	@mkdir -p $(CJSON_DIR)
+	@curl -sfL https://raw.githubusercontent.com/DaveGamble/cJSON/v$(CJSON_VERSION)/cJSON.c -o $(CJSON_DIR)/cJSON.c
+	@curl -sfL https://raw.githubusercontent.com/DaveGamble/cJSON/v$(CJSON_VERSION)/cJSON.h -o $(CJSON_DIR)/cJSON.h
+	@echo "Downloaded cJSON v$(CJSON_VERSION)"
+
+lib<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-') %>.a: $(SOURCES:.c=.o)
+	ar rcs $@ $^
+
+%.o: %.c $(HEADERS)
+	$(CC) $(CFLAGS) -I src -c $< -o $@
+
+clean:
+	rm -f $(SOURCES:.c=.o) lib<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-') %>.a

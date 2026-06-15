@@ -1,0 +1,46 @@
+<% const r = it.resource; -%>
+<% const ns = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const clientClass = it.clientClass; -%>
+using <%= ns %>.Models;
+
+namespace <%= ns %>;
+
+public class <%= r.className %>
+{
+    private readonly <%= clientClass %> _client;
+
+    public <%= r.className %>(<%= clientClass %> client) => _client = client;
+
+<% for (const op of r.operations) { -%>
+<% const params = []; -%>
+<% for (const p of op.pathParams) { params.push(`string ${p.name}`); } -%>
+<% if (op.hasBody) { params.push(`${op.bodyType} body`); } -%>
+<% if (op.queryParams.length > 0) { params.push('Dictionary<string, string>? query = null'); } -%>
+<% let pathExpr = `"${op.path}"`; -%>
+<% for (const p of op.pathParams) { pathExpr = `${pathExpr}.Replace("{${p.originalName}}", ${p.name})`; } -%>
+<% const httpMethod = `HttpMethod.${op.method.charAt(0).toUpperCase() + op.method.slice(1).toLowerCase()}`; -%>
+<% const queryArg = op.queryParams.length > 0 ? 'query' : 'null'; -%>
+<% const bodyArg = op.hasBody ? 'body' : 'null'; -%>
+<% const isVoid = op.responseType === 'void'; -%>
+<% const isList = !!op.listItemType; -%>
+<% let returnType; -%>
+<% if (isVoid) { returnType = null; } -%>
+<% else if (isList) { returnType = `ApiListResult<${op.listItemType}>`; } -%>
+<% else { returnType = op.responseType; } -%>
+<% if (op.summary) { -%>
+    /// <summary><%= op.summary %></summary>
+<% } -%>
+<% if (isVoid) { -%>
+    public async Task <%= it.naming.className(op.name) %>Async(<%= params.join(', ') %>)
+    {
+        await _client.RequestVoidAsync(<%= httpMethod %>, <%= pathExpr %>, <%= queryArg %>, <%= bodyArg %>);
+    }
+<% } else { -%>
+    public async Task<<%= returnType %>> <%= it.naming.className(op.name) %>Async(<%= params.join(', ') %>)
+    {
+        return await _client.RequestAsync<<%= returnType %>>(<%= httpMethod %>, <%= pathExpr %>, <%= queryArg %>, <%= bodyArg %>);
+    }
+<% } -%>
+
+<% } -%>
+}

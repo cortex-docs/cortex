@@ -1,0 +1,82 @@
+use serde::{Deserialize, Serialize};
+
+<% for (const e of it.enums) { -%>
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum <%= e.name %> {
+<% for (const v of e.values) { -%>
+    #[serde(rename = "<%= v %>")]
+    <%= it.naming.enumValue(String(v)) %>,
+<% } -%>
+}
+
+<% } -%>
+<% for (const t of it.types) { -%>
+/// <%= t.name %> GraphQL type.
+<% if (t.description) { -%>
+/// <%= t.description %>
+<% } -%>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct <%= t.name %> {
+<% for (const f of t.fields) { -%>
+<% const mapped = it.mapSchemaField(f); -%>
+<% if (it.naming.propertyName(f.name) !== f.name) { -%>
+    #[serde(rename = "<%= f.name %>")]
+<% } -%>
+<% if (!f.required) { -%>
+    #[serde(skip_serializing_if = "Option::is_none")]
+<% } -%>
+    pub <%= it.naming.propertyName(f.name) %>: <%= mapped %>,
+<% } -%>
+}
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+/// <%= inp.name %> GraphQL input type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct <%= inp.name %> {
+<% for (const f of inp.fields) { -%>
+<% const mapped = it.mapInputField(f); -%>
+<% if (it.naming.propertyName(f.name) !== f.name) { -%>
+    #[serde(rename = "<%= f.name %>")]
+<% } -%>
+<% if (!f.required) { -%>
+    #[serde(skip_serializing_if = "Option::is_none")]
+<% } -%>
+    pub <%= it.naming.propertyName(f.name) %>: <%= mapped %>,
+<% } -%>
+}
+
+<% } -%>
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+/// Variables for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct <%= op.variablesTypeName %> {
+<% for (const arg of op.args) { -%>
+<% const baseType = it.resolveType(arg.type); -%>
+<% if (it.naming.propertyName(arg.name) !== arg.name) { -%>
+    #[serde(rename = "<%= arg.name %>")]
+<% } -%>
+<% if (!arg.required) { -%>
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub <%= it.naming.propertyName(arg.name) %>: Option<<%= baseType %>>,
+<% } else { -%>
+    pub <%= it.naming.propertyName(arg.name) %>: <%= baseType %>,
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+/// Result of the <%= op.name %> <%= op.kind.toLowerCase() %>.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct <%= op.resultTypeName %> {
+<% if (it.naming.propertyName(op.name) !== op.name) { -%>
+    #[serde(rename = "<%= op.name %>")]
+<% } -%>
+<% if (!op.returnRequired) { -%>
+    #[serde(skip_serializing_if = "Option::is_none")]
+<% } -%>
+    pub <%= it.naming.propertyName(op.name) %>: <%= op.returnTypeStr %>,
+}
+
+<% } -%>

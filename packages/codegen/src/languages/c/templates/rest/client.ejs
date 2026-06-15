@@ -1,0 +1,121 @@
+#ifndef SDK_CLIENT_H
+#define SDK_CLIENT_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <curl/curl.h>
+#include "cjson/cJSON.h"
+
+<% const clientPrefix = it.naming.propertyName(it.config.languageConfig.package_name); %>
+
+typedef struct {
+  char* base_url;
+  char* api_key;
+  char* bearer_token;
+  int timeout;
+} sdk_client_t;
+
+typedef struct {
+  char* data;
+  size_t size;
+} sdk_response_buf_t;
+
+static size_t sdk_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+  size_t total = size * nmemb;
+  sdk_response_buf_t* buf = (sdk_response_buf_t*)userp;
+  char* tmp = (char*)realloc(buf->data, buf->size + total + 1);
+  if (!tmp) return 0;
+  buf->data = tmp;
+  memcpy(buf->data + buf->size, contents, total);
+  buf->size += total;
+  buf->data[buf->size] = '\0';
+  return total;
+}
+
+static inline void sdk_client_init(sdk_client_t* c, const char* base_url) {
+  memset(c, 0, sizeof(*c));
+  c->base_url = strdup(base_url);
+  c->timeout = 30;
+}
+
+static inline void sdk_client_free(sdk_client_t* c) {
+  if (!c) return;
+  free(c->base_url);
+  free(c->api_key);
+  free(c->bearer_token);
+  memset(c, 0, sizeof(*c));
+}
+
+static inline cJSON* sdk_request(sdk_client_t* client, const char* method, const char* path, const cJSON* body) {
+  CURL* curl = curl_easy_init();
+  if (!curl) return NULL;
+
+  char url[2048];
+  snprintf(url, sizeof(url), "%s%s", client->base_url, path);
+
+  sdk_response_buf_t resp = {NULL, 0};
+  struct curl_slist* headers = NULL;
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+
+  if (client->bearer_token) {
+    char auth[512];
+    snprintf(auth, sizeof(auth), "Authorization: Bearer %s", client->bearer_token);
+    headers = curl_slist_append(headers, auth);
+  }
+  if (client->api_key) {
+    char key[512];
+    snprintf(key, sizeof(key), "X-API-Key: %s", client->api_key);
+    headers = curl_slist_append(headers, key);
+  }
+
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, sdk_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)client->timeout);
+
+  char* body_str = NULL;
+  if (body) {
+    body_str = cJSON_PrintUnformatted(body);
+  }
+
+  if (strcmp(method, "POST") == 0) {
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str ? body_str : "");
+  } else if (strcmp(method, "PUT") == 0) {
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str ? body_str : "");
+  } else if (strcmp(method, "PATCH") == 0) {
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str ? body_str : "");
+  } else if (strcmp(method, "DELETE") == 0) {
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+  }
+
+  CURLcode res = curl_easy_perform(curl);
+
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  free(body_str);
+
+  if (res != CURLE_OK) {
+    free(resp.data);
+    return NULL;
+  }
+
+  if (http_code == 204 || !resp.data || resp.size == 0) {
+    free(resp.data);
+    return cJSON_CreateNull();
+  }
+
+  cJSON* json = cJSON_Parse(resp.data);
+  free(resp.data);
+  return json;
+}
+
+#endif /* SDK_CLIENT_H */

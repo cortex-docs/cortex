@@ -1,0 +1,274 @@
+<% const pkgName = 'grpcclient'; %>
+package <%= pkgName %>
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+)
+
+// ClientOption is a functional option for configuring gRPC clients.
+type ClientOption func(*clientConfig)
+
+type clientConfig struct {
+	target     string
+	baseURL    string
+	dialOpts   []grpc.DialOption
+	httpClient *http.Client
+}
+
+// WithTarget sets the gRPC server address.
+func WithTarget(target string) ClientOption {
+	return func(c *clientConfig) { c.target = target }
+}
+
+// WithBaseURL enables the HTTP-backed gRPC test transport.
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *clientConfig) { c.baseURL = baseURL }
+}
+
+// WithDialOptions sets additional gRPC dial options.
+func WithDialOptions(opts ...grpc.DialOption) ClientOption {
+	return func(c *clientConfig) { c.dialOpts = append(c.dialOpts, opts...) }
+}
+
+// WithHTTPClient sets the HTTP client used by the HTTP-backed transport.
+func WithHTTPClient(httpClient *http.Client) ClientOption {
+	return func(c *clientConfig) { c.httpClient = httpClient }
+}
+
+func newClientConfig(opts []ClientOption) clientConfig {
+	cfg := clientConfig{
+		target:     "localhost:50051",
+		dialOpts:   []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return cfg
+}
+
+func postJSON(ctx context.Context, client *http.Client, baseURL, service, method string, req interface{}, out interface{}) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+	url := fmt.Sprintf("%s/grpc/%s/%s", strings.TrimRight(baseURL, "/"), service, method)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("grpc http error %d: %s", resp.StatusCode, string(data))
+	}
+
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil && err != io.EOF {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+type httpServerStream[T any] struct {
+	ctx   context.Context
+	items []T
+	index int
+}
+
+func (s *httpServerStream[T]) Header() (metadata.MD, error) { return metadata.MD{}, nil }
+func (s *httpServerStream[T]) Trailer() metadata.MD { return metadata.MD{} }
+func (s *httpServerStream[T]) CloseSend() error { return nil }
+func (s *httpServerStream[T]) Context() context.Context { return s.ctx }
+func (s *httpServerStream[T]) SendMsg(m interface{}) error { return nil }
+func (s *httpServerStream[T]) RecvMsg(m interface{}) error {
+	next, err := s.Recv()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(next)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, m)
+}
+func (s *httpServerStream[T]) Recv() (*T, error) {
+	if s.index >= len(s.items) {
+		return nil, io.EOF
+	}
+	item := &s.items[s.index]
+	s.index++
+	return item, nil
+}
+
+<% for (const service of it.services) { %>
+<% for (const method of service.methods) { %>
+<% if (!method.clientStreaming && method.serverStreaming) { %>
+// <%= it.naming.className(method.name) %>Stream is a server-streaming receiver for <%= method.name %>.
+type <%= it.naming.className(method.name) %>Stream interface {
+	Recv() (*<%= method.outputType %>, error)
+	grpc.ClientStream
+}
+
+type <%= it.naming.className(method.name) %>ClientStream struct {
+	grpc.ClientStream
+}
+
+func (s *<%= it.naming.className(method.name) %>ClientStream) Recv() (*<%= method.outputType %>, error) {
+	out := new(<%= method.outputType %>)
+	if err := s.ClientStream.RecvMsg(out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+<% } else if (method.clientStreaming && !method.serverStreaming) { %>
+// <%= it.naming.className(method.name) %>Stream is a client-streaming sender for <%= method.name %>.
+type <%= it.naming.className(method.name) %>Stream interface {
+	Send(*<%= method.inputType %>) error
+	CloseAndRecv() (*<%= method.outputType %>, error)
+	grpc.ClientStream
+}
+
+<% } else if (method.clientStreaming && method.serverStreaming) { %>
+// <%= it.naming.className(method.name) %>Stream is a bidirectional stream for <%= method.name %>.
+type <%= it.naming.className(method.name) %>Stream interface {
+	Send(*<%= method.inputType %>) error
+	Recv() (*<%= method.outputType %>, error)
+	grpc.ClientStream
+}
+
+<% } %>
+<% } %>
+<% } %>
+// <%= it.clientClass %> is a unified gRPC client for all services.
+type <%= it.clientClass %> struct {
+	conns       map[string]*grpc.ClientConn
+	baseURL    string
+	httpClient *http.Client
+}
+
+// New<%= it.clientClass %> creates a new unified gRPC client.
+func New<%= it.clientClass %>(opts ...ClientOption) (*<%= it.clientClass %>, error) {
+	cfg := newClientConfig(opts)
+	c := &<%= it.clientClass %>{
+		conns:      make(map[string]*grpc.ClientConn),
+		baseURL:    cfg.baseURL,
+		httpClient: cfg.httpClient,
+	}
+	if cfg.baseURL != "" {
+		return c, nil
+	}
+<% for (const service of it.services) { %>
+	conn<%= service.name %>, err := grpc.NewClient(cfg.target, cfg.dialOpts...)
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+	c.conns["<%= service.name %>"] = conn<%= service.name %>
+<% } %>
+	return c, nil
+}
+
+// Close closes all underlying gRPC connections.
+func (c *<%= it.clientClass %>) Close() error {
+	var lastErr error
+	for _, conn := range c.conns {
+		if conn != nil {
+			if err := conn.Close(); err != nil {
+				lastErr = err
+			}
+		}
+	}
+	return lastErr
+}
+
+<% for (const service of it.services) { %>
+<% for (const method of service.methods) { %>
+<% if (method.description) { %>// <%= it.naming.className(method.name) %> — <%= method.description %>
+<% } else { %>// <%= it.naming.className(method.name) %> invokes the <%= method.name %> RPC.
+<% } %>
+<% if (!method.clientStreaming && !method.serverStreaming) { %>
+func (c *<%= it.clientClass %>) <%= it.naming.className(method.name) %>(ctx context.Context, req *<%= method.inputType %>, callOpts ...grpc.CallOption) (*<%= method.outputType %>, error) {
+	out := new(<%= method.outputType %>)
+	if c.baseURL != "" {
+		if err := postJSON(ctx, c.httpClient, c.baseURL, "<%= service.name %>", "<%= method.name %>", req, out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	err := c.conns["<%= service.name %>"].Invoke(ctx, "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>", req, out, callOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { %>
+func (c *<%= it.clientClass %>) <%= it.naming.className(method.name) %>(ctx context.Context, req *<%= method.inputType %>, callOpts ...grpc.CallOption) (<%= it.naming.className(method.name) %>Stream, error) {
+	if c.baseURL != "" {
+		var envelope struct {
+			Data []<%= method.outputType %> `json:"data"`
+		}
+		if err := postJSON(ctx, c.httpClient, c.baseURL, "<%= service.name %>", "<%= method.name %>", req, &envelope); err != nil {
+			return nil, err
+		}
+		return &httpServerStream[<%= method.outputType %>]{ctx: ctx, items: envelope.Data}, nil
+	}
+	streamDesc := &grpc.StreamDesc{ServerStreams: true}
+	stream, err := c.conns["<%= service.name %>"].NewStream(ctx, streamDesc, "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>", callOpts...)
+	if err != nil {
+		return nil, err
+	}
+	if err := stream.SendMsg(req); err != nil {
+		return nil, err
+	}
+	if err := stream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return &<%= it.naming.className(method.name) %>ClientStream{ClientStream: stream}, nil
+}
+
+<% } else if (method.clientStreaming && !method.serverStreaming) { %>
+func (c *<%= it.clientClass %>) <%= it.naming.className(method.name) %>(ctx context.Context, callOpts ...grpc.CallOption) (<%= it.naming.className(method.name) %>Stream, error) {
+	streamDesc := &grpc.StreamDesc{ClientStreams: true}
+	stream, err := c.conns["<%= service.name %>"].NewStream(ctx, streamDesc, "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>", callOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return stream, nil
+}
+
+<% } else { %>
+func (c *<%= it.clientClass %>) <%= it.naming.className(method.name) %>(ctx context.Context, callOpts ...grpc.CallOption) (<%= it.naming.className(method.name) %>Stream, error) {
+	streamDesc := &grpc.StreamDesc{ServerStreams: true, ClientStreams: true}
+	stream, err := c.conns["<%= service.name %>"].NewStream(ctx, streamDesc, "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>", callOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return stream, nil
+}
+
+<% } %>
+<% } %>
+<% } %>

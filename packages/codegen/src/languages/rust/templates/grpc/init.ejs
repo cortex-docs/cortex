@@ -1,0 +1,5 @@
+<% const crateName = it.utils.toSnakeCase(it.config.languageConfig.package_name); -%>
+use <%= crateName %>::grpc;
+use <%= crateName %>::grpc::<%= it.clientClass %>;
+
+let mut client = <%= it.clientClass %>::connect("http://localhost:50051").await?;

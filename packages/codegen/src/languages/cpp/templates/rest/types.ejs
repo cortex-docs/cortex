@@ -1,0 +1,60 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <map>
+#include <optional>
+#include <cstdint>
+#include <nlohmann/json.hpp>
+
+namespace sdk {
+
+<% for (const schema of it.schemas) { %>
+<% if (schema.isEnum) { %>
+enum class <%= schema.className %> {
+<% for (const v of schema.enumValues) { %>
+  <%= it.naming.enumValue(String(v)) %>,
+<% } %>
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(<%= schema.className %>, {
+<% for (const v of schema.enumValues) { %>
+  { <%= schema.className %>::<%= it.naming.enumValue(String(v)) %>, "<%= v %>" },
+<% } %>
+})
+
+<% } else { %>
+struct <%= schema.className %> {
+<% for (const prop of schema.properties) { %>
+<% if (prop.required) { %>
+  <%= prop.type %> <%= prop.name %>;
+<% } else { %>
+  std::optional<<%= prop.type %>> <%= prop.name %>;
+<% } %>
+<% } %>
+};
+
+inline void to_json(nlohmann::json& j, const <%= schema.className %>& v) {
+  j = nlohmann::json{};
+<% for (const prop of schema.properties) { %>
+<% if (prop.required) { %>
+  j["<%= prop.originalName %>"] = v.<%= prop.name %>;
+<% } else { %>
+  if (v.<%= prop.name %>.has_value()) j["<%= prop.originalName %>"] = v.<%= prop.name %>.value();
+<% } %>
+<% } %>
+}
+
+inline void from_json(const nlohmann::json& j, <%= schema.className %>& v) {
+<% for (const prop of schema.properties) { %>
+<% if (prop.required) { %>
+  if (j.contains("<%= prop.originalName %>")) j.at("<%= prop.originalName %>").get_to(v.<%= prop.name %>);
+<% } else { %>
+  if (j.contains("<%= prop.originalName %>") && !j["<%= prop.originalName %>"].is_null()) v.<%= prop.name %> = j["<%= prop.originalName %>"].get<<%= prop.type %>>();
+<% } %>
+<% } %>
+}
+
+<% } %>
+<% } %>
+} // namespace sdk

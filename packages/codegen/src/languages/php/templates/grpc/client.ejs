@@ -1,0 +1,119 @@
+<?php
+
+declare(strict_types=1);
+
+class GrpcClientOptions
+{
+    public function __construct(
+        public readonly string $target = 'localhost:50051',
+        public readonly ?string $baseUrl = null,
+        public readonly mixed $credentials = null,
+    ) {}
+}
+
+/**
+ * Unified gRPC client for all services.
+ */
+class <%= it.clientClass %>
+{
+    private ?string $baseUrl;
+    private mixed $stub = null;
+
+    public function __construct(?GrpcClientOptions $options = null)
+    {
+        $opts = $options ?? new GrpcClientOptions();
+        $this->baseUrl = $opts->baseUrl;
+
+        if ($this->baseUrl === null && extension_loaded('grpc')) {
+            $creds = $opts->credentials ?? \Grpc\ChannelCredentials::createInsecure();
+            $this->stub = new class($opts->target, ['credentials' => $creds]) extends \Grpc\BaseStub {};
+        } elseif ($this->baseUrl === null) {
+            throw new \RuntimeException('grpc extension is required when GrpcClientOptions::baseUrl is not provided');
+        }
+    }
+
+    public function close(): void
+    {
+        if ($this->stub !== null) {
+            $this->stub->close();
+        }
+    }
+
+<% for (const service of it.services) { -%>
+    private function postJson<%= service.name %>(string $method, mixed $payload, ?float $timeout = null): array
+    {
+        $url = rtrim($this->baseUrl, '/') . '/grpc/<%= service.name %>/' . $method;
+        $body = is_array($payload) ? json_encode($payload) : json_encode((array) $payload);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => (int) ($timeout ?? 30),
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            throw new \RuntimeException("gRPC-over-HTTP request failed with status {$httpCode}: {$response}");
+        }
+
+        return json_decode($response, true) ?: [];
+    }
+
+<% for (const method of service.methods) { -%>
+<% if (method.description) { -%>
+    /**
+     * <%= method.description %>
+     */
+<% } -%>
+<% if (!method.clientStreaming && !method.serverStreaming) { -%>
+    public function <%= it.naming.methodName(method.name) %>(mixed $request, ?float $timeout = null): mixed
+    {
+        $data = is_array($request) ? $request : (method_exists($request, 'toArray') ? $request->toArray() : (array) $request);
+        if ($this->baseUrl !== null) {
+            $result = $this->postJson<%= service.name %>('<%= method.name %>', $data, $timeout);
+            return (object) $this->deepWrap($result);
+        }
+        throw new \RuntimeException('Native gRPC calls require the grpc extension');
+    }
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { -%>
+    /** @return list<object> */
+    public function <%= it.naming.methodName(method.name) %>(mixed $request, ?float $timeout = null): array
+    {
+        $data = is_array($request) ? $request : (method_exists($request, 'toArray') ? $request->toArray() : (array) $request);
+        if ($this->baseUrl !== null) {
+            $result = $this->postJson<%= service.name %>('<%= method.name %>', $data, $timeout);
+            $items = $result['data'] ?? $result;
+            return array_map(fn($item) => (object) $this->deepWrap($item), $items);
+        }
+        throw new \RuntimeException('Native gRPC calls require the grpc extension');
+    }
+
+<% } else { -%>
+    public function <%= it.naming.methodName(method.name) %>(mixed $request, ?float $timeout = null): mixed
+    {
+        throw new \RuntimeException('Streaming RPC not supported via HTTP fallback');
+    }
+
+<% } -%>
+<% } -%>
+<% } -%>
+    private function deepWrap(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            if (array_is_list($value)) {
+                return array_map(fn($v) => $this->deepWrap($v), $value);
+            }
+            $obj = new \stdClass();
+            foreach ($value as $k => $v) {
+                $obj->{$k} = $this->deepWrap($v);
+            }
+            return $obj;
+        }
+        return $value;
+    }
+}

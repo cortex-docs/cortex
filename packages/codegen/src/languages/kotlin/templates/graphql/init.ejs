@@ -1,0 +1,10 @@
+<% const baseUrl = it.baseUrl ?? (it.spec.info.servers[0]?.url ?? 'http://localhost:3000'); -%>
+<% const pkg = it.pkg ?? it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+<% const gqlEndpoint = baseUrl.replace(/\/v\d+$/, '') + '/graphql'; -%>
+<% const wsEndpoint = baseUrl.replace(/\/v\d+$/, '').replace(/^http/, 'ws') + '/graphql'; -%>
+import <%= pkg %>.graphql.<%= it.clientClass %>
+
+val gql = <%= it.clientClass %>(
+    endpoint = "<%= gqlEndpoint %>",
+    wsEndpoint = "<%= wsEndpoint %>",
+)

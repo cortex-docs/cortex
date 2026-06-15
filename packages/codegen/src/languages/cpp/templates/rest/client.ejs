@@ -1,0 +1,141 @@
+#pragma once
+
+#include <string>
+#include <map>
+#include <vector>
+#include <optional>
+#include <stdexcept>
+#include <cstdint>
+#include <nlohmann/json.hpp>
+#include <httplib.h>
+<% for (const r of it.resources) { %>
+#include "resources/<%= it.naming.fileName(r.name) %>.hpp"
+<% } %>
+
+<% const clientClass = it.clientClass; %>
+namespace sdk {
+
+struct ClientOptions {
+  std::string base_url = "<%= it.spec.info.servers[0]?.url ?? 'http://localhost:3000' %>";
+  std::string api_key;
+  std::string bearer_token;
+  std::map<std::string, std::string> headers;
+  int timeout = 30;
+};
+
+class ApiError : public std::runtime_error {
+public:
+  int status;
+  std::string body;
+  ApiError(int s, const std::string& status_text, const std::string& b)
+    : std::runtime_error("API Error " + std::to_string(s) + ": " + status_text),
+      status(s), body(b) {}
+};
+
+using RequestFn = std::function<nlohmann::json(
+  const std::string&,
+  const std::string&,
+  const std::map<std::string, std::string>&,
+  const nlohmann::json*
+)>;
+
+class <%= clientClass %> {
+  std::string base_url_;
+  std::map<std::string, std::string> headers_;
+  int timeout_;
+
+  nlohmann::json do_request(
+    const std::string& method,
+    const std::string& path,
+    const std::map<std::string, std::string>& query,
+    const nlohmann::json* body
+  ) {
+    httplib::Client cli(base_url_);
+    cli.set_connection_timeout(timeout_);
+    cli.set_read_timeout(timeout_);
+
+    std::string full_path = path;
+    if (!query.empty()) {
+      full_path += "?";
+      bool first = true;
+      for (const auto& [k, v] : query) {
+        if (!first) full_path += "&";
+        full_path += httplib::detail::encode_query_param(k) + "=" + httplib::detail::encode_query_param(v);
+        first = false;
+      }
+    }
+
+    httplib::Headers hdrs(headers_.begin(), headers_.end());
+    std::string json_body = body ? body->dump() : "";
+
+    httplib::Result res;
+    if (method == "GET") {
+      res = cli.Get(full_path, hdrs);
+    } else if (method == "POST") {
+      res = cli.Post(full_path, hdrs, json_body, "application/json");
+    } else if (method == "PUT") {
+      res = cli.Put(full_path, hdrs, json_body, "application/json");
+    } else if (method == "PATCH") {
+      res = cli.Patch(full_path, hdrs, json_body, "application/json");
+    } else if (method == "DELETE") {
+      res = cli.Delete(full_path, hdrs);
+    } else {
+      res = cli.Get(full_path, hdrs);
+    }
+
+    if (!res) {
+      throw ApiError(-1, "Request failed", "Connection error");
+    }
+
+    if (res->status >= 400) {
+      throw ApiError(res->status, res->reason, res->body);
+    }
+
+    if (res->status == 204 || res->body.empty()) {
+      return nullptr;
+    }
+
+    return nlohmann::json::parse(res->body);
+  }
+
+public:
+<% for (const r of it.resources) { %>
+  <%= r.className %> <%= it.naming.propertyName(r.name) %>;
+<% } %>
+
+  explicit <%= clientClass %>(const ClientOptions& opts = {})
+    : base_url_(opts.base_url),
+      timeout_(opts.timeout)
+  {
+    headers_["Content-Type"] = "application/json";
+    for (const auto& [k, v] : opts.headers) {
+      headers_[k] = v;
+    }
+    if (!opts.bearer_token.empty()) {
+      headers_["Authorization"] = "Bearer " + opts.bearer_token;
+    }
+    if (!opts.api_key.empty()) {
+      headers_["X-API-Key"] = opts.api_key;
+    }
+
+    auto req = [this](const std::string& method, const std::string& path,
+                       const std::map<std::string, std::string>& query,
+                       const nlohmann::json* body) {
+      return this->do_request(method, path, query, body);
+    };
+<% for (const r of it.resources) { %>
+    <%= it.naming.propertyName(r.name) %> = <%= r.className %>(req);
+<% } %>
+  }
+
+  nlohmann::json request(
+    const std::string& method,
+    const std::string& path,
+    const std::map<std::string, std::string>& query = {},
+    const nlohmann::json* body = nullptr
+  ) {
+    return do_request(method, path, query, body);
+  }
+};
+
+} // namespace sdk

@@ -1,0 +1,21 @@
+<% const method = it.method; -%>
+<% const service = it.service ?? {}; -%>
+<% const clientVar = service.clientVar ?? (service.serviceName ? '$' + service.serviceName.charAt(0).toLowerCase() + service.serviceName.slice(1).replace(/Service$/, '') + 'Client' : '$client'); -%>
+<% const callName = method.callName ?? (method.methodName.charAt(0).toLowerCase() + method.methodName.slice(1)); -%>
+<% const fields = (method.inputFields ?? []).map(f => `'${f.name}' => ${f.type === 'number' || f.type === 'integer' ? '0' : "'value'"}`); -%>
+<% const args = fields.length > 0 ? `[${fields.join(', ')}]` : '[]'; -%>
+<% if (method.serverStreaming) { -%>
+// <%= method.methodName %> (server streaming)
+$stream = <%= clientVar %>-><%= callName %>(<%= args %>);
+foreach ($stream as $item) {
+    print_r($item);
+}
+<% } else if (method.clientStreaming) { -%>
+// <%= method.methodName %> (client streaming)
+$stream = <%= clientVar %>-><%= callName %>();
+$stream->write(<%= args %>);
+$result = $stream->close();
+<% } else { -%>
+// <%= method.methodName %>
+$result = <%= clientVar %>-><%= callName %>(<%= args %>);
+<% } -%>

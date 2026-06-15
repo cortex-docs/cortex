@@ -1,0 +1,7 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+#include "ws_client.hpp"
+#include "ws_types.hpp"
+
+sdk::ws::<%= it.clientClass %> ws({
+  .url = "<%= baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') %>/ws",
+});

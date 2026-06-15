@@ -1,0 +1,73 @@
+# frozen_string_literal: true
+
+<%
+function toCamel(s) {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+const messageNames = new Set(it.messages.map(m => m.name));
+-%>
+<% for (const e of it.enums) { -%>
+module <%= e.name %>
+<% for (const v of e.values) { -%>
+  <%= v.name %> = <%= v.number %>
+<% } -%>
+
+  ALL = [
+<% for (const v of e.values) { -%>
+    <%= v.name %>,
+<% } -%>
+  ].freeze
+end
+
+<% } -%>
+<% for (const msg of it.messages) { -%>
+<% if (msg.fields.length > 0) { -%>
+<%= msg.name %> = Struct.new(
+<% for (let i = 0; i < msg.fields.length; i++) { -%>
+  :<%= it.naming.propertyName(msg.fields[i].name) %><%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    return nil if hash.nil?
+    new(
+<% for (let i = 0; i < msg.fields.length; i++) {
+  const f = msg.fields[i];
+  const snake = f.name;
+  const camel = toCamel(f.name);
+  const needsFallback = snake !== camel;
+  const val = needsFallback ? `(hash["${snake}"] || hash["${camel}"])` : `hash["${snake}"]`;
+  const isMsg = messageNames.has(f.type);
+-%>
+<% if (f.repeated && isMsg) { -%>
+      (<%= val %> || []).map { |item| <%= f.type %>.from_hash(item) }<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else if (isMsg) { -%>
+      <%= f.type %>.from_hash(<%= val %>)<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else { -%>
+      <%= val %><%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } -%>
+<% } -%>
+    )
+  end
+
+  def to_hash
+    {
+<% for (let i = 0; i < msg.fields.length; i++) { -%>
+      "<%= msg.fields[i].name %>" => <%= it.naming.propertyName(msg.fields[i].name) %><%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } -%>
+    }
+  end
+end
+
+<% } else { -%>
+<%= msg.name %> = Struct.new(nil) do
+  def self.from_hash(_hash)
+    new
+  end
+
+  def to_hash
+    {}
+  end
+end
+
+<% } -%>
+<% } -%>

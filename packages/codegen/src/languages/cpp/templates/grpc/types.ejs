@@ -1,0 +1,65 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <map>
+#include <optional>
+#include <cstdint>
+#include <nlohmann/json.hpp>
+
+namespace sdk::grpc {
+
+<% for (const e of it.enums) { %>
+enum class <%= e.name %> {
+<% for (const v of e.values) { %>
+  <%= it.naming.enumValue(String(v.name)) %> = <%= v.number %>,
+<% } %>
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(<%= e.name %>, {
+<% for (const v of e.values) { %>
+  { <%= e.name %>::<%= it.naming.enumValue(String(v.name)) %>, "<%= v.name %>" },
+<% } %>
+})
+
+<% } %>
+<% for (const msg of it.messages) { %>
+<% if (msg.description) { %>
+/// <%= msg.description %>
+<% } %>
+struct <%= msg.name %> {
+<% for (const f of msg.fields) { %>
+<% if (f.mapKeyType) { %>
+  std::map<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>> <%= it.naming.propertyName(f.name) %>;
+<% } else if (f.optional) { %>
+  std::optional<<%= it.mapProtoType(f.type, f.repeated, false) %>> <%= it.naming.propertyName(f.name) %>;
+<% } else { %>
+  <%= it.mapProtoType(f.type, f.repeated, f.optional) %> <%= it.naming.propertyName(f.name) %>;
+<% } %>
+<% } %>
+};
+
+inline void to_json(nlohmann::json& j, const <%= msg.name %>& v) {
+  j = nlohmann::json{};
+<% for (const f of msg.fields) { %>
+<% if (f.optional) { %>
+  if (v.<%= it.naming.propertyName(f.name) %>.has_value()) j["<%= f.name %>"] = v.<%= it.naming.propertyName(f.name) %>.value();
+<% } else { %>
+  j["<%= f.name %>"] = v.<%= it.naming.propertyName(f.name) %>;
+<% } %>
+<% } %>
+}
+
+inline void from_json(const nlohmann::json& j, <%= msg.name %>& v) {
+<% for (const f of msg.fields) { %>
+<% const prop = it.naming.propertyName(f.name); %>
+<% if (f.optional) { %>
+  if (j.contains("<%= f.name %>") && !j["<%= f.name %>"].is_null()) v.<%= prop %> = j["<%= f.name %>"].get<std::remove_reference_t<decltype(v.<%= prop %>.value())>>();
+<% } else { %>
+  if (j.contains("<%= f.name %>")) j.at("<%= f.name %>").get_to(v.<%= prop %>);
+<% } %>
+<% } %>
+}
+
+<% } %>
+} // namespace sdk::grpc

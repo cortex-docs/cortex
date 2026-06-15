@@ -1,0 +1,29 @@
+<% const pkgName = it.packageName.split('/').pop().replace(/-/g, ''); %>
+package <%= pkgName %>
+
+<% for (const schema of it.schemas) { %>
+type <%= schema.className %> struct {
+<% for (const prop of schema.properties) { %>
+	<%= it.naming.className(prop.originalName) %> <%= prop.type %> `json:"<%= prop.originalName %><%= !prop.required ? ',omitempty' : '' %>"`
+<% } %>
+}
+
+<% } %>
+<% for (const ch of it.channels) { %>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %>
+type <%= ch.className %>Message struct {
+<% for (const prop of ch.subscribeSchema.properties) { %>
+	<%= it.naming.className(prop.originalName) %> <%= prop.type %> `json:"<%= prop.originalName %><%= !prop.required ? ',omitempty' : '' %>"`
+<% } %>
+}
+
+<% } %>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { %>
+type <%= ch.className %>Payload struct {
+<% for (const prop of ch.publishSchema.properties) { %>
+	<%= it.naming.className(prop.originalName) %> <%= prop.type %> `json:"<%= prop.originalName %><%= !prop.required ? ',omitempty' : '' %>"`
+<% } %>
+}
+
+<% } %>
+<% } %>

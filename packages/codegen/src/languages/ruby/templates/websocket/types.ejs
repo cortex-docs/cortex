@@ -1,0 +1,65 @@
+# frozen_string_literal: true
+
+<% for (const schema of it.schemas) { -%>
+<% if (schema.properties.length > 0) { -%>
+<%= schema.className %> = Struct.new(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+  :<%= it.naming.propertyName(schema.properties[i].originalName) %><%= i < schema.properties.length - 1 ? ',' : '' %><% if (schema.properties[i].description) { %> # <%= schema.properties[i].description %><% } %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    new(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+      hash["<%= schema.properties[i].originalName %>"]<%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    )
+  end
+
+  def to_hash
+    {
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+      "<%= schema.properties[i].originalName %>" => <%= it.naming.propertyName(schema.properties[i].originalName) %><%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    }
+  end
+end
+
+<% } else { -%>
+<%= schema.className %> = Struct.new(nil)
+
+<% } -%>
+<% } -%>
+<% for (const ch of it.channels) { -%>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { -%>
+<%= ch.className %>Message = Struct.new(
+<% for (let i = 0; i < ch.subscribeSchema.properties.length; i++) { -%>
+  :<%= it.naming.propertyName(ch.subscribeSchema.properties[i].originalName) %><%= i < ch.subscribeSchema.properties.length - 1 ? ',' : '' %><% if (ch.subscribeSchema.properties[i].description) { %> # <%= ch.subscribeSchema.properties[i].description %><% } %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    new(
+<% for (let i = 0; i < ch.subscribeSchema.properties.length; i++) { -%>
+      hash["<%= ch.subscribeSchema.properties[i].originalName %>"]<%= i < ch.subscribeSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    )
+  end
+end
+
+<% } -%>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { -%>
+<%= ch.className %>Payload = Struct.new(
+<% for (let i = 0; i < ch.publishSchema.properties.length; i++) { -%>
+  :<%= it.naming.propertyName(ch.publishSchema.properties[i].originalName) %><%= i < ch.publishSchema.properties.length - 1 ? ',' : '' %><% if (ch.publishSchema.properties[i].description) { %> # <%= ch.publishSchema.properties[i].description %><% } %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    new(
+<% for (let i = 0; i < ch.publishSchema.properties.length; i++) { -%>
+      hash["<%= ch.publishSchema.properties[i].originalName %>"]<%= i < ch.publishSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    )
+  end
+end
+
+<% } -%>
+<% } -%>

@@ -1,0 +1,193 @@
+from __future__ import annotations
+
+import json
+import urllib.request
+from dataclasses import asdict, fields, is_dataclass
+from enum import Enum
+from typing import Any, Iterator, List, Mapping, Optional, Union, get_args, get_origin, get_type_hints
+
+try:
+    import grpc
+except ImportError:  # pragma: no cover - lets HTTP-backed tests import the generated client without grpcio.
+    grpc = None
+
+<% for (const msg of it.messages) { %>
+from .grpc_types import <%= msg.name %>
+<% } %>
+
+
+def _dump(value: Any) -> Any:
+    if is_dataclass(value):
+        return {key: _dump(item) for key, item in asdict(value).items()}
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return {key: _dump(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_dump(item) for item in value]
+    return value
+
+
+def _coerce_value(expected_type: Any, value: Any) -> Any:
+    if value is None:
+        return value
+
+    origin = get_origin(expected_type)
+    args = get_args(expected_type)
+    if origin in (list, List):
+        item_type = args[0] if args else Any
+        return [_coerce_value(item_type, item) for item in value]
+
+    if isinstance(expected_type, type) and is_dataclass(expected_type) and isinstance(value, Mapping):
+        return _coerce_message(expected_type, value)
+
+    if isinstance(expected_type, type) and issubclass(expected_type, Enum):
+        try:
+            return expected_type(value)
+        except ValueError:
+            return value
+
+    return value
+
+
+def _coerce_message(model: type[Any], value: Optional[Union[Any, Mapping[str, Any]]]) -> Any:
+    if isinstance(value, model):
+        return value
+    if not is_dataclass(model):
+        return value
+    data = dict(value or {})
+    type_hints = get_type_hints(model)
+    kwargs = {
+        field.name: _coerce_value(type_hints.get(field.name, field.type), data[field.name])
+        for field in fields(model)
+        if field.name in data
+    }
+    return model(**kwargs)
+
+
+def _serialize_json(value: Any) -> bytes:
+    return json.dumps(_dump(value)).encode("utf-8")
+
+
+def _deserialize_json(model: type[Any]):
+    def deserialize(raw: bytes) -> Any:
+        text = raw.decode("utf-8")
+        payload = json.loads(text) if text else {}
+        return _coerce_message(model, payload)
+    return deserialize
+
+
+def _post_json(
+    base_url: str,
+    service: str,
+    method: str,
+    payload: Any,
+    timeout: Optional[float],
+) -> Any:
+    url = f"{base_url.rstrip('/')}/grpc/{service}/{method}"
+    request = urllib.request.Request(
+        url,
+        data=_serialize_json(payload),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout or 30.0) as response:
+        body = response.read().decode("utf-8")
+    return json.loads(body) if body else {}
+
+
+class GrpcClientOptions:
+    def __init__(
+        self,
+        *,
+        target: str = "localhost:50051",
+        credentials: Optional[Any] = None,
+        base_url: Optional[str] = None,
+    ) -> None:
+        self.target = target
+        self.credentials = credentials
+        self.base_url = base_url
+
+
+class <%= it.clientClass %>:
+    """gRPC client that provides access to all services."""
+
+    def __init__(self, options: Optional[GrpcClientOptions] = None) -> None:
+        opts = options or GrpcClientOptions()
+        self._base_url = opts.base_url
+        self._channels: dict[str, Any] = {}
+        if self._base_url:
+            pass
+        elif grpc is None:
+            raise RuntimeError("grpcio is required when GrpcClientOptions.base_url is not provided")
+        else:
+<% for (const service of it.services) { %>
+            if opts.credentials:
+                self._channels["<%= service.name %>"] = grpc.secure_channel(opts.target, opts.credentials)
+            else:
+                self._channels["<%= service.name %>"] = grpc.insecure_channel(opts.target)
+<% } %>
+
+    def close(self) -> None:
+        for channel in self._channels.values():
+            channel.close()
+
+    def __enter__(self) -> "<%= it.clientClass %>":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.close()
+
+<% for (const service of it.services) { %>
+<% for (const method of service.methods) { %>
+<% if (method.description) { %>
+    # <%= method.description %>
+<% } %>
+<% if (!method.clientStreaming && !method.serverStreaming) { %>
+    def <%= it.naming.methodName(method.name) %>(self, request: <%= method.inputType %>, timeout: Optional[float] = None) -> <%= method.outputType %>:
+        request_model = _coerce_message(<%= method.inputType %>, request)
+        if self._base_url:
+            payload = _post_json(self._base_url, "<%= service.name %>", "<%= method.name %>", request_model, timeout)
+            return _coerce_message(<%= method.outputType %>, payload)
+        return self._channels["<%= service.name %>"].unary_unary(
+            "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>",
+            request_serializer=_serialize_json,
+            response_deserializer=_deserialize_json(<%= method.outputType %>),
+        )(request_model, timeout=timeout)
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { %>
+    def <%= it.naming.methodName(method.name) %>(self, request: <%= method.inputType %>, timeout: Optional[float] = None) -> Iterator[<%= method.outputType %>]:
+        request_model = _coerce_message(<%= method.inputType %>, request)
+        if self._base_url:
+            payload = _post_json(self._base_url, "<%= service.name %>", "<%= method.name %>", request_model, timeout)
+            items = payload.get("data", payload) if isinstance(payload, Mapping) else payload
+            return iter(_coerce_message(<%= method.outputType %>, item) for item in items)
+        return self._channels["<%= service.name %>"].unary_stream(
+            "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>",
+            request_serializer=_serialize_json,
+            response_deserializer=_deserialize_json(<%= method.outputType %>),
+        )(request_model, timeout=timeout)
+
+<% } else if (method.clientStreaming && !method.serverStreaming) { %>
+    def <%= it.naming.methodName(method.name) %>(self, request_iterator: Iterator[<%= method.inputType %>], timeout: Optional[float] = None) -> <%= method.outputType %>:
+        if self._base_url:
+            raise NotImplementedError("HTTP-backed gRPC client streaming is not supported")
+        return self._channels["<%= service.name %>"].stream_unary(
+            "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>",
+            request_serializer=_serialize_json,
+            response_deserializer=_deserialize_json(<%= method.outputType %>),
+        )(request_iterator, timeout=timeout)
+
+<% } else { %>
+    def <%= it.naming.methodName(method.name) %>(self, request_iterator: Iterator[<%= method.inputType %>], timeout: Optional[float] = None) -> Iterator[<%= method.outputType %>]:
+        if self._base_url:
+            raise NotImplementedError("HTTP-backed gRPC bidirectional streaming is not supported")
+        return self._channels["<%= service.name %>"].stream_stream(
+            "/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>",
+            request_serializer=_serialize_json,
+            response_deserializer=_deserialize_json(<%= method.outputType %>),
+        )(request_iterator, timeout=timeout)
+
+<% } %>
+<% } %>
+<% } %>

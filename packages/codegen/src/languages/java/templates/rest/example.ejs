@@ -1,0 +1,14 @@
+<% const op = it.op; -%>
+<% const resource = it.resource; -%>
+// <%= op.summary || op.name %>
+<% if (op.method === 'DELETE' && op.responseType === 'void') { -%>
+client.get<%= it.utils.toPascalCase(resource.name) %>().<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>);
+<% } else if (op.method === 'GET' && op.pathParams.length === 0) { -%>
+var <%= resource.name %> = client.get<%= it.utils.toPascalCase(resource.name) %>().<%= op.name %>(<% if (op.queryParams.length > 0) { %>Map.of(<%= op.queryParams.map(q => `"${q.name}", ${q.type === 'number' ? '"10"' : '"value"'}`).join(', ') %>)<% } else { %>null<% } %>);
+<% } else if (op.method === 'GET' && op.pathParams.length > 0) { -%>
+var <%= it.utils.singularize(resource.name) %> = client.get<%= it.utils.toPascalCase(resource.name) %>().<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>);
+<% } else if (op.hasBody && op.pathParams.length === 0) { -%>
+var created = client.get<%= it.utils.toPascalCase(resource.name) %>().<%= op.name %>(new <%= op.bodyType %>()<% const bodySchema = it.schemas.find(s => s.className === op.bodyType); if (bodySchema) { for (const prop of bodySchema.properties.filter(p => p.required)) { %>.<%= prop.name %>(<%= prop.type === 'String' ? '"value"' : prop.type === 'int' || prop.type === 'Integer' || prop.type === 'double' || prop.type === 'Double' || prop.type === 'long' || prop.type === 'Long' ? '0' : '"value"' %>)<% } } %>);
+<% } else if (op.hasBody && op.pathParams.length > 0) { -%>
+var updated = client.get<%= it.utils.toPascalCase(resource.name) %>().<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>, new <%= op.bodyType %>()<% const updBodySchema = it.schemas.find(s => s.className === op.bodyType); if (updBodySchema) { for (const prop of updBodySchema.properties.slice(0, 3)) { %>.<%= prop.name %>(<%= prop.type === 'String' ? '"value"' : prop.type === 'int' || prop.type === 'Integer' || prop.type === 'double' || prop.type === 'Double' || prop.type === 'long' || prop.type === 'Long' ? '0' : '"value"' %>)<% } } %>);
+<% } -%>

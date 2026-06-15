@@ -1,0 +1,44 @@
+<% const r = it.resource; -%>
+<% const moduleName = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const schemaNames = new Set(it.schemas.map(s => s.className)); -%>
+# frozen_string_literal: true
+
+module <%= moduleName %>
+  class <%= r.className %>
+    def initialize(client)
+      @client = client
+    end
+
+<% for (const op of r.operations) { -%>
+<% const params = [...op.pathParams.map(p => p.name), ...(op.hasBody ? ['body'] : [])]; -%>
+<% const kwargs = op.queryParams.map(p => `${p.name}: nil`); -%>
+<% const allParams = [...params, ...kwargs]; -%>
+<% const paramStr = allParams.length > 0 ? `(${allParams.join(', ')})` : ''; -%>
+<% let pathExpr = `"${op.path}"`; -%>
+<% if (op.pathParams.length > 0) { let rubyPath = op.path; for (const p of op.pathParams) { rubyPath = rubyPath.replace(`{${p.originalName}}`, `#{${p.name}}`); } pathExpr = `"${rubyPath}"`; } -%>
+<% const queryHash = op.queryParams.length > 0 ? `{ ${op.queryParams.map(p => `"${p.originalName}" => ${p.name}`).join(', ')} }.compact` : 'nil'; -%>
+<% const bodyArg = op.hasBody ? 'body.respond_to?(:to_hash) ? body.to_hash : body' : 'nil'; -%>
+<% if (op.summary) { -%>
+    # <%= op.summary %>
+<% } -%>
+<% if (op.listItemType && schemaNames.has(op.listItemType)) { -%>
+    def <%= op.name %><%= paramStr %>
+      result = @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %>)
+      ListResponse.from_hash(result, <%= op.listItemType %>)
+    end
+
+<% } else if (schemaNames.has(op.responseType)) { -%>
+    def <%= op.name %><%= paramStr %>
+      result = @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %>)
+      <%= op.responseType %>.from_hash(result)
+    end
+
+<% } else { -%>
+    def <%= op.name %><%= paramStr %>
+      @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %>)
+    end
+
+<% } -%>
+<% } -%>
+  end
+end

@@ -1,0 +1,209 @@
+using System.Text.Json;
+
+// ─── Runtime ──────────────────────────────────────────────
+
+public class FieldEntry
+{
+    public string Name { get; set; } = "";
+    public SelectorBase? Sub { get; set; }
+}
+
+public class SelectorBase
+{
+    internal readonly List<FieldEntry> Fields = new();
+
+    internal string BuildSelection(string indent)
+    {
+        return string.Join("\n", Fields.Select(f =>
+            f.Sub != null
+                ? $"{indent}{f.Name} {{\n{f.Sub.BuildSelection(indent + "  ")}\n{indent}}}"
+                : $"{indent}{f.Name}"
+        ));
+    }
+}
+
+public class ArgDef
+{
+    public string Name { get; set; } = "";
+    public string GqlType { get; set; } = "";
+}
+
+public class RootEntry
+{
+    public string Field { get; set; } = "";
+    public Dictionary<string, object?> Args { get; set; } = new();
+    public List<ArgDef> ArgDefs { get; set; } = new();
+    public SelectorBase? Selector { get; set; }
+}
+
+public class RootBuilderBase
+{
+    internal readonly List<RootEntry> Entries = new();
+
+    internal (string query, Dictionary<string, object?> variables) BuildDocument(string kind)
+    {
+        var vars = new Dictionary<string, object?>();
+        var varDefs = new List<string>();
+        var parts = new List<string>();
+        var vi = 0;
+
+        foreach (var e in Entries)
+        {
+            var argParts = new List<string>();
+            foreach (var ad in e.ArgDefs)
+            {
+                if (e.Args.TryGetValue(ad.Name, out var val))
+                {
+                    var vn = $"v{vi++}";
+                    varDefs.Add($"${vn}: {ad.GqlType}");
+                    argParts.Add($"{ad.Name}: ${vn}");
+                    vars[vn] = val;
+                }
+            }
+            var argsStr = argParts.Count > 0 ? $"({string.Join(", ", argParts)})" : "";
+            parts.Add(e.Selector != null
+                ? $"    {e.Field}{argsStr} {{\n{e.Selector.BuildSelection("      ")}\n    }}"
+                : $"    {e.Field}{argsStr}");
+        }
+
+        var vd = varDefs.Count > 0 ? $"({string.Join(", ", varDefs)})" : "";
+        return ($"{kind}{vd} {{\n{string.Join("\n", parts)}\n  }}", vars);
+    }
+
+    protected static Dictionary<string, object?> ObjectToArgs(object? args)
+    {
+        if (args == null) return new Dictionary<string, object?>();
+        var json = JsonSerializer.Serialize(args);
+        var dict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+        if (dict == null) return new Dictionary<string, object?>();
+        var result = new Dictionary<string, object?>();
+        foreach (var kv in dict)
+        {
+            result[kv.Key] = kv.Value.ValueKind switch
+            {
+                JsonValueKind.String => kv.Value.GetString(),
+                JsonValueKind.Number => kv.Value.TryGetInt64(out var l) ? (object)l : kv.Value.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                _ => kv.Value.Clone()
+            };
+        }
+        return result;
+    }
+}
+
+// ─── Selector Classes ─────────────────────────────────
+<% for (const t of it.types) { %>
+public class <%= t.name %>Selector : SelectorBase
+{
+<% for (const f of t.fields) { -%>
+<% if (it.isScalarType(f.type) || it.enumNames.has(f.type)) { -%>
+    public <%= t.name %>Selector <%= it.naming.className(f.name) %>()
+    {
+        Fields.Add(new FieldEntry { Name = "<%= f.name %>" });
+        return this;
+    }
+
+<% } else if (it.typesByName.has(f.type)) { -%>
+    public <%= t.name %>Selector <%= it.naming.className(f.name) %>(Func<<%= f.type %>Selector, <%= f.type %>Selector> fn)
+    {
+        var sub = new <%= f.type %>Selector();
+        fn(sub);
+        Fields.Add(new FieldEntry { Name = "<%= f.name %>", Sub = sub });
+        return this;
+    }
+
+<% } -%>
+<% } -%>
+}
+<% } %>
+// ─── Root Builder Classes ─────────────────────────────
+<% const opKinds = [
+  { name: 'QueryBuilder', ops: it.queries, kind: 'Query' },
+  { name: 'MutationBuilder', ops: it.mutations, kind: 'Mutation' },
+  { name: 'SubscriptionBuilder', ops: it.subscriptions, kind: 'Subscription' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+public class <%= bk.name %> : RootBuilderBase
+{
+<% for (const op of bk.ops) { -%>
+<% const returnType = op.returnType; -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const allOptional = op.args.length === 0 || op.args.every(a => !a.required); -%>
+<% if (isScalarReturn) { -%>
+<% if (op.args.length > 0) { -%>
+    public <%= bk.name %> <%= it.naming.className(op.name) %>(object? args)
+    {
+        Entries.Add(new RootEntry
+        {
+            Field = "<%= op.name %>",
+            Args = ObjectToArgs(args),
+            ArgDefs = new List<ArgDef> { <%= op.args.map(a => `new ArgDef { Name = "${a.name}", GqlType = "${a.typeRaw}" }`).join(', ') %> }
+        });
+        return this;
+    }
+
+<% if (allOptional) { -%>
+    public <%= bk.name %> <%= it.naming.className(op.name) %>()
+    {
+        return <%= it.naming.className(op.name) %>(null);
+    }
+
+<% } -%>
+<% } else { -%>
+    public <%= bk.name %> <%= it.naming.className(op.name) %>()
+    {
+        Entries.Add(new RootEntry
+        {
+            Field = "<%= op.name %>",
+            Args = new Dictionary<string, object?>(),
+            ArgDefs = new List<ArgDef>()
+        });
+        return this;
+    }
+
+<% } -%>
+<% } else { -%>
+<% if (op.args.length > 0) { -%>
+    public <%= bk.name %> <%= it.naming.className(op.name) %>(object? args, Func<<%= returnType %>Selector, <%= returnType %>Selector> fn)
+    {
+        var selector = new <%= returnType %>Selector();
+        fn(selector);
+        Entries.Add(new RootEntry
+        {
+            Field = "<%= op.name %>",
+            Args = ObjectToArgs(args),
+            ArgDefs = new List<ArgDef> { <%= op.args.map(a => `new ArgDef { Name = "${a.name}", GqlType = "${a.typeRaw}" }`).join(', ') %> },
+            Selector = selector
+        });
+        return this;
+    }
+
+<% } -%>
+<% if (allOptional) { -%>
+    public <%= bk.name %> <%= it.naming.className(op.name) %>(Func<<%= returnType %>Selector, <%= returnType %>Selector> fn)
+    {
+<% if (op.args.length > 0) { -%>
+        return <%= it.naming.className(op.name) %>(null, fn);
+<% } else { -%>
+        var selector = new <%= returnType %>Selector();
+        fn(selector);
+        Entries.Add(new RootEntry
+        {
+            Field = "<%= op.name %>",
+            Args = new Dictionary<string, object?>(),
+            ArgDefs = new List<ArgDef>(),
+            Selector = selector
+        });
+        return this;
+<% } -%>
+    }
+
+<% } -%>
+<% } -%>
+<% } -%>
+}
+<% } %>

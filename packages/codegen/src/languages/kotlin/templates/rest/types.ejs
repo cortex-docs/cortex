@@ -1,0 +1,34 @@
+<% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+package <%= pkg %>
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+
+<% for (const schema of it.schemas) { -%>
+<% if (schema.isEnum) { -%>
+@Serializable
+enum class <%= schema.className %>(val value: String) {
+<% for (let i = 0; i < schema.enumValues.length; i++) { -%>
+<% const v = schema.enumValues[i]; -%>
+    @SerialName("<%= v %>")
+    <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %>("<%= v %>")<%= i < schema.enumValues.length - 1 ? ',' : ';' %>
+<% } -%>
+}
+
+<% } else { -%>
+@Serializable
+data class <%= schema.className %>(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+<% const prop = schema.properties[i]; -%>
+<% const nullable = prop.required ? '' : '?'; -%>
+<% const default_ = prop.required ? '' : ' = null'; -%>
+<% const needsSerialName = prop.name !== prop.originalName; -%>
+<% if (needsSerialName) { -%>
+    @SerialName("<%= prop.originalName %>")
+<% } -%>
+    val <%= prop.name %>: <%= prop.type %><%= nullable %><%= default_ %><%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+)
+
+<% } -%>
+<% } -%>

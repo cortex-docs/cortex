@@ -1,0 +1,27 @@
+<% const op = it.op; const resource = it.resource; -%>
+# <%= op.summary || op.name %>
+<% if (op.method === 'DELETE' && op.responseType === 'void') { -%>
+client.<%= it.utils.toSnakeCase(resource.name) %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>)
+<% } else if (op.method === 'GET' && op.pathParams.length === 0) { -%>
+<%= it.utils.toSnakeCase(resource.name) %> = client.<%= it.utils.toSnakeCase(resource.name) %>.<%= op.name %><% if (op.queryParams.length > 0) { %>(<%= op.queryParams.map(q => `${q.name}: ${q.type === 'number' ? '10' : `'value'`}`).join(', ') %>)<% } %>
+<% } else if (op.method === 'GET' && op.pathParams.length > 0) { -%>
+<%= it.utils.toSnakeCase(it.utils.singularize(resource.name)) %> = client.<%= it.utils.toSnakeCase(resource.name) %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>)
+<% } else if (op.hasBody && op.pathParams.length === 0) { -%>
+created = client.<%= it.utils.toSnakeCase(resource.name) %>.<%= op.name %>({
+<% const bodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (bodySchema) { for (const prop of bodySchema.properties.filter(p => p.required)) { -%>
+  <%= prop.name %>: <%= prop.type === 'string' ? `'value'` : prop.type === 'number' ? '0' : `'value'` %>,
+<% } } else { -%>
+  # <%= op.bodyType %> fields
+<% } -%>
+})
+<% } else if (op.hasBody && op.pathParams.length > 0) { -%>
+updated = client.<%= it.utils.toSnakeCase(resource.name) %>.<%= op.name %>(<%= op.pathParams.map(p => `'example-${p.originalName}'`).join(', ') %>, {
+<% const updBodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (updBodySchema) { for (const prop of updBodySchema.properties.slice(0, 3)) { -%>
+  <%= prop.name %>: <%= prop.type === 'string' ? `'value'` : prop.type === 'number' ? '0' : `'value'` %>,
+<% } } else { -%>
+  # <%= op.bodyType %> fields
+<% } -%>
+})
+<% } -%>

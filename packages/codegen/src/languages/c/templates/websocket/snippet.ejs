@@ -1,0 +1,8 @@
+<%~ include("websocket/init", it) %>
+
+<%~ include("websocket/example", it) %>
+
+ws_client_connect(&ws);
+
+// Disconnect and cleanup
+ws_client_disconnect(&ws);

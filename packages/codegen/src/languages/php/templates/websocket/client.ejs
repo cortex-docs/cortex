@@ -1,0 +1,263 @@
+<?php
+
+declare(strict_types=1);
+
+class <%= it.clientClass %>
+{
+    private string $url;
+    private bool $reconnect;
+    private float $reconnectInterval;
+    private int $maxReconnectAttempts;
+    /** @var array<string, array<callable>> */
+    private array $handlers = [];
+    /** @var resource|null */
+    private $socket = null;
+    private int $reconnectAttempts = 0;
+
+    public function __construct(
+        string $url = '<%= it.serverUrl %>',
+        bool $reconnect = true,
+        float $reconnectInterval = 3.0,
+        int $maxReconnectAttempts = 10,
+    ) {
+        $this->url = $url;
+        $this->reconnect = $reconnect;
+        $this->reconnectInterval = $reconnectInterval;
+        $this->maxReconnectAttempts = $maxReconnectAttempts;
+    }
+
+    public function connect(): void
+    {
+        $parsed = parse_url($this->url);
+        $scheme = $parsed['scheme'] ?? 'ws';
+        $host = $parsed['host'] ?? 'localhost';
+        $port = $parsed['port'] ?? ($scheme === 'wss' ? 443 : 80);
+        $path = $parsed['path'] ?? '/';
+
+        $transport = ($scheme === 'wss') ? 'ssl' : 'tcp';
+        $socket = @stream_socket_client(
+            "{$transport}://{$host}:{$port}",
+            $errno,
+            $errstr,
+            10.0,
+        );
+        if ($socket === false) {
+            throw new \RuntimeException("WebSocket connection failed: {$errstr} ({$errno})");
+        }
+
+        $key = base64_encode(random_bytes(16));
+        $headers = "GET {$path} HTTP/1.1\r\n"
+            . "Host: {$host}:{$port}\r\n"
+            . "Upgrade: websocket\r\n"
+            . "Connection: Upgrade\r\n"
+            . "Sec-WebSocket-Key: {$key}\r\n"
+            . "Sec-WebSocket-Version: 13\r\n"
+            . "\r\n";
+        fwrite($socket, $headers);
+
+        $responseHeader = '';
+        while (($line = fgets($socket)) !== false) {
+            $responseHeader .= $line;
+            if ($line === "\r\n") {
+                break;
+            }
+        }
+        if (!str_contains($responseHeader, '101')) {
+            fclose($socket);
+            throw new \RuntimeException('WebSocket upgrade failed: ' . trim($responseHeader));
+        }
+
+        $this->socket = $socket;
+        $this->reconnectAttempts = 0;
+    }
+
+    public function disconnect(): void
+    {
+        $this->reconnect = false;
+        if ($this->socket !== null) {
+            @fclose($this->socket);
+            $this->socket = null;
+        }
+    }
+
+    public function poll(float $timeout = 0.0): void
+    {
+        if ($this->socket === null) {
+            return;
+        }
+
+        $deadline = microtime(true) + $timeout;
+        stream_set_blocking($this->socket, false);
+
+        do {
+            $read = [$this->socket];
+            $write = $except = null;
+            $remaining = max(0, $deadline - microtime(true));
+            $sec = (int) $remaining;
+            $usec = (int) (($remaining - $sec) * 1000000);
+
+            if (@stream_select($read, $write, $except, $sec, $usec) > 0) {
+                $raw = $this->readFrame();
+                if ($raw === null) {
+                    $this->socket = null;
+                    $this->handleClose();
+                    return;
+                }
+                $this->handleMessage($raw);
+            }
+        } while (microtime(true) < $deadline);
+
+        stream_set_blocking($this->socket, true);
+    }
+
+    public function send(string $channel, mixed $payload): void
+    {
+        if ($this->socket === null) {
+            throw new \RuntimeException('WebSocket is not connected');
+        }
+
+        $this->sendFrame(json_encode([
+            'channel' => $channel,
+            'payload' => $payload,
+        ]));
+    }
+
+    /**
+     * @return callable Unsubscribe function
+     */
+    public function subscribe(string $channel, callable $handler): callable
+    {
+        if (!isset($this->handlers[$channel])) {
+            $this->handlers[$channel] = [];
+        }
+        $this->handlers[$channel][] = $handler;
+
+        return function () use ($channel, $handler): void {
+            $this->handlers[$channel] = array_filter(
+                $this->handlers[$channel] ?? [],
+                fn (callable $h): bool => $h !== $handler,
+            );
+        };
+    }
+
+<% for (const ch of it.channels) { -%>
+<% if (ch.canSubscribe) { -%>
+    /**
+     * Subscribe to <%= ch.name %>
+<% if (ch.description) { -%>
+     * <%= ch.description %>
+<% } -%>
+     * @return callable Unsubscribe function
+     */
+    public function on<%= ch.className %>(callable $handler): callable
+    {
+        return $this->subscribe('<%= ch.name %>', $handler);
+    }
+
+<% } -%>
+<% if (ch.canPublish) { -%>
+    /**
+     * Publish to <%= ch.name %>
+<% if (ch.description) { -%>
+     * <%= ch.description %>
+<% } -%>
+     */
+    public function send<%= ch.className %>(mixed $payload): void
+    {
+        $this->send('<%= ch.name %>', $payload);
+    }
+
+<% } -%>
+<% } -%>
+    private function sendFrame(string $data): void
+    {
+        if ($this->socket === null) {
+            return;
+        }
+        $len = strlen($data);
+        $mask = random_bytes(4);
+        $frame = chr(0x81);
+        if ($len < 126) {
+            $frame .= chr($len | 0x80);
+        } elseif ($len < 65536) {
+            $frame .= chr(126 | 0x80) . pack('n', $len);
+        } else {
+            $frame .= chr(127 | 0x80) . pack('J', $len);
+        }
+        $frame .= $mask;
+        for ($i = 0; $i < $len; $i++) {
+            $frame .= $data[$i] ^ $mask[$i % 4];
+        }
+        fwrite($this->socket, $frame);
+    }
+
+    private function readFrame(): ?string
+    {
+        if ($this->socket === null) {
+            return null;
+        }
+        $header = @fread($this->socket, 2);
+        if ($header === false || strlen($header) < 2) {
+            return null;
+        }
+        $len = ord($header[1]) & 0x7F;
+        if ($len === 126) {
+            $ext = fread($this->socket, 2);
+            $len = unpack('n', $ext)[1];
+        } elseif ($len === 127) {
+            $ext = fread($this->socket, 8);
+            $len = unpack('J', $ext)[1];
+        }
+        $masked = (ord($header[1]) & 0x80) !== 0;
+        $mask = $masked ? fread($this->socket, 4) : null;
+        $data = '';
+        $remaining = $len;
+        while ($remaining > 0) {
+            $chunk = fread($this->socket, $remaining);
+            if ($chunk === false) {
+                break;
+            }
+            $data .= $chunk;
+            $remaining -= strlen($chunk);
+        }
+        if ($masked && $mask !== null) {
+            for ($i = 0; $i < strlen($data); $i++) {
+                $data[$i] = $data[$i] ^ $mask[$i % 4];
+            }
+        }
+        return $data;
+    }
+
+    private function handleMessage(string $raw): void
+    {
+        $data = json_decode($raw, true);
+        if (!is_array($data)) {
+            return;
+        }
+
+        $channel = $data['channel'] ?? $data['type'] ?? $data['event'] ?? '';
+        if (!isset($this->handlers[$channel])) {
+            return;
+        }
+
+        $payload = $data['payload'] ?? $data['data'] ?? $data;
+        foreach ($this->handlers[$channel] as $handler) {
+            $handler($payload);
+        }
+    }
+
+    private function handleClose(): void
+    {
+        if (!$this->reconnect || $this->reconnectAttempts >= $this->maxReconnectAttempts) {
+            return;
+        }
+
+        $this->reconnectAttempts++;
+        usleep((int) ($this->reconnectInterval * 1000000));
+        try {
+            $this->connect();
+        } catch (\RuntimeException $e) {
+            // Reconnection failed
+        }
+    }
+}

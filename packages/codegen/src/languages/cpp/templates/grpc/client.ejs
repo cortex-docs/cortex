@@ -1,0 +1,106 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <stdexcept>
+#include <nlohmann/json.hpp>
+#include <httplib.h>
+#include "grpc-types.hpp"
+
+namespace sdk::grpc {
+
+class GrpcError : public std::runtime_error {
+public:
+  GrpcError(const std::string& msg) : std::runtime_error(msg) {}
+};
+
+template<typename T>
+struct GrpcResponse {
+  T inner;
+  T into_inner() { return std::move(inner); }
+};
+
+template<typename T>
+struct GrpcStreaming {
+  std::vector<T> items;
+  typename std::vector<T>::iterator it;
+
+  GrpcStreaming(std::vector<T> v) : items(std::move(v)), it(items.begin()) {}
+
+  bool next(T& out) {
+    if (it == items.end()) return false;
+    out = *it++;
+    return true;
+  }
+};
+
+inline nlohmann::json grpc_post(
+  const std::string& base_url,
+  const std::string& service,
+  const std::string& method,
+  const nlohmann::json& request
+) {
+  std::string url = base_url;
+  if (!url.empty() && url.back() == '/') url.pop_back();
+  auto scheme_end = url.find("://");
+  std::string base = url;
+  if (scheme_end != std::string::npos) {
+    auto path_start = url.find('/', scheme_end + 3);
+    if (path_start != std::string::npos) base = url.substr(0, path_start);
+  }
+  httplib::Client cli(base);
+  std::string path = "/grpc/" + service + "/" + method;
+  httplib::Headers hdrs = {{"Content-Type", "application/json"}};
+  auto res = cli.Post(path, hdrs, request.dump(), "application/json");
+  if (!res) throw GrpcError("gRPC request failed: connection error");
+  return nlohmann::json::parse(res->body);
+}
+
+/// Unified gRPC client for all services.
+class <%= it.clientClass %> {
+  std::string base_url_;
+
+public:
+  static <%= it.clientClass %> connect(const std::string& endpoint) {
+    return <%= it.clientClass %>(endpoint);
+  }
+
+  explicit <%= it.clientClass %>(const std::string& endpoint = "http://localhost:50051")
+    : base_url_(endpoint) {}
+
+<% for (const service of it.services) { %>
+<% for (const method of service.methods) { %>
+<% if (method.description) { %>
+  /// <%= method.description %>
+<% } %>
+<% if (!method.clientStreaming && !method.serverStreaming) { %>
+  GrpcResponse<<%= method.outputType %>> <%= it.naming.propertyName(method.name) %>(<%= method.inputType %> request) {
+    auto json_resp = grpc_post(base_url_, "<%= service.name %>", "<%= method.name %>", request);
+    auto resp = json_resp.get<<%= method.outputType %>>();
+    return GrpcResponse<<%= method.outputType %>>{std::move(resp)};
+  }
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { %>
+  GrpcResponse<GrpcStreaming<<%= method.outputType %>>> <%= it.naming.propertyName(method.name) %>(<%= method.inputType %> request) {
+    auto json_resp = grpc_post(base_url_, "<%= service.name %>", "<%= method.name %>", request);
+    nlohmann::json items_json = json_resp.contains("data") ? json_resp["data"] : json_resp;
+    std::vector<<%= method.outputType %>> items;
+    if (items_json.is_array()) {
+      for (const auto& item : items_json) {
+        items.push_back(item.get<<%= method.outputType %>>());
+      }
+    }
+    return GrpcResponse<GrpcStreaming<<%= method.outputType %>>>{GrpcStreaming<<%= method.outputType %>>(std::move(items))};
+  }
+
+<% } else { %>
+  GrpcResponse<<%= method.outputType %>> <%= it.naming.propertyName(method.name) %>(<%= method.inputType %> request) {
+    throw GrpcError("Streaming RPCs not supported over HTTP/JSON transport");
+  }
+
+<% } %>
+<% } %>
+<% } %>
+};
+
+} // namespace sdk::grpc

@@ -1,0 +1,26 @@
+# Cortex Configuration
+
+project: test-project
+title: test-project Documentation
+theme: system
+
+sources:
+  - title: REST API V1
+    type: openapi-spec
+    spec: packages/core/__fixtures__/petstore.yaml
+    languages:
+      - language: c
+        package_name: test-project
+  - title: WebSocket
+    type: asyncapi-spec
+    spec: packages/core/__fixtures__/chat-asyncapi.yaml
+    languages:
+      - language: c
+        package_name: test-project
+
+output:
+  base_dir: /tmp/cortex-c-test
+
+mcp:
+  package_name: "@test-project/mcp"
+  github_repository: "github.com/test-project/mcp"

@@ -1,0 +1,48 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const moduleName = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const gemName = it.naming.fileName(it.config.languageConfig.package_name); -%>
+<% const clientClass = it.clientClass; -%>
+# frozen_string_literal: true
+
+require "faraday"
+require "json"
+require_relative "types"
+<% for (const r of it.resources) { -%>
+require_relative "resources/<%= it.naming.fileName(r.name) %>"
+<% } -%>
+
+module <%= moduleName %>
+  class <%= clientClass %>
+    attr_reader :base_url
+
+    def initialize(base_url: "<%= baseUrl %>", bearer_token: nil, api_key: nil, timeout: 30)
+      @base_url = base_url
+      @connection = Faraday.new(url: base_url) do |f|
+        f.request :json
+        f.response :raise_error
+        f.options.timeout = timeout
+        f.headers["Content-Type"] = "application/json"
+        f.headers["Authorization"] = "Bearer #{bearer_token}" if bearer_token
+        f.headers["X-API-Key"] = api_key if api_key
+      end
+    end
+
+<% for (const r of it.resources) { -%>
+    def <%= it.naming.methodName(r.name) %>
+      @<%= it.naming.propertyName(r.name) %> ||= <%= r.className %>.new(self)
+    end
+
+<% } -%>
+    def request(method, path, query: nil, body: nil)
+      response = @connection.send(method.downcase.to_sym, path) do |req|
+        req.params = query if query
+        req.body = body.to_json if body
+      end
+
+      return nil if response.status == 204
+      JSON.parse(response.body)
+    rescue Faraday::ClientError, Faraday::ServerError => e
+      raise ApiError.new(e.response[:status], e.response[:body])
+    end
+  end
+end

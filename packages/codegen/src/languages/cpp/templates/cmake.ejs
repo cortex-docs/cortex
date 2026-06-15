@@ -1,0 +1,21 @@
+cmake_minimum_required(VERSION 3.14)
+project(<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-') %> VERSION <%= it.version %> LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(FetchContent)
+
+FetchContent_Declare(json
+  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+)
+FetchContent_Declare(httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+  GIT_TAG v0.18.3
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(json httplib)
+
+add_library(${PROJECT_NAME} INTERFACE)
+target_include_directories(${PROJECT_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(${PROJECT_NAME} INTERFACE nlohmann_json::nlohmann_json httplib::httplib)

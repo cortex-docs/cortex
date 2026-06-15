@@ -1,0 +1,115 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example'; -%>
+package <%= pkg %>;
+
+import java.util.List;
+import java.util.Map;
+
+<% for (const e of it.enums) { -%>
+public enum <%= e.name %> {
+<% for (let i = 0; i < e.values.length; i++) { -%>
+<% const v = e.values[i]; -%>
+    <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %>("<%= v %>")<%= i < e.values.length - 1 ? ',' : ';' %>
+<% } -%>
+
+    private final String value;
+
+    <%= e.name %>(String value) {
+        this.value = value;
+    }
+
+    public String getValue() {
+        return value;
+    }
+}
+
+<% } -%>
+<% for (const t of it.types) { -%>
+/**
+ * <%= t.name %> GraphQL type.
+<% if (t.description) { -%>
+ * <%= t.description %>
+<% } -%>
+ */
+public class <%= t.name %> {
+<% for (const f of t.fields) { -%>
+    private <%= it.mapGqlType(f.type, f.required, f.isList) %> <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+
+<% for (const f of t.fields) { -%>
+    public <%= it.mapGqlType(f.type, f.required, f.isList) %> get<%= it.naming.className(f.name) %>() {
+        return <%= it.naming.propertyName(f.name) %>;
+    }
+
+    public <%= t.name %> <%= it.naming.propertyName(f.name) %>(<%= it.mapGqlType(f.type, f.required, f.isList) %> <%= it.naming.propertyName(f.name) %>) {
+        this.<%= it.naming.propertyName(f.name) %> = <%= it.naming.propertyName(f.name) %>;
+        return this;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+/**
+ * <%= inp.name %> GraphQL input type.
+ */
+public class <%= inp.name %> {
+<% for (const f of inp.fields) { -%>
+    private <%= it.mapGqlType(f.type, f.required, f.isList) %> <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+
+<% for (const f of inp.fields) { -%>
+    public <%= it.mapGqlType(f.type, f.required, f.isList) %> get<%= it.naming.className(f.name) %>() {
+        return <%= it.naming.propertyName(f.name) %>;
+    }
+
+    public <%= inp.name %> <%= it.naming.propertyName(f.name) %>(<%= it.mapGqlType(f.type, f.required, f.isList) %> <%= it.naming.propertyName(f.name) %>) {
+        this.<%= it.naming.propertyName(f.name) %> = <%= it.naming.propertyName(f.name) %>;
+        return this;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+/**
+ * Variables for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+ */
+public class <%= op.variablesTypeName %> {
+<% for (const arg of op.args) { -%>
+    private <%= it.resolveType(arg.type) %> <%= it.naming.propertyName(arg.name) %>;
+<% } -%>
+
+<% for (const arg of op.args) { -%>
+    public <%= it.resolveType(arg.type) %> get<%= it.naming.className(arg.name) %>() {
+        return <%= it.naming.propertyName(arg.name) %>;
+    }
+
+    public <%= op.variablesTypeName %> <%= it.naming.propertyName(arg.name) %>(<%= it.resolveType(arg.type) %> <%= it.naming.propertyName(arg.name) %>) {
+        this.<%= it.naming.propertyName(arg.name) %> = <%= it.naming.propertyName(arg.name) %>;
+        return this;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+/**
+ * Result type for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+ */
+public class <%= op.resultTypeName %> {
+    private <%= op.returnTypeStr %> <%= it.naming.propertyName(op.name) %>;
+
+    public <%= op.returnTypeStr %> get<%= it.naming.className(op.name) %>() {
+        return <%= it.naming.propertyName(op.name) %>;
+    }
+
+    public <%= op.resultTypeName %> <%= it.naming.propertyName(op.name) %>(<%= op.returnTypeStr %> <%= it.naming.propertyName(op.name) %>) {
+        this.<%= it.naming.propertyName(op.name) %> = <%= it.naming.propertyName(op.name) %>;
+        return this;
+    }
+}
+
+<% } -%>

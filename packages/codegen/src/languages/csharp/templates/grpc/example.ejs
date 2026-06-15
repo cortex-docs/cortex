@@ -1,0 +1,23 @@
+<% const method = it.method; -%>
+<% const service = it.service ?? {}; -%>
+<% const clientVar = service.clientVar ?? (service.serviceName ? service.serviceName.charAt(0).toLowerCase() + service.serviceName.slice(1).replace(/Service$/, '') + 'Client' : 'client'); -%>
+<% const callName = method.callName ?? method.methodName; -%>
+<% const inputType = method.inputType; -%>
+<% const fields = (method.inputFields ?? []).map(f => `${f.name.charAt(0).toUpperCase() + f.name.slice(1)} = ${f.type === 'number' || f.type === 'integer' ? '0' : f.type === 'boolean' ? 'true' : '"value"'}`); -%>
+<% const args = fields.length > 0 ? `new Grpc.<%= inputType %>\n{\n    ${fields.join(',\n    ')},\n}` : `new Grpc.<%= inputType %>()`; -%>
+<% if (method.serverStreaming) { -%>
+// <%= method.methodName %> (server streaming)
+var stream = await <%= clientVar %>.<%= callName %>Async(<%= args %>);
+await foreach (var item in stream)
+{
+    Console.WriteLine(item);
+}
+<% } else if (method.clientStreaming) { -%>
+// <%= method.methodName %> (client streaming)
+var stream = <%= clientVar %>.<%= callName %>Async();
+await stream.WriteAsync(<%= args %>);
+var result = await stream.CloseAsync();
+<% } else { -%>
+// <%= method.methodName %>
+var result = await <%= clientVar %>.<%= callName %>Async(<%= args %>);
+<% } -%>

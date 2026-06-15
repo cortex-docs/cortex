@@ -1,0 +1,50 @@
+# frozen_string_literal: true
+
+<% for (const schema of it.schemas) { -%>
+<% if (schema.isEnum) { -%>
+module <%= schema.className %>
+<% for (const v of schema.enumValues) { -%>
+  <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %> = "<%= v %>"
+<% } -%>
+
+  ALL = [
+<% for (const v of schema.enumValues) { -%>
+    <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %>,
+<% } -%>
+  ].freeze
+end
+
+<% } else if (schema.properties.length > 0) { -%>
+<%= schema.className %> = Struct.new(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+  :<%= schema.properties[i].name %><%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+) do
+  def self.from_hash(hash)
+    return nil if hash.nil?
+    new(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+      hash["<%= schema.properties[i].originalName %>"]<%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    )
+  end
+
+  def to_hash
+    {
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+      "<%= schema.properties[i].originalName %>" => <%= schema.properties[i].name %><%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    }
+  end
+end
+
+<% } -%>
+<% } -%>
+ListResponse = Struct.new(:data, :next_cursor) do
+  def self.from_hash(hash, item_class = nil)
+    return nil if hash.nil?
+    data = hash["data"] || []
+    data = data.map { |item| item_class.from_hash(item) } if item_class
+    new(data, hash["nextCursor"] || hash["next_cursor"])
+  end
+end

@@ -1,0 +1,30 @@
+<% const _parts = (it.pkgName ?? it.config.languageConfig.package_name).split('/'); -%>
+<% const _pkgShort = _parts[_parts.length - 1].replace(/-/g, ''); -%>
+<% const op = it.op; -%>
+<% const resource = it.resource; -%>
+// <%= op.summary || op.name %>
+<% if (op.method === 'DELETE' && !op.responseType) { -%>
+err := client.<%= resource.className %>.<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>)
+<% } else if (op.method === 'GET' && op.pathParams.length === 0) { -%>
+<%= it.utils.toSnakeCase(resource.name) %>, err := client.<%= resource.className %>.<%= op.name %>(<% if (op.queryParams.length > 0) { %><%= op.queryParams.map(q => { if (!q.required) return 'nil'; return q.type === 'int' || q.type === 'int64' ? '10' : `"value"`; }).join(', ') %><% } %>)
+<% } else if (op.method === 'GET' && op.pathParams.length > 0) { -%>
+<%= it.utils.toSnakeCase(it.utils.singularize(resource.name)) %>, err := client.<%= resource.className %>.<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>)
+<% } else if (op.hasBody && op.pathParams.length === 0) { -%>
+created, err := client.<%= resource.className %>.<%= op.name %>(<%= _pkgShort %>.<%= op.bodyType %>{
+<% const bodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (bodySchema) { for (const prop of bodySchema.properties.filter(p => p.required)) { -%>
+	<%= prop.name %>: <%= prop.type === 'string' ? `"value"` : prop.type === 'int' || prop.type === 'int64' || prop.type === 'float64' ? '0' : `"value"` %>,
+<% } } else { -%>
+	// <%= op.bodyType %> fields
+<% } -%>
+})
+<% } else if (op.hasBody && op.pathParams.length > 0) { -%>
+updated, err := client.<%= resource.className %>.<%= op.name %>(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>, <%= _pkgShort %>.<%= op.bodyType %>{
+<% const updBodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (updBodySchema) { for (const prop of updBodySchema.properties.slice(0, 3)) { -%>
+	<%= prop.name %>: <%= prop.type === 'string' ? `"value"` : prop.type === 'int' || prop.type === 'int64' || prop.type === 'float64' ? '0' : `"value"` %>,
+<% } } else { -%>
+	// <%= op.bodyType %> fields
+<% } -%>
+})
+<% } -%>

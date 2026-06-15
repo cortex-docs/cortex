@@ -1,0 +1,16 @@
+<% const channel = it.channel ?? {}; -%>
+<% const channelId = channel.channelId ?? 'channel'; -%>
+<% const handlerName = 'on' + channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(''); -%>
+<% const sendName = 'send' + channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(''); -%>
+<% if (channel.canSubscribe !== false && channel.subscribeMessage) { -%>
+    // Subscribe to <%= channelId %>
+    ws.<%= handlerName %> { payload ->
+        println("Received: $payload")
+    }
+
+<% } -%>
+<% if (channel.canPublish !== false && channel.publishMessage) { -%>
+    // Send to <%= channelId %>
+<% const props = (channel.publishMessage.properties ?? []).map(p => `"${p.name}": ${p.type === 'number' || p.type === 'integer' ? '0' : '"value"'}`).join(', '); -%>
+    ws.<%= sendName %>("""{ <%= props %> }""")
+<% } -%>

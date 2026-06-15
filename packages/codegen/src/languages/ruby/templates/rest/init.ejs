@@ -1,0 +1,11 @@
+<% const moduleName = it.moduleName ?? it.utils.toPascalCase(it.config.languageConfig.package_name); -%>
+<% const gemName = it.gemName ?? it.config.languageConfig.package_name; -%>
+<% const baseUrl = it.baseUrl ?? it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const clientClass = it.clientClass; -%>
+require '<%= gemName %>'
+
+client = <%= moduleName %>::<%= clientClass %>.new(
+  base_url: '<%= baseUrl %>',
+  bearer_token: 'your-token',
+  # api_key: 'your-api-key',
+)

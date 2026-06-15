@@ -1,0 +1,17 @@
+<% const channel = it.channel ?? {}; -%>
+<% const channelId = channel.channelId ?? 'channel'; -%>
+<% const handlerName = channel.handlerName ?? ('On' + channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('')); -%>
+<% const sendName = channel.sendName ?? ('Send' + channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('') + 'Async'); -%>
+<% if (channel.canSubscribe !== false && channel.subscribeMessage) { -%>
+// Subscribe to <%= channelId %>
+ws.<%= handlerName %>(msg =>
+{
+    Console.WriteLine($"Received: {msg}");
+});
+
+<% } -%>
+<% if (channel.canPublish !== false && channel.publishMessage) { -%>
+// Send to <%= channelId %>
+<% const props = (channel.publishMessage.properties ?? []).map(p => `${p.name} = ${p.type === 'number' || p.type === 'integer' ? '0' : '"value"'}`).join(', '); -%>
+await ws.<%= sendName %>(new { <%= props %> });
+<% } -%>

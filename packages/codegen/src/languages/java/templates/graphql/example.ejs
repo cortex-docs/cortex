@@ -1,0 +1,41 @@
+<% const opType = it.opType ?? 'query'; -%>
+<% const op = it.op; -%>
+<% const opName = op?.name ?? it.opName ?? 'items'; -%>
+<% const args = op?.args ?? it.args ?? []; -%>
+<% const pascalOp = opName.charAt(0).toUpperCase() + opName.slice(1); -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return 'true'; if (a.type === 'ID') return `"example_${a.name}"`; return '"value"'; }; -%>
+<% const argsChain = args.length > 0 ? args.map(a => `.${a.name}(${exVal(a)})`).join('') : ''; -%>
+<% if (opType === 'query') { -%>
+// Query <%= opName %>
+var result = gql.query(
+    q -> q.<%= opName %>(
+        new <%= pascalOp %>QueryVariables()<%= argsChain %>,
+        p -> p.id().name()
+    ),
+    <%= pascalOp %>Query.class
+);
+<% } else if (opType === 'mutation') { -%>
+// Mutation <%= opName %>
+var result = gql.mutate(
+    m -> m.<%= opName %>(
+        new <%= pascalOp %>MutationVariables()<%= argsChain %>,
+        p -> p.id().name()
+    ),
+    <%= pascalOp %>Mutation.class
+);
+<% } else { -%>
+// One-shot subscription (resolves on first event)
+var event = gql.subscribeOnce(
+    s -> s.<%= opName %>(
+        p -> p.id().name()
+    ),
+    <%= pascalOp %>Subscription.class
+);
+
+// Continuous subscription
+Runnable unsubscribe = gql.subscribe(
+    s -> s.<%= opName %>(p -> p.id().name()),
+    data -> System.out.println("Event: " + data)
+);
+// Later: unsubscribe.run();
+<% } -%>

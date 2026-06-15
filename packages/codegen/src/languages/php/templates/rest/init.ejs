@@ -1,0 +1,10 @@
+<% const ns = it.ns ?? it.naming.className(it.config.languageConfig.package_name); -%>
+<% const clientClass = it.clientClass; -%>
+<% const baseUrl = it.baseUrl ?? it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+use <%= ns %>\<%= clientClass %>;
+
+$client = new <%= clientClass %>(
+    baseUrl: '<%= baseUrl %>',
+    bearerToken: 'your-token',
+    // apiKey: 'your-api-key',
+);

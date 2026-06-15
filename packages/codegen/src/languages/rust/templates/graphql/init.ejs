@@ -1,0 +1,6 @@
+<% const crateName = it.utils.toSnakeCase(it.config.languageConfig.package_name); -%>
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+use <%= crateName %>::gql::<%= it.clientClass %>;
+
+let gql = <%= it.clientClass %>::new("<%= baseUrl.replace(/\/v\d+$/, '') %>/graphql")
+    .with_ws_endpoint("<%= baseUrl.replace(/\/v\d+$/, '').replace(/^http/, 'ws') %>/graphql");

@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+from enum import Enum
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+<% const enumByName = new Map(it.enums.map((e) => [e.name, e])); -%>
+<% const defaultValue = (field) => enumByName.has(field.type) ? `${field.type}.${enumByName.get(field.type).values[0].name}` : `${it.mapProtoType(field.type, false, false)}()`; -%>
+
+<% for (const e of it.enums) { %>
+class <%= e.name %>(str, Enum):
+<% for (const v of e.values) { %>
+    <%= v.name %> = "<%= v.name %>"
+<% } %>
+
+<% } %>
+<% for (const msg of it.messages) { %>
+<% if (msg.description) { %>
+# <%= msg.description %>
+<% } %>
+@dataclass
+class <%= msg.name %>:
+<% if (msg.fields.length === 0) { %>
+    pass
+<% } else { %>
+<% for (const f of msg.fields) { %>
+<% if (f.description) { %>
+    # <%= f.description %>
+<% } %>
+<% if (f.mapKeyType) { %>
+    <%= it.naming.propertyName(f.name) %>: <% if (f.optional) { %>Optional[Dict[<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>]]<% } else { %>Dict[<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>]<% } %> = field(default_factory=dict)
+<% } else if (f.repeated) { %>
+    <%= it.naming.propertyName(f.name) %>: <% if (f.optional) { %>Optional[<%= it.mapProtoType(f.type, true, false) %>]<% } else { %><%= it.mapProtoType(f.type, true, false) %><% } %> = field(default_factory=list)
+<% } else if (f.optional) { %>
+    <%= it.naming.propertyName(f.name) %>: Optional[<%= it.mapProtoType(f.type, false, false) %>] = None
+<% } else { %>
+    <%= it.naming.propertyName(f.name) %>: <%= it.mapProtoType(f.type, false, false) %> = <%= defaultValue(f) %>
+<% } %>
+<% } %>
+<% } %>
+
+<% } %>

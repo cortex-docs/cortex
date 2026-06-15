@@ -1,0 +1,244 @@
+<% /* Helpers for C type mapping of GQL fields */ -%>
+<% const cFieldType = (fType) => { -%>
+<%   const resolved = it.resolveType(fType); -%>
+<%   if (resolved === 'char*') return 'char*'; -%>
+<%   if (resolved === 'int64_t') return 'int64_t'; -%>
+<%   if (resolved === 'double') return 'double'; -%>
+<%   if (resolved === 'int' || resolved === 'bool') return 'int'; -%>
+<%   if (it.enumNames.has(fType)) return 'gql_' + it.naming.propertyName(fType) + '_t'; -%>
+<%   return 'cJSON*'; -%>
+<% }; -%>
+<% const isStr = (t) => t === 'char*'; -%>
+<% const isInt = (t) => t === 'int64_t'; -%>
+<% const isDbl = (t) => t === 'double'; -%>
+<% const isBool = (t) => t === 'int'; -%>
+<% const isEnum = (fType) => it.enumNames.has(fType); -%>
+<% const isKnownType = (fType) => it.typesByName.has(fType); -%>
+<% const isListOfKnownType = (f) => f.isList && isKnownType(f.type); -%>
+#ifndef SDK_GQL_TYPES_H
+#define SDK_GQL_TYPES_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include "cjson/cJSON.h"
+
+<% for (const e of it.enums) { -%>
+<% if (e.description) { -%>
+/* <%= e.description %> */
+<% } -%>
+typedef enum {
+  GQL_<%= it.naming.enumValue(e.name) %>_UNSET = 0,
+<% for (let i = 0; i < e.values.length; i++) { -%>
+  GQL_<%= it.naming.enumValue(e.name) %>_<%= it.naming.enumValue(String(e.values[i])) %> = <%= i + 1 %><%= i < e.values.length - 1 ? ',' : '' %>
+<% } -%>
+} gql_<%= it.naming.propertyName(e.name) %>_t;
+
+static inline const char* gql_<%= it.naming.propertyName(e.name) %>_to_string(gql_<%= it.naming.propertyName(e.name) %>_t v) {
+  switch (v) {
+<% for (const val of e.values) { -%>
+    case GQL_<%= it.naming.enumValue(e.name) %>_<%= it.naming.enumValue(String(val)) %>: return "<%= val %>";
+<% } -%>
+    default: return "";
+  }
+}
+
+static inline gql_<%= it.naming.propertyName(e.name) %>_t gql_<%= it.naming.propertyName(e.name) %>_from_string(const char* s) {
+<% for (const val of e.values) { -%>
+  if (strcmp(s, "<%= val %>") == 0) return GQL_<%= it.naming.enumValue(e.name) %>_<%= it.naming.enumValue(String(val)) %>;
+<% } -%>
+  return 0;
+}
+
+<% } -%>
+/* Forward declarations */
+<% for (const t of it.types) { -%>
+typedef struct gql_<%= it.naming.propertyName(t.name) %>_s gql_<%= it.naming.propertyName(t.name) %>_t;
+<% } -%>
+
+/* ─── Object types ────────────────────────────────────────── */
+<% for (const t of it.types) { -%>
+
+struct gql_<%= it.naming.propertyName(t.name) %>_s {
+<% for (const f of t.fields) { -%>
+<% if (isListOfKnownType(f)) { -%>
+  gql_<%= it.naming.propertyName(f.type) %>_t* <%= it.naming.propertyName(f.name) %>;
+  int <%= it.naming.propertyName(f.name) %>_count;
+<% } else { -%>
+<% const ct = cFieldType(f.type); -%>
+  <%= ct %> <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+<% } -%>
+};
+
+static inline void gql_<%= it.naming.propertyName(t.name) %>_from_json(const cJSON* j, gql_<%= it.naming.propertyName(t.name) %>_t* v);
+static inline void gql_<%= it.naming.propertyName(t.name) %>_free(gql_<%= it.naming.propertyName(t.name) %>_t* v);
+
+<% } -%>
+
+/* ─── from_json / free implementations ────────────────────── */
+<% for (const t of it.types) { -%>
+
+static inline void gql_<%= it.naming.propertyName(t.name) %>_from_json(const cJSON* j, gql_<%= it.naming.propertyName(t.name) %>_t* v) {
+  memset(v, 0, sizeof(*v));
+  if (!j) return;
+<% for (const f of t.fields) { -%>
+<% if (isListOfKnownType(f)) { -%>
+  { cJSON* arr = cJSON_GetObjectItem(j, "<%= f.name %>");
+    if (arr && cJSON_IsArray(arr)) {
+      v-><%= it.naming.propertyName(f.name) %>_count = cJSON_GetArraySize(arr);
+      v-><%= it.naming.propertyName(f.name) %> = (gql_<%= it.naming.propertyName(f.type) %>_t*)calloc(v-><%= it.naming.propertyName(f.name) %>_count, sizeof(gql_<%= it.naming.propertyName(f.type) %>_t));
+      for (int i = 0; i < v-><%= it.naming.propertyName(f.name) %>_count; i++)
+        gql_<%= it.naming.propertyName(f.type) %>_from_json(cJSON_GetArrayItem(arr, i), &v-><%= it.naming.propertyName(f.name) %>[i]);
+    }
+  }
+<% } else { -%>
+<% const ct = cFieldType(f.type); -%>
+<% if (isStr(ct)) { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_ && cJSON_IsString(f_)) v-><%= it.naming.propertyName(f.name) %> = strdup(f_->valuestring); }
+<% } else if (isInt(ct)) { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_ && cJSON_IsNumber(f_)) v-><%= it.naming.propertyName(f.name) %> = (int64_t)f_->valuedouble; }
+<% } else if (isDbl(ct)) { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_ && cJSON_IsNumber(f_)) v-><%= it.naming.propertyName(f.name) %> = f_->valuedouble; }
+<% } else if (isBool(ct)) { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_) v-><%= it.naming.propertyName(f.name) %> = cJSON_IsTrue(f_); }
+<% } else if (isEnum(f.type)) { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_ && cJSON_IsString(f_)) v-><%= it.naming.propertyName(f.name) %> = gql_<%= it.naming.propertyName(f.type) %>_from_string(f_->valuestring); }
+<% } else { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= f.name %>"); if (f_) v-><%= it.naming.propertyName(f.name) %> = cJSON_Duplicate(f_, 1); }
+<% } -%>
+<% } -%>
+<% } -%>
+}
+
+static inline void gql_<%= it.naming.propertyName(t.name) %>_free(gql_<%= it.naming.propertyName(t.name) %>_t* v) {
+  if (!v) return;
+<% for (const f of t.fields) { -%>
+<% if (isListOfKnownType(f)) { -%>
+  if (v-><%= it.naming.propertyName(f.name) %>) {
+    for (int i = 0; i < v-><%= it.naming.propertyName(f.name) %>_count; i++) gql_<%= it.naming.propertyName(f.type) %>_free(&v-><%= it.naming.propertyName(f.name) %>[i]);
+    free(v-><%= it.naming.propertyName(f.name) %>);
+  }
+<% } else { -%>
+<% const ct = cFieldType(f.type); -%>
+<% if (isStr(ct)) { -%>
+  free(v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (!isInt(ct) && !isDbl(ct) && !isBool(ct) && !isEnum(f.type)) { -%>
+  if (v-><%= it.naming.propertyName(f.name) %>) cJSON_Delete(v-><%= it.naming.propertyName(f.name) %>);
+<% } -%>
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+
+/* ─── Input types ─────────────────────────────────────────── */
+<% for (const inp of it.inputs) { -%>
+
+typedef struct {
+<% for (const f of inp.fields) { -%>
+<% const ct = cFieldType(f.type); -%>
+  <%= ct %> <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+} gql_<%= it.naming.propertyName(inp.name) %>_t;
+
+static inline cJSON* gql_<%= it.naming.propertyName(inp.name) %>_to_json(const gql_<%= it.naming.propertyName(inp.name) %>_t* v) {
+  cJSON* j = cJSON_CreateObject();
+<% for (const f of inp.fields) { -%>
+<% const ct = cFieldType(f.type); -%>
+<% if (isStr(ct)) { -%>
+  if (v-><%= it.naming.propertyName(f.name) %>) cJSON_AddStringToObject(j, "<%= f.name %>", v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (isInt(ct)) { -%>
+  cJSON_AddNumberToObject(j, "<%= f.name %>", (double)v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (isDbl(ct)) { -%>
+  cJSON_AddNumberToObject(j, "<%= f.name %>", v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (isBool(ct)) { -%>
+  cJSON_AddBoolToObject(j, "<%= f.name %>", v-><%= it.naming.propertyName(f.name) %>);
+<% } else if (isEnum(f.type)) { -%>
+  if (v-><%= it.naming.propertyName(f.name) %>) cJSON_AddStringToObject(j, "<%= f.name %>", gql_<%= it.naming.propertyName(f.type) %>_to_string(v-><%= it.naming.propertyName(f.name) %>));
+<% } else { -%>
+  if (v-><%= it.naming.propertyName(f.name) %>) cJSON_AddItemToObject(j, "<%= f.name %>", cJSON_Duplicate(v-><%= it.naming.propertyName(f.name) %>, 1));
+<% } -%>
+<% } -%>
+  return j;
+}
+
+<% } -%>
+
+/* ─── Result types (typed responses for query/mutation/subscription) ── */
+<% const resultKinds = [
+  { name: 'query_result', ops: it.queries },
+  { name: 'mutation_result', ops: it.mutations },
+  { name: 'subscription_result', ops: it.subscriptions },
+]; -%>
+<% for (const rk of resultKinds) { -%>
+<% if (rk.ops.length === 0) continue; -%>
+
+typedef struct {
+<% for (const op of rk.ops) { -%>
+<% const retType = op.returnType; -%>
+<% if (it.isScalarType(retType)) { -%>
+<% const ct = cFieldType(retType); -%>
+  <%= ct %> <%= it.naming.propertyName(op.name) %>;
+  int has_<%= it.naming.propertyName(op.name) %>;
+<% } else if (it.enumNames.has(retType)) { -%>
+  gql_<%= it.naming.propertyName(retType) %>_t <%= it.naming.propertyName(op.name) %>;
+  int has_<%= it.naming.propertyName(op.name) %>;
+<% } else if (isKnownType(retType)) { -%>
+  gql_<%= it.naming.propertyName(retType) %>_t* <%= it.naming.propertyName(op.name) %>;
+<% } -%>
+<% } -%>
+} gql_<%= rk.name %>_t;
+
+static inline void gql_<%= rk.name %>_from_json(const cJSON* j, gql_<%= rk.name %>_t* v) {
+  memset(v, 0, sizeof(*v));
+  if (!j) return;
+<% for (const op of rk.ops) { -%>
+<% const retType = op.returnType; -%>
+<% const prop = it.naming.propertyName(op.name); -%>
+<% if (it.isScalarType(retType)) { -%>
+<% const ct = cFieldType(retType); -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= op.name %>");
+    if (f_) {
+      v->has_<%= prop %> = 1;
+<% if (isStr(ct)) { -%>
+      if (cJSON_IsString(f_)) v-><%= prop %> = strdup(f_->valuestring);
+<% } else if (isInt(ct)) { -%>
+      if (cJSON_IsNumber(f_)) v-><%= prop %> = (int64_t)f_->valuedouble;
+<% } else if (isDbl(ct)) { -%>
+      if (cJSON_IsNumber(f_)) v-><%= prop %> = f_->valuedouble;
+<% } else { -%>
+      v-><%= prop %> = cJSON_IsTrue(f_);
+<% } -%>
+    }
+  }
+<% } else if (it.enumNames.has(retType)) { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= op.name %>");
+    if (f_ && cJSON_IsString(f_)) { v-><%= prop %> = gql_<%= it.naming.propertyName(retType) %>_from_string(f_->valuestring); v->has_<%= prop %> = 1; }
+  }
+<% } else if (isKnownType(retType)) { -%>
+  { cJSON* f_ = cJSON_GetObjectItem(j, "<%= op.name %>");
+    if (f_ && !cJSON_IsNull(f_)) {
+      v-><%= prop %> = (gql_<%= it.naming.propertyName(retType) %>_t*)calloc(1, sizeof(gql_<%= it.naming.propertyName(retType) %>_t));
+      gql_<%= it.naming.propertyName(retType) %>_from_json(f_, v-><%= prop %>);
+    }
+  }
+<% } -%>
+<% } -%>
+}
+
+static inline void gql_<%= rk.name %>_free(gql_<%= rk.name %>_t* v) {
+  if (!v) return;
+<% for (const op of rk.ops) { -%>
+<% const retType = op.returnType; -%>
+<% const prop = it.naming.propertyName(op.name); -%>
+<% if (it.isScalarType(retType) && cFieldType(retType) === 'char*') { -%>
+  free(v-><%= prop %>);
+<% } else if (isKnownType(retType)) { -%>
+  if (v-><%= prop %>) { gql_<%= it.naming.propertyName(retType) %>_free(v-><%= prop %>); free(v-><%= prop %>); }
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+#endif /* SDK_GQL_TYPES_H */

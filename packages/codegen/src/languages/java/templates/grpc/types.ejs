@@ -1,0 +1,71 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example'; -%>
+package <%= pkg %>.grpc;
+
+import java.util.List;
+import java.util.Map;
+
+<% for (const e of it.enums) { -%>
+public enum <%= e.name %> {
+<% for (let i = 0; i < e.values.length; i++) { -%>
+<% const v = e.values[i]; -%>
+    <%= v.name %>(<%= v.number %>)<%= i < e.values.length - 1 ? ',' : ';' %>
+<% } -%>
+
+    private final int number;
+
+    <%= e.name %>(int number) {
+        this.number = number;
+    }
+
+    public int getNumber() {
+        return number;
+    }
+}
+
+<% } -%>
+<% for (const msg of it.messages) { -%>
+/**
+ * <%= msg.name %> protobuf message.
+<% if (msg.description) { -%>
+ * <%= msg.description %>
+<% } -%>
+ */
+public class <%= msg.name %> {
+<% for (const f of msg.fields) { -%>
+<% if (f.mapKeyType) { -%>
+    private Map<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>> <%= it.naming.propertyName(f.name) %>;
+<% } else { -%>
+    private <%= it.mapProtoType(f.type, f.repeated, f.optional) %> <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+<% } -%>
+
+    public <%= msg.name %>() {}
+
+<% for (const f of msg.fields) { -%>
+<% if (f.description) { -%>
+    /** <%= f.description %> */
+<% } -%>
+<% if (f.mapKeyType) { -%>
+    public Map<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>> get<%= it.naming.className(f.name) %>() {
+        return <%= it.naming.propertyName(f.name) %>;
+    }
+
+    public <%= msg.name %> <%= it.naming.propertyName(f.name) %>(Map<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>> <%= it.naming.propertyName(f.name) %>) {
+        this.<%= it.naming.propertyName(f.name) %> = <%= it.naming.propertyName(f.name) %>;
+        return this;
+    }
+<% } else { -%>
+    public <%= it.mapProtoType(f.type, f.repeated, f.optional) %> get<%= it.naming.className(f.name) %>() {
+        return <%= it.naming.propertyName(f.name) %>;
+    }
+
+    public <%= msg.name %> <%= it.naming.propertyName(f.name) %>(<%= it.mapProtoType(f.type, f.repeated, f.optional) %> <%= it.naming.propertyName(f.name) %>) {
+        this.<%= it.naming.propertyName(f.name) %> = <%= it.naming.propertyName(f.name) %>;
+        return this;
+    }
+<% } -%>
+
+<% } -%>
+}
+
+<% } -%>

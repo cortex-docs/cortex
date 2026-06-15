@@ -1,0 +1,30 @@
+<% const pkgName = 'grpcclient'; %>
+package <%= pkgName %>
+<% for (const e of it.enums) { %>
+
+// <%= e.name %> represents the <%= e.name %> protobuf enum.
+type <%= e.name %> string
+
+const (
+<% for (const v of e.values) { %>
+	<%= e.name %>_<%= v.name %> <%= e.name %> = "<%= v.name %>"
+<% } %>
+)
+<% } %>
+<% for (const msg of it.messages) { %>
+
+// <%= msg.name %> represents the <%= msg.name %> protobuf message.
+<% if (msg.description) { %>// <%= msg.description %>
+<% } %>
+type <%= msg.name %> struct {
+<% for (const f of msg.fields) { %>
+<% if (f.mapKeyType) { %>
+	<%= it.naming.className(f.name) %> map[<%= it.mapProtoType(f.mapKeyType, false, false) %>]<%= it.mapProtoType(f.mapValueType, false, false) %> `json:"<%= f.name %>,omitempty"`
+<% } else if (f.optional) { %>
+	<%= it.naming.className(f.name) %> *<%= it.mapProtoType(f.type, f.repeated, false) %> `json:"<%= f.name %>,omitempty"`
+<% } else { %>
+	<%= it.naming.className(f.name) %> <%= it.mapProtoType(f.type, f.repeated, false) %> `json:"<%= f.name %>,omitempty"`
+<% } %>
+<% } %>
+}
+<% } %>

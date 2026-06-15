@@ -1,0 +1,273 @@
+#ifndef SDK_WS_CLIENT_H
+#define SDK_WS_CLIENT_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+#include "cjson/cJSON.h"
+#include "ws-types.h"
+
+#define WS_MAX_HANDLERS 32
+
+typedef void (*ws_message_handler_t)(const cJSON* payload);
+
+typedef struct {
+  char channel[128];
+  ws_message_handler_t handler;
+} ws_handler_entry_t;
+
+typedef struct {
+  char* url;
+  int reconnect;
+  int reconnect_interval_ms;
+} ws_client_options_t;
+
+typedef struct {
+  char host[256];
+  int port;
+  char path[512];
+  int sock;
+  volatile int connected;
+  volatile int should_reconnect;
+  int reconnect_interval_ms;
+  ws_handler_entry_t handlers[WS_MAX_HANDLERS];
+  int handler_count;
+  pthread_mutex_t mtx;
+  pthread_t reader_thread;
+} ws_client_t;
+
+static inline void ws_frame_send(int sock, const char* data) {
+  size_t len = strlen(data);
+  unsigned char frame[14];
+  int hdr_len = 2;
+  frame[0] = 0x81;
+  unsigned char mask_bit = 0x80;
+  if (len < 126) {
+    frame[1] = mask_bit | (unsigned char)len;
+  } else if (len < 65536) {
+    frame[1] = mask_bit | 126;
+    frame[2] = (len >> 8) & 0xFF;
+    frame[3] = len & 0xFF;
+    hdr_len = 4;
+  } else {
+    frame[1] = mask_bit | 127;
+    for (int i = 7; i >= 0; --i) frame[2 + (7 - i)] = (len >> (i * 8)) & 0xFF;
+    hdr_len = 10;
+  }
+  unsigned char mask[4] = {0x12, 0x34, 0x56, 0x78};
+  char* buf = (char*)malloc(hdr_len + 4 + len);
+  memcpy(buf, frame, hdr_len);
+  memcpy(buf + hdr_len, mask, 4);
+  for (size_t i = 0; i < len; i++) buf[hdr_len + 4 + i] = data[i] ^ mask[i % 4];
+  send(sock, buf, hdr_len + 4 + len, 0);
+  free(buf);
+}
+
+static inline char* ws_frame_recv(int sock) {
+  unsigned char header[2];
+  if (recv(sock, header, 2, MSG_WAITALL) != 2) return NULL;
+  uint64_t len = header[1] & 0x7F;
+  int masked = header[1] & 0x80;
+  if (len == 126) {
+    unsigned char ext[2];
+    recv(sock, ext, 2, MSG_WAITALL);
+    len = ((uint64_t)ext[0] << 8) | ext[1];
+  } else if (len == 127) {
+    unsigned char ext[8];
+    recv(sock, ext, 8, MSG_WAITALL);
+    len = 0;
+    for (int i = 0; i < 8; ++i) len = (len << 8) | ext[i];
+  }
+  unsigned char mask[4] = {0};
+  if (masked) recv(sock, mask, 4, MSG_WAITALL);
+  char* data = (char*)malloc(len + 1);
+  size_t received = 0;
+  while (received < len) {
+    int r = recv(sock, data + received, len - received, 0);
+    if (r <= 0) { free(data); return NULL; }
+    received += r;
+  }
+  if (masked) for (size_t i = 0; i < len; ++i) data[i] ^= mask[i % 4];
+  data[len] = '\0';
+  return data;
+}
+
+static void* ws_reader_loop(void* arg) {
+  ws_client_t* ws = (ws_client_t*)arg;
+  while (ws->connected) {
+    char* msg = ws_frame_recv(ws->sock);
+    if (!msg) { ws->connected = 0; break; }
+    cJSON* data = cJSON_Parse(msg);
+    free(msg);
+    if (!data) continue;
+
+    char channel[128] = "";
+    cJSON* ch = cJSON_GetObjectItem(data, "channel");
+    if (!ch) ch = cJSON_GetObjectItem(data, "type");
+    if (!ch) ch = cJSON_GetObjectItem(data, "event");
+    if (ch && cJSON_IsString(ch)) strncpy(channel, ch->valuestring, sizeof(channel) - 1);
+
+    cJSON* payload = cJSON_GetObjectItem(data, "payload");
+    if (!payload) payload = cJSON_GetObjectItem(data, "data");
+    if (!payload) payload = data;
+
+    pthread_mutex_lock(&ws->mtx);
+    for (int i = 0; i < ws->handler_count; i++) {
+      if (strcmp(ws->handlers[i].channel, channel) == 0) {
+        ws->handlers[i].handler(payload);
+      }
+    }
+    pthread_mutex_unlock(&ws->mtx);
+    cJSON_Delete(data);
+  }
+  return NULL;
+}
+
+static inline void ws_client_init(ws_client_t* ws, const ws_client_options_t* opts) {
+  memset(ws, 0, sizeof(*ws));
+  ws->sock = -1;
+  ws->should_reconnect = opts->reconnect;
+  ws->reconnect_interval_ms = opts->reconnect_interval_ms > 0 ? opts->reconnect_interval_ms : 3000;
+  pthread_mutex_init(&ws->mtx, NULL);
+
+  char* url = (char*)(opts->url ? opts->url : "ws://localhost:8080");
+  if (strncmp(url, "ws://", 5) == 0) url += 5;
+  else if (strncmp(url, "wss://", 6) == 0) url += 6;
+
+  char* slash = strchr(url, '/');
+  if (slash) {
+    strncpy(ws->path, slash, sizeof(ws->path) - 1);
+    size_t hlen = slash - url;
+    char hostport[256];
+    strncpy(hostport, url, hlen < sizeof(hostport) ? hlen : sizeof(hostport) - 1);
+    hostport[hlen < sizeof(hostport) ? hlen : sizeof(hostport) - 1] = '\0';
+    char* colon = strchr(hostport, ':');
+    if (colon) {
+      *colon = '\0';
+      strncpy(ws->host, hostport, sizeof(ws->host) - 1);
+      ws->port = atoi(colon + 1);
+    } else {
+      strncpy(ws->host, hostport, sizeof(ws->host) - 1);
+      ws->port = 80;
+    }
+  } else {
+    strncpy(ws->path, "/", sizeof(ws->path) - 1);
+    char* colon = strchr(url, ':');
+    if (colon) {
+      size_t hlen = colon - url;
+      strncpy(ws->host, url, hlen < sizeof(ws->host) ? hlen : sizeof(ws->host) - 1);
+      ws->port = atoi(colon + 1);
+    } else {
+      strncpy(ws->host, url, sizeof(ws->host) - 1);
+      ws->port = 80;
+    }
+  }
+}
+
+static inline int ws_client_connect(ws_client_t* ws) {
+  struct addrinfo hints = {0}, *res;
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  char port_str[16];
+  snprintf(port_str, sizeof(port_str), "%d", ws->port);
+  if (getaddrinfo(ws->host, port_str, &hints, &res) != 0) return -1;
+
+  ws->sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  if (ws->sock < 0) { freeaddrinfo(res); return -1; }
+  if (connect(ws->sock, res->ai_addr, res->ai_addrlen) < 0) {
+    close(ws->sock); ws->sock = -1; freeaddrinfo(res); return -1;
+  }
+  freeaddrinfo(res);
+
+  char handshake[1024];
+  snprintf(handshake, sizeof(handshake),
+    "GET %s HTTP/1.1\r\n"
+    "Host: %s:%d\r\n"
+    "Upgrade: websocket\r\n"
+    "Connection: Upgrade\r\n"
+    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+    "Sec-WebSocket-Version: 13\r\n"
+    "\r\n", ws->path, ws->host, ws->port);
+  send(ws->sock, handshake, strlen(handshake), 0);
+
+  char buf[4096];
+  int n = recv(ws->sock, buf, sizeof(buf) - 1, 0);
+  if (n <= 0) { close(ws->sock); ws->sock = -1; return -1; }
+
+  ws->connected = 1;
+  pthread_create(&ws->reader_thread, NULL, ws_reader_loop, ws);
+  return 0;
+}
+
+static inline void ws_client_disconnect(ws_client_t* ws) {
+  ws->should_reconnect = 0;
+  ws->connected = 0;
+  if (ws->sock >= 0) { close(ws->sock); ws->sock = -1; }
+  pthread_join(ws->reader_thread, NULL);
+  pthread_mutex_destroy(&ws->mtx);
+}
+
+static inline void ws_client_send(ws_client_t* ws, const char* channel, const cJSON* payload) {
+  if (!ws->connected) return;
+  cJSON* msg = cJSON_CreateObject();
+  cJSON_AddStringToObject(msg, "channel", channel);
+  cJSON_AddItemToObject(msg, "payload", cJSON_Duplicate(payload, 1));
+  char* str = cJSON_PrintUnformatted(msg);
+  ws_frame_send(ws->sock, str);
+  free(str);
+  cJSON_Delete(msg);
+}
+
+static inline void ws_client_subscribe(ws_client_t* ws, const char* channel, ws_message_handler_t handler) {
+  pthread_mutex_lock(&ws->mtx);
+  if (ws->handler_count < WS_MAX_HANDLERS) {
+    strncpy(ws->handlers[ws->handler_count].channel, channel, sizeof(ws->handlers[0].channel) - 1);
+    ws->handlers[ws->handler_count].handler = handler;
+    ws->handler_count++;
+  }
+  pthread_mutex_unlock(&ws->mtx);
+}
+
+<% for (const ch of it.channels) { %>
+<% if (ch.canSubscribe && ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %>
+typedef void (*ws_<%= ch.methodName %>_handler_t)(const ws_<%= ch.className %>_message_t* msg);
+static ws_<%= ch.methodName %>_handler_t _ws_<%= ch.methodName %>_typed_handler = NULL;
+
+static void _ws_<%= ch.methodName %>_wrapper(const cJSON* payload) {
+  if (!_ws_<%= ch.methodName %>_typed_handler) return;
+  ws_<%= ch.className %>_message_t msg;
+  ws_<%= ch.methodName %>_message_from_json(payload, &msg);
+  _ws_<%= ch.methodName %>_typed_handler(&msg);
+}
+
+static inline void ws_on_<%= ch.methodName %>(ws_client_t* ws, ws_<%= ch.methodName %>_handler_t handler) {
+  _ws_<%= ch.methodName %>_typed_handler = handler;
+  ws_client_subscribe(ws, "<%= ch.name %>", _ws_<%= ch.methodName %>_wrapper);
+}
+
+<% } else if (ch.canSubscribe) { %>
+static inline void ws_on_<%= ch.methodName %>(ws_client_t* ws, ws_message_handler_t handler) {
+  ws_client_subscribe(ws, "<%= ch.name %>", handler);
+}
+
+<% } %>
+<% if (ch.canPublish && ch.publishSchema && ch.publishSchema.properties.length > 0) { %>
+static inline void ws_send_<%= ch.methodName %>(ws_client_t* ws, const ws_<%= ch.className %>_payload_t* payload) {
+  cJSON* json = ws_<%= ch.methodName %>_payload_to_json(payload);
+  ws_client_send(ws, "<%= ch.name %>", json);
+  cJSON_Delete(json);
+}
+
+<% } else if (ch.canPublish) { %>
+static inline void ws_send_<%= ch.methodName %>(ws_client_t* ws, const cJSON* payload) {
+  ws_client_send(ws, "<%= ch.name %>", payload);
+}
+
+<% } %>
+<% } %>
+#endif /* SDK_WS_CLIENT_H */

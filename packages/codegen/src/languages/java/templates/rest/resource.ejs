@@ -1,0 +1,46 @@
+<% const r = it.resource; -%>
+<% const clientClass = it.clientClass; -%>
+<% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+package <%= pkg %>;
+
+import <%= pkg %>.models.*;
+import com.google.gson.reflect.TypeToken;
+import java.util.HashMap;
+import java.util.Map;
+
+public class <%= r.className %> {
+    private final <%= clientClass %> client;
+
+    public <%= r.className %>(<%= clientClass %> client) {
+        this.client = client;
+    }
+
+<% for (const op of r.operations) { -%>
+<% const uniqueParams = [...op.pathParams.map(p => `String ${p.name}`), ...(op.hasBody ? [`${op.bodyType} body`] : []), ...(op.queryParams.length > 0 ? ['Map<String, String> query'] : [])]; -%>
+<% let pathExpr = `"${op.path}"`; for (const p of op.pathParams) { pathExpr = pathExpr + `.replace("{${p.originalName}}", ${p.name})`; } -%>
+<% const isVoid = op.responseType === 'void'; -%>
+<% const isList = !!op.listItemType; -%>
+<% const returnType = isList ? `PaginatedResponse<${op.listItemType}>` : (isVoid ? 'void' : op.responseType); -%>
+<% if (op.summary) { -%>
+    /**
+     * <%= op.summary %>
+     */
+<% } -%>
+<% if (isVoid) { -%>
+    public void <%= op.name %>(<%= uniqueParams.join(', ') %>) throws ApiException {
+        client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %>);
+    }
+<% } else if (isList) { -%>
+    public PaginatedResponse<<%= op.listItemType %>> <%= op.name %>(<%= uniqueParams.join(', ') %>) throws ApiException {
+        String json = client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %>);
+        return client.getGson().fromJson(json, new TypeToken<PaginatedResponse<<%= op.listItemType %>>>(){}.getType());
+    }
+<% } else { -%>
+    public <%= returnType %> <%= op.name %>(<%= uniqueParams.join(', ') %>) throws ApiException {
+        String json = client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %>);
+        return client.getGson().fromJson(json, <%= returnType %>.class);
+    }
+<% } -%>
+
+<% } -%>
+}

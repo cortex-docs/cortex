@@ -1,0 +1,99 @@
+#ifndef SDK_TYPES_H
+#define SDK_TYPES_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include "cjson/cJSON.h"
+
+<% for (const schema of it.schemas) { %>
+<% if (schema.isEnum) { %>
+typedef enum {
+<% for (let i = 0; i < schema.enumValues.length; i++) { %>
+  SDK_<%= it.naming.enumValue(schema.className) %>_<%= it.naming.enumValue(String(schema.enumValues[i])) %><%= i < schema.enumValues.length - 1 ? ',' : '' %>
+<% } %>
+} sdk_<%= it.naming.propertyName(schema.name) %>_t;
+
+static inline const char* sdk_<%= it.naming.propertyName(schema.name) %>_to_string(sdk_<%= it.naming.propertyName(schema.name) %>_t v) {
+  switch (v) {
+<% for (const val of schema.enumValues) { %>
+    case SDK_<%= it.naming.enumValue(schema.className) %>_<%= it.naming.enumValue(String(val)) %>: return "<%= val %>";
+<% } %>
+    default: return "";
+  }
+}
+
+static inline sdk_<%= it.naming.propertyName(schema.name) %>_t sdk_<%= it.naming.propertyName(schema.name) %>_from_string(const char* s) {
+<% for (const val of schema.enumValues) { %>
+  if (strcmp(s, "<%= val %>") == 0) return SDK_<%= it.naming.enumValue(schema.className) %>_<%= it.naming.enumValue(String(val)) %>;
+<% } %>
+  return 0;
+}
+
+<% } else { %>
+typedef struct {
+<% for (const prop of schema.properties) { %>
+<% if (prop.type === 'char*') { %>
+  char* <%= prop.name %>;
+<% } else if (prop.type === 'int64_t') { %>
+  int64_t <%= prop.name %>;
+<% } else if (prop.type === 'double') { %>
+  double <%= prop.name %>;
+<% } else if (prop.type === 'int') { %>
+  int <%= prop.name %>;
+<% } else { %>
+  cJSON* <%= prop.name %>;
+<% } %>
+<% } %>
+} sdk_<%= it.naming.propertyName(schema.name) %>_t;
+
+static inline cJSON* sdk_<%= it.naming.propertyName(schema.name) %>_to_json(const sdk_<%= it.naming.propertyName(schema.name) %>_t* v) {
+  cJSON* j = cJSON_CreateObject();
+<% for (const prop of schema.properties) { %>
+<% if (prop.type === 'char*') { %>
+  if (v-><%= prop.name %>) cJSON_AddStringToObject(j, "<%= prop.originalName %>", v-><%= prop.name %>);
+<% } else if (prop.type === 'int64_t') { %>
+  cJSON_AddNumberToObject(j, "<%= prop.originalName %>", (double)v-><%= prop.name %>);
+<% } else if (prop.type === 'double') { %>
+  cJSON_AddNumberToObject(j, "<%= prop.originalName %>", v-><%= prop.name %>);
+<% } else if (prop.type === 'int') { %>
+  cJSON_AddBoolToObject(j, "<%= prop.originalName %>", v-><%= prop.name %>);
+<% } else { %>
+  if (v-><%= prop.name %>) cJSON_AddItemToObject(j, "<%= prop.originalName %>", cJSON_Duplicate(v-><%= prop.name %>, 1));
+<% } %>
+<% } %>
+  return j;
+}
+
+static inline void sdk_<%= it.naming.propertyName(schema.name) %>_from_json(const cJSON* j, sdk_<%= it.naming.propertyName(schema.name) %>_t* v) {
+  memset(v, 0, sizeof(*v));
+  if (!j) return;
+<% for (const prop of schema.properties) { %>
+<% if (prop.type === 'char*') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsString(f)) v-><%= prop.name %> = strdup(f->valuestring); }
+<% } else if (prop.type === 'int64_t') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsNumber(f)) v-><%= prop.name %> = (int64_t)f->valuedouble; }
+<% } else if (prop.type === 'double') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsNumber(f)) v-><%= prop.name %> = f->valuedouble; }
+<% } else if (prop.type === 'int') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f) v-><%= prop.name %> = cJSON_IsTrue(f); }
+<% } else { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f) v-><%= prop.name %> = cJSON_Duplicate(f, 1); }
+<% } %>
+<% } %>
+}
+
+static inline void sdk_<%= it.naming.propertyName(schema.name) %>_free(sdk_<%= it.naming.propertyName(schema.name) %>_t* v) {
+  if (!v) return;
+<% for (const prop of schema.properties) { %>
+<% if (prop.type === 'char*') { %>
+  free(v-><%= prop.name %>); v-><%= prop.name %> = NULL;
+<% } else if (prop.type === 'cJSON*') { %>
+  if (v-><%= prop.name %>) { cJSON_Delete(v-><%= prop.name %>); v-><%= prop.name %> = NULL; }
+<% } %>
+<% } %>
+}
+
+<% } %>
+<% } %>
+#endif /* SDK_TYPES_H */

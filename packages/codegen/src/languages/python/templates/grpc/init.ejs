@@ -1,0 +1,5 @@
+<% const pkgName = it.pkgName ?? it.config.languageConfig.package_name; -%>
+from <%= pkgName %> import <%= it.clientClass %>, GrpcClientOptions
+from <%= pkgName %>.grpc_types import *
+
+client = <%= it.clientClass %>(GrpcClientOptions(target="localhost:50051"))

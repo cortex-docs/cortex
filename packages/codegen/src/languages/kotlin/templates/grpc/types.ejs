@@ -1,0 +1,58 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() + '.grpc' : 'com.example.grpc'; -%>
+package <%= pkg %>
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+
+<% for (const e of it.enums) { -%>
+@Serializable
+enum class <%= e.name %>(val number: Int) {
+<% for (let i = 0; i < e.values.length; i++) { -%>
+<% const v = e.values[i]; -%>
+    @SerialName("<%= v.name %>")
+    <%= v.name %>(<%= v.number %>)<%= i < e.values.length - 1 ? ',' : ';' %>
+<% } -%>
+}
+
+<% } -%>
+<% const enumNames = new Set(it.enums.map(e => e.name)); -%>
+<% for (const msg of it.messages) { -%>
+/**
+ * <%= msg.name %> protobuf message.
+<% if (msg.description) { -%>
+ * <%= msg.description %>
+<% } -%>
+ */
+<% if (msg.fields.length === 0) { -%>
+@Serializable
+class <%= msg.name %>
+
+<% } else { -%>
+@Serializable
+data class <%= msg.name %>(
+<% for (let i = 0; i < msg.fields.length; i++) { -%>
+<% const f = msg.fields[i]; -%>
+<% const rawType = it.mapProtoType(f.type, false, false); -%>
+<% const fieldType = enumNames.has(rawType) ? 'String' : rawType; -%>
+<% if (f.description) { -%>
+    /** <%= f.description %> */
+<% } -%>
+<% if (f.mapKeyType) { -%>
+    @SerialName("<%= f.name %>")
+    val <%= it.naming.propertyName(f.name) %>: Map<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>> = emptyMap()<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else if (f.optional) { -%>
+    @SerialName("<%= f.name %>")
+    val <%= it.naming.propertyName(f.name) %>: <%= fieldType %>? = null<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else if (f.repeated) { -%>
+    @SerialName("<%= f.name %>")
+    val <%= it.naming.propertyName(f.name) %>: List<<%= fieldType %>> = emptyList()<%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } else { -%>
+<% const defaultVal = fieldType === 'String' || enumNames.has(rawType) ? '""' : fieldType === 'Int' || fieldType === 'Long' ? '0' : fieldType === 'Double' || fieldType === 'Float' ? '0.0' : fieldType === 'Boolean' ? 'false' : '""'; -%>
+    @SerialName("<%= f.name %>")
+    val <%= it.naming.propertyName(f.name) %>: <%= fieldType %> = <%= defaultVal %><%= i < msg.fields.length - 1 ? ',' : '' %>
+<% } -%>
+<% } -%>
+)
+
+<% } -%>
+<% } -%>

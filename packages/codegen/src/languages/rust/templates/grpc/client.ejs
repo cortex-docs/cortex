@@ -1,0 +1,151 @@
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+/// Error type for gRPC-over-HTTP calls.
+#[derive(Debug, thiserror::Error)]
+pub enum GrpcError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+/// Wrapper around a gRPC response, providing `into_inner()`.
+pub struct GrpcResponse<T> {
+    inner: T,
+}
+
+impl<T> GrpcResponse<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+}
+
+/// A stream of items returned by a server-streaming RPC.
+pub struct GrpcStreaming<T> {
+    items: std::vec::IntoIter<T>,
+}
+
+impl<T: Unpin> futures_util::Stream for GrpcStreaming<T> {
+    type Item = Result<T, GrpcError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(self.items.next().map(Ok))
+    }
+}
+
+async fn grpc_post<Req: Serialize, Resp: DeserializeOwned>(
+    http: &reqwest::Client,
+    base_url: &str,
+    service: &str,
+    method: &str,
+    request: &Req,
+) -> Result<Resp, GrpcError> {
+    let url = format!("{}/grpc/{}/{}", base_url.trim_end_matches('/'), service, method);
+    let resp = http
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(request)
+        .send()
+        .await?
+        .json::<Resp>()
+        .await?;
+    Ok(resp)
+}
+
+/// Unified gRPC client for all services (HTTP/JSON transport).
+pub struct <%= it.clientClass %> {
+    http: reqwest::Client,
+    base_url: String,
+}
+
+impl <%= it.clientClass %> {
+    /// Create a new client connected to the given endpoint.
+    pub async fn connect(endpoint: impl Into<String>) -> Result<Self, GrpcError> {
+        Ok(Self {
+            http: reqwest::Client::new(),
+            base_url: endpoint.into(),
+        })
+    }
+
+<% for (const service of it.services) { %>
+<% for (const method of service.methods) { %>
+<% if (method.description) { %>
+    /// <%= method.description %>
+<% } %>
+<% if (!method.clientStreaming && !method.serverStreaming) { %>
+    /// Unary RPC: <%= method.name %>.
+    pub async fn <%= it.naming.propertyName(method.name) %>(
+        &mut self,
+        request: crate::grpc_types::<%= method.inputType %>,
+    ) -> Result<GrpcResponse<crate::grpc_types::<%= method.outputType %>>, GrpcError> {
+        let resp: crate::grpc_types::<%= method.outputType %> = grpc_post(
+            &self.http,
+            &self.base_url,
+            "<%= service.name %>",
+            "<%= method.name %>",
+            &request,
+        )
+        .await?;
+        Ok(GrpcResponse::new(resp))
+    }
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { %>
+    /// Server-streaming RPC: <%= method.name %>.
+    pub async fn <%= it.naming.propertyName(method.name) %>(
+        &mut self,
+        request: crate::grpc_types::<%= method.inputType %>,
+    ) -> Result<GrpcResponse<GrpcStreaming<crate::grpc_types::<%= method.outputType %>>>, GrpcError> {
+        let url = format!(
+            "{}/grpc/<%= service.name %>/<%= method.name %>",
+            self.base_url.trim_end_matches('/'),
+        );
+        let raw: serde_json::Value = self
+            .http
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?
+            .json()
+            .await?;
+        let items_value = if let Some(arr) = raw.get("data") {
+            arr.clone()
+        } else {
+            raw
+        };
+        let items: Vec<crate::grpc_types::<%= method.outputType %>> =
+            serde_json::from_value(items_value)?;
+        Ok(GrpcResponse::new(GrpcStreaming {
+            items: items.into_iter(),
+        }))
+    }
+
+<% } else if (method.clientStreaming && !method.serverStreaming) { %>
+    /// Client-streaming RPC: <%= method.name %> (not supported over HTTP).
+    pub async fn <%= it.naming.propertyName(method.name) %>(
+        &mut self,
+        _request: Vec<crate::grpc_types::<%= method.inputType %>>,
+    ) -> Result<GrpcResponse<crate::grpc_types::<%= method.outputType %>>, GrpcError> {
+        unimplemented!("Client-streaming is not supported over HTTP/JSON transport")
+    }
+
+<% } else { %>
+    /// Bidirectional streaming RPC: <%= method.name %> (not supported over HTTP).
+    pub async fn <%= it.naming.propertyName(method.name) %>(
+        &mut self,
+        _request: Vec<crate::grpc_types::<%= method.inputType %>>,
+    ) -> Result<GrpcResponse<GrpcStreaming<crate::grpc_types::<%= method.outputType %>>>, GrpcError> {
+        unimplemented!("Bidirectional streaming is not supported over HTTP/JSON transport")
+    }
+
+<% } %>
+<% } %>
+<% } %>
+}

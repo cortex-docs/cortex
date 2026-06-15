@@ -1,0 +1,159 @@
+import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+<% for (const msg of it.messages) { %>
+import type { <%= msg.name %> } from './grpc-types';
+<% } %>
+
+export interface GrpcClientOptions {
+  address?: string;
+  credentials?: grpc.ChannelCredentials;
+  options?: grpc.ClientOptions;
+  protoPath?: string;
+}
+
+type Serializer<T> = (arg: T) => Buffer;
+type Deserializer<T> = (buf: Buffer) => T;
+
+function loadServiceDef(protoPath: string, pkg: string, serviceName: string): grpc.ServiceDefinition | null {
+  try {
+    const pkgDef = protoLoader.loadSync(protoPath, {
+      keepCase: true, longs: String, enums: String, defaults: true, oneofs: true,
+    });
+    const grpcObj = grpc.loadPackageDefinition(pkgDef);
+    let ns: any = grpcObj;
+    for (const p of pkg.split('.')) ns = ns?.[p];
+    return ns?.[serviceName]?.service ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function jsonSerializer<T>(arg: T): Buffer {
+  return Buffer.from(JSON.stringify(arg));
+}
+
+function jsonDeserializer<T>(buf: Buffer): T {
+  return JSON.parse(buf.toString()) as T;
+}
+
+function dynamicDeserializer<T>(protoDeserialize: Deserializer<T> | null): Deserializer<T> {
+  if (!protoDeserialize) return jsonDeserializer;
+  return (buf: Buffer): T => {
+    try {
+      return protoDeserialize(buf);
+    } catch {
+      return jsonDeserializer(buf);
+    }
+  };
+}
+
+function getMethodSerializers<TReq, TRes>(
+  serviceDef: grpc.ServiceDefinition | null,
+  methodName: string,
+): { serialize: Serializer<TReq>; deserialize: Deserializer<TRes> } {
+  const def = serviceDef?.[methodName] as any;
+  return {
+    serialize: def?.requestSerialize ?? jsonSerializer,
+    deserialize: dynamicDeserializer<TRes>(def?.responseDeserialize ?? null),
+  };
+}
+
+export class <%= it.clientClass %> {
+  private clients: Map<string, grpc.Client> = new Map();
+  private serviceDefs: Map<string, grpc.ServiceDefinition | null> = new Map();
+
+  constructor(options: GrpcClientOptions = {}) {
+    const address = options.address ?? 'localhost:50051';
+    const credentials = options.credentials ?? grpc.credentials.createInsecure();
+    const protoPath = options.protoPath ?? path.resolve(
+      typeof __dirname !== 'undefined' ? __dirname : path.dirname(new URL(import.meta.url).pathname),
+      'service.proto',
+    );
+    const hasProto = fs.existsSync(protoPath);
+<% for (const service of it.services) { %>
+    this.serviceDefs.set('<%= service.name %>', hasProto ? loadServiceDef(protoPath, '<%= it.protoPackage %>', '<%= service.name %>') : null);
+    this.clients.set('<%= service.name %>', new grpc.Client(address, credentials, options.options ?? {}));
+<% } %>
+  }
+
+  close(): void {
+    for (const client of this.clients.values()) {
+      client.close();
+    }
+  }
+
+<% for (const service of it.services) { %>
+<% for (const method of service.methods) { %>
+<% if (method.description) { %>
+  /** <%= method.description %> */
+<% } %>
+<% if (!method.clientStreaming && !method.serverStreaming) { %>
+  async <%= it.naming.methodName(method.name) %>(request: <%= method.inputType %>, metadata?: grpc.Metadata): Promise<<%= method.outputType %>> {
+    const { serialize, deserialize } = getMethodSerializers<<%= method.inputType %>, <%= method.outputType %>>(this.serviceDefs.get('<%= service.name %>') ?? null, '<%= method.name %>');
+    return new Promise((resolve, reject) => {
+      this.clients.get('<%= service.name %>')!.makeUnaryRequest(
+        '/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>',
+        serialize,
+        deserialize,
+        request,
+        metadata ?? new grpc.Metadata(),
+        (err: grpc.ServiceError | null, response?: <%= method.outputType %>) => {
+          if (err) reject(err);
+          else resolve(response!);
+        },
+      );
+    });
+  }
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { %>
+  <%= it.naming.methodName(method.name) %>(request: <%= method.inputType %>, metadata?: grpc.Metadata): grpc.ClientReadableStream<<%= method.outputType %>> {
+    const { serialize, deserialize } = getMethodSerializers<<%= method.inputType %>, <%= method.outputType %>>(this.serviceDefs.get('<%= service.name %>') ?? null, '<%= method.name %>');
+    return this.clients.get('<%= service.name %>')!.makeServerStreamRequest(
+      '/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>',
+      serialize,
+      deserialize,
+      request,
+      metadata ?? new grpc.Metadata(),
+    );
+  }
+
+<% } else if (method.clientStreaming && !method.serverStreaming) { %>
+  <%= it.naming.methodName(method.name) %>(metadata?: grpc.Metadata): Promise<{ stream: grpc.ClientWritableStream<<%= method.inputType %>>; response: Promise<<%= method.outputType %>> }> {
+    const { serialize, deserialize } = getMethodSerializers<<%= method.inputType %>, <%= method.outputType %>>(this.serviceDefs.get('<%= service.name %>') ?? null, '<%= method.name %>');
+    return new Promise((resolve) => {
+      let responseResolve: (value: <%= method.outputType %>) => void;
+      let responseReject: (err: Error) => void;
+      const responsePromise = new Promise<<%= method.outputType %>>((res, rej) => { responseResolve = res; responseReject = rej; });
+
+      const stream = this.clients.get('<%= service.name %>')!.makeClientStreamRequest(
+        '/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>',
+        serialize,
+        deserialize,
+        metadata ?? new grpc.Metadata(),
+        (err: grpc.ServiceError | null, response?: <%= method.outputType %>) => {
+          if (err) responseReject(err);
+          else responseResolve(response!);
+        },
+      );
+
+      resolve({ stream, response: responsePromise });
+    });
+  }
+
+<% } else { %>
+  <%= it.naming.methodName(method.name) %>(metadata?: grpc.Metadata): grpc.ClientDuplexStream<<%= method.inputType %>, <%= method.outputType %>> {
+    const { serialize, deserialize } = getMethodSerializers<<%= method.inputType %>, <%= method.outputType %>>(this.serviceDefs.get('<%= service.name %>') ?? null, '<%= method.name %>');
+    return this.clients.get('<%= service.name %>')!.makeBidiStreamRequest(
+      '/<%= it.protoPackage %>.<%= service.name %>/<%= method.name %>',
+      serialize,
+      deserialize,
+      metadata ?? new grpc.Metadata(),
+    );
+  }
+
+<% } %>
+<% } %>
+<% } %>
+}

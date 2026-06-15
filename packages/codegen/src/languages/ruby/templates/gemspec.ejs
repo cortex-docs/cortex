@@ -1,0 +1,13 @@
+Gem::Specification.new do |s|
+  s.name        = "<%= it.utils.toSnakeCase(it.packageName) %>"
+  s.version     = "<%= it.version %>"
+  s.summary     = "Ruby SDK for <%= it.title %>"
+  s.authors     = ["<%= it.project %>"]
+  s.files       = Dir["lib/**/*.rb"]
+  s.required_ruby_version = ">= 3.0.0"
+
+  s.add_dependency "faraday", "~> 2.0"
+  s.add_dependency "faraday-multipart", "~> 1.0"
+<% if (it.hasWs) { %>  s.add_dependency "websocket-client-simple", "~> 0.8"
+<% } %><% if (it.hasGrpc) { %>  s.add_dependency "grpc", "~> 1.60"
+<% } %>end

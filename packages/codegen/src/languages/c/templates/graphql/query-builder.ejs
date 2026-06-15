@@ -1,0 +1,316 @@
+<% /* Helper: map a GQL arg type to a C type for the args struct */ -%>
+<% const mapArgType = (arg) => { -%>
+<%   const resolved = it.resolveType(arg.type); -%>
+<%   if (resolved === 'char*') return 'const char*'; -%>
+<%   if (resolved === 'int64_t') return 'int64_t'; -%>
+<%   if (resolved === 'double') return 'double'; -%>
+<%   if (resolved === 'int' || resolved === 'bool') return 'int'; -%>
+<%   if (it.enumNames.has(arg.type)) return 'gql_' + it.naming.propertyName(arg.type) + '_t'; -%>
+<%   if (it.inputNames.has(arg.type)) return 'gql_' + it.naming.propertyName(arg.type) + '_t'; -%>
+<%   return 'cJSON*'; -%>
+<% }; -%>
+<% const isStringArg = (arg) => it.resolveType(arg.type) === 'char*'; -%>
+<% const isIntArg = (arg) => it.resolveType(arg.type) === 'int64_t'; -%>
+<% const isDoubleArg = (arg) => it.resolveType(arg.type) === 'double'; -%>
+<% const isBoolArg = (arg) => it.resolveType(arg.type) === 'int' || it.resolveType(arg.type) === 'bool'; -%>
+<% const isEnumArg = (arg) => it.enumNames.has(arg.type); -%>
+<% const isInputArg = (arg) => it.inputNames.has(arg.type); -%>
+<% const isKnownType = (fType) => it.typesByName.has(fType); -%>
+<% const isListOfKnownType = (f) => f.isList && isKnownType(f.type); -%>
+#ifndef SDK_GQL_QUERY_BUILDER_H
+#define SDK_GQL_QUERY_BUILDER_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include "cjson/cJSON.h"
+#include "gql-types.h"
+
+#define GQL_MAX_FIELDS 64
+#define GQL_MAX_ROOTS 16
+#define GQL_MAX_ARG_DEFS 16
+
+typedef struct gql_field_entry gql_field_entry_t;
+struct gql_field_entry {
+  char name[128];
+  gql_field_entry_t* children;
+  int child_count;
+};
+
+static inline void gql_field_entry_free(gql_field_entry_t* e) {
+  if (!e) return;
+  for (int i = 0; i < e->child_count; i++) gql_field_entry_free(&e->children[i]);
+  free(e->children);
+  e->children = NULL;
+  e->child_count = 0;
+}
+
+typedef struct { char name[128]; char gql_type[128]; } gql_arg_def_t;
+
+typedef struct {
+  char field[128];
+  cJSON* args;
+  gql_arg_def_t arg_defs[GQL_MAX_ARG_DEFS];
+  int arg_def_count;
+  gql_field_entry_t* selection;
+  int selection_count;
+} gql_root_entry_t;
+
+static inline void gql_root_entry_free(gql_root_entry_t* e) {
+  if (e->args) { cJSON_Delete(e->args); e->args = NULL; }
+  for (int i = 0; i < e->selection_count; i++) gql_field_entry_free(&e->selection[i]);
+  free(e->selection);
+  e->selection = NULL;
+  e->selection_count = 0;
+}
+
+static inline void gql_build_selection_str(char* buf, int buf_size, const gql_field_entry_t* entries, int count, const char* indent) {
+  int off = (int)strlen(buf);
+  for (int i = 0; i < count && off < buf_size - 1; i++) {
+    if (entries[i].child_count > 0) {
+      off += snprintf(buf + off, buf_size - off, "%s%s {\n", indent, entries[i].name);
+      char sub_indent[64];
+      snprintf(sub_indent, sizeof(sub_indent), "%s  ", indent);
+      gql_build_selection_str(buf, buf_size, entries[i].children, entries[i].child_count, sub_indent);
+      off = (int)strlen(buf);
+      off += snprintf(buf + off, buf_size - off, "%s}", indent);
+    } else {
+      off += snprintf(buf + off, buf_size - off, "%s%s", indent, entries[i].name);
+    }
+    if (i + 1 < count) off += snprintf(buf + off, buf_size - off, "\n");
+  }
+}
+
+static inline int gql_any_set(const void* p, size_t sz) {
+  const unsigned char* b = (const unsigned char*)p;
+  for (size_t i = 0; i < sz; i++) if (b[i]) return 1;
+  return 0;
+}
+
+typedef struct {
+  char kind[16];
+  gql_root_entry_t entries[GQL_MAX_ROOTS];
+  int entry_count;
+} gql_builder_t;
+
+static inline void gql_builder_init(gql_builder_t* b, const char* kind) {
+  memset(b, 0, sizeof(*b));
+  strncpy(b->kind, kind, sizeof(b->kind) - 1);
+}
+
+static inline void gql_builder_free(gql_builder_t* b) {
+  for (int i = 0; i < b->entry_count; i++) gql_root_entry_free(&b->entries[i]);
+  b->entry_count = 0;
+}
+
+typedef struct { char query[8192]; cJSON* variables; } gql_document_t;
+
+static inline gql_document_t gql_builder_build(const gql_builder_t* b) {
+  gql_document_t doc;
+  memset(&doc, 0, sizeof(doc));
+  doc.variables = cJSON_CreateObject();
+  char var_defs[2048] = "";
+  int vd_off = 0;
+  char parts[8192] = "";
+  int parts_off = 0;
+  int vi = 0;
+  for (int e = 0; e < b->entry_count; e++) {
+    const gql_root_entry_t* entry = &b->entries[e];
+    char arg_parts[2048] = "";
+    int ap_off = 0;
+    if (entry->args && cJSON_IsObject(entry->args)) {
+      for (int d = 0; d < entry->arg_def_count; d++) {
+        cJSON* val = cJSON_GetObjectItem(entry->args, entry->arg_defs[d].name);
+        if (val) {
+          char vn[32];
+          snprintf(vn, sizeof(vn), "v%d", vi++);
+          if (vd_off > 0) vd_off += snprintf(var_defs + vd_off, sizeof(var_defs) - vd_off, ", ");
+          vd_off += snprintf(var_defs + vd_off, sizeof(var_defs) - vd_off, "$%s: %s", vn, entry->arg_defs[d].gql_type);
+          if (ap_off > 0) ap_off += snprintf(arg_parts + ap_off, sizeof(arg_parts) - ap_off, ", ");
+          ap_off += snprintf(arg_parts + ap_off, sizeof(arg_parts) - ap_off, "%s: $%s", entry->arg_defs[d].name, vn);
+          cJSON_AddItemToObject(doc.variables, vn, cJSON_Duplicate(val, 1));
+        }
+      }
+    }
+    char args_str[2048] = "";
+    if (ap_off > 0) snprintf(args_str, sizeof(args_str), "(%s)", arg_parts);
+    if (entry->selection_count > 0) {
+      char sel[4096] = "";
+      gql_build_selection_str(sel, sizeof(sel), entry->selection, entry->selection_count, "      ");
+      parts_off += snprintf(parts + parts_off, sizeof(parts) - parts_off, "    %s%s {\n%s\n    }", entry->field, args_str, sel);
+    } else {
+      parts_off += snprintf(parts + parts_off, sizeof(parts) - parts_off, "    %s%s", entry->field, args_str);
+    }
+    if (e + 1 < b->entry_count) parts_off += snprintf(parts + parts_off, sizeof(parts) - parts_off, "\n");
+  }
+  char vd[2048] = "";
+  if (vd_off > 0) snprintf(vd, sizeof(vd), "(%s)", var_defs);
+  snprintf(doc.query, sizeof(doc.query), "%s%s {\n%s\n  }", b->kind, vd, parts);
+  return doc;
+}
+
+static inline void gql_document_free(gql_document_t* d) {
+  if (d->variables) { cJSON_Delete(d->variables); d->variables = NULL; }
+}
+
+/* ─── Field selection structs (one per GraphQL type) ──────── */
+<% for (const t of it.types) { %>
+
+typedef struct gql_<%= it.naming.propertyName(t.name) %>_fields_s gql_<%= it.naming.propertyName(t.name) %>_fields_t;
+<% } %>
+<% for (const t of it.types) { %>
+
+struct gql_<%= it.naming.propertyName(t.name) %>_fields_s {
+<% for (const f of t.fields) { -%>
+<% if (it.isScalarType(f.type) || it.enumNames.has(f.type)) { -%>
+  int <%= it.naming.propertyName(f.name) %>;
+<% } else if (isKnownType(f.type)) { -%>
+  gql_<%= it.naming.propertyName(f.type) %>_fields_t <%= it.naming.propertyName(f.name) %>;
+<% } -%>
+<% } -%>
+};
+
+static inline void gql_<%= it.naming.propertyName(t.name) %>_fields_to_selection(const gql_<%= it.naming.propertyName(t.name) %>_fields_t* f, gql_field_entry_t* entries, int* count) {
+  *count = 0;
+<% for (const fld of t.fields) { -%>
+<% if (it.isScalarType(fld.type) || it.enumNames.has(fld.type)) { -%>
+  if (f-><%= it.naming.propertyName(fld.name) %>) { strncpy(entries[*count].name, "<%= fld.name %>", 127); entries[*count].children = NULL; entries[*count].child_count = 0; (*count)++; }
+<% } else if (isKnownType(fld.type)) { -%>
+  if (gql_any_set(&f-><%= it.naming.propertyName(fld.name) %>, sizeof(f-><%= it.naming.propertyName(fld.name) %>))) {
+    gql_field_entry_t* e = &entries[*count];
+    strncpy(e->name, "<%= fld.name %>", 127);
+    e->children = (gql_field_entry_t*)calloc(GQL_MAX_FIELDS, sizeof(gql_field_entry_t));
+    gql_<%= it.naming.propertyName(fld.type) %>_fields_to_selection(&f-><%= it.naming.propertyName(fld.name) %>, e->children, &e->child_count);
+    (*count)++;
+  }
+<% } -%>
+<% } -%>
+}
+
+<% } %>
+
+/* ─── Typed arg structs ───────────────────────────────────── */
+
+typedef gql_builder_t gql_query_builder_t;
+typedef gql_builder_t gql_mutation_builder_t;
+typedef gql_builder_t gql_subscription_builder_t;
+
+<% const allOps = [
+  ...it.queries.map(op => ({ ...op, kind: 'Query', prefix: 'gql_qb' })),
+  ...it.mutations.map(op => ({ ...op, kind: 'Mutation', prefix: 'gql_mb' })),
+  ...it.subscriptions.map(op => ({ ...op, kind: 'Subscription', prefix: 'gql_sb' })),
+]; -%>
+<% for (const op of allOps) { -%>
+<% if (op.args.length > 0) { -%>
+<% const argsTypeName = 'gql_' + it.naming.propertyName(op.name) + '_args_t'; -%>
+
+typedef struct {
+<% for (const arg of op.args) { -%>
+  <%= mapArgType(arg) %> <%= it.naming.propertyName(arg.name) %>;
+<% } -%>
+} <%= argsTypeName %>;
+
+static inline cJSON* <%= 'gql_' + it.naming.propertyName(op.name) + '_args_to_json' %>(const <%= argsTypeName %>* a) {
+  cJSON* j = cJSON_CreateObject();
+  if (!a) return j;
+<% for (const arg of op.args) { -%>
+<% if (isStringArg(arg)) { -%>
+  if (a-><%= it.naming.propertyName(arg.name) %>) cJSON_AddStringToObject(j, "<%= arg.name %>", a-><%= it.naming.propertyName(arg.name) %>);
+<% } else if (isIntArg(arg)) { -%>
+  if (a-><%= it.naming.propertyName(arg.name) %>) cJSON_AddNumberToObject(j, "<%= arg.name %>", (double)a-><%= it.naming.propertyName(arg.name) %>);
+<% } else if (isDoubleArg(arg)) { -%>
+  cJSON_AddNumberToObject(j, "<%= arg.name %>", a-><%= it.naming.propertyName(arg.name) %>);
+<% } else if (isBoolArg(arg)) { -%>
+  cJSON_AddBoolToObject(j, "<%= arg.name %>", a-><%= it.naming.propertyName(arg.name) %>);
+<% } else if (isEnumArg(arg)) { -%>
+  if (a-><%= it.naming.propertyName(arg.name) %>) cJSON_AddStringToObject(j, "<%= arg.name %>", gql_<%= it.naming.propertyName(arg.type) %>_to_string(a-><%= it.naming.propertyName(arg.name) %>));
+<% } else if (isInputArg(arg)) { -%>
+  { cJSON* tmp = gql_<%= it.naming.propertyName(arg.type) %>_to_json(&a-><%= it.naming.propertyName(arg.name) %>); cJSON_AddItemToObject(j, "<%= arg.name %>", tmp); }
+<% } else { -%>
+  if (a-><%= it.naming.propertyName(arg.name) %>) cJSON_AddItemToObject(j, "<%= arg.name %>", cJSON_Duplicate(a-><%= it.naming.propertyName(arg.name) %>, 1));
+<% } -%>
+<% } -%>
+  return j;
+}
+
+<% } -%>
+<% } -%>
+
+/* ─── Root builder functions ──────────────────────────────── */
+<% const opKinds = [
+  { ops: it.queries, prefix: 'gql_qb' },
+  { ops: it.mutations, prefix: 'gql_mb' },
+  { ops: it.subscriptions, prefix: 'gql_sb' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% for (const op of bk.ops) { -%>
+<% const cName = it.naming.propertyName(op.name); -%>
+<% const returnType = op.returnType; -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const hasArgs = op.args.length > 0; -%>
+<% const argsTypeName = hasArgs ? ('gql_' + it.naming.propertyName(op.name) + '_args_t') : null; -%>
+<% const argsToJson = hasArgs ? ('gql_' + it.naming.propertyName(op.name) + '_args_to_json') : null; -%>
+<% const fieldsType = !isScalarReturn && isKnownType(returnType) ? 'gql_' + it.naming.propertyName(returnType) + '_fields_t' : null; -%>
+<% const fieldsToSel = !isScalarReturn && isKnownType(returnType) ? 'gql_' + it.naming.propertyName(returnType) + '_fields_to_selection' : null; -%>
+
+<% if (isScalarReturn) { -%>
+<% /* Scalar return — no field selection needed */ -%>
+<% if (hasArgs) { -%>
+static inline void <%= bk.prefix %>_<%= cName %>(gql_builder_t* b, const <%= argsTypeName %>* args) {
+  gql_root_entry_t* e = &b->entries[b->entry_count++];
+  memset(e, 0, sizeof(*e));
+  strncpy(e->field, "<%= op.name %>", sizeof(e->field) - 1);
+  e->args = <%= argsToJson %>(args);
+<% for (let i = 0; i < op.args.length; i++) { const a = op.args[i]; -%>
+  strncpy(e->arg_defs[<%= i %>].name, "<%= a.name %>", sizeof(e->arg_defs[0].name) - 1);
+  strncpy(e->arg_defs[<%= i %>].gql_type, "<%= a.typeRaw %>", sizeof(e->arg_defs[0].gql_type) - 1);
+<% } -%>
+  e->arg_def_count = <%= op.args.length %>;
+}
+<% } else { -%>
+static inline void <%= bk.prefix %>_<%= cName %>(gql_builder_t* b) {
+  gql_root_entry_t* e = &b->entries[b->entry_count++];
+  memset(e, 0, sizeof(*e));
+  strncpy(e->field, "<%= op.name %>", sizeof(e->field) - 1);
+  e->args = cJSON_CreateObject();
+}
+<% } -%>
+<% } else if (fieldsType) { -%>
+<% /* Object return — uses fields struct for selection */ -%>
+<% if (hasArgs) { -%>
+static inline void <%= bk.prefix %>_<%= cName %>(gql_builder_t* b, const <%= argsTypeName %>* args, const <%= fieldsType %>* fields) {
+  gql_root_entry_t* e = &b->entries[b->entry_count++];
+  memset(e, 0, sizeof(*e));
+  strncpy(e->field, "<%= op.name %>", sizeof(e->field) - 1);
+  e->args = <%= argsToJson %>(args);
+<% for (let i = 0; i < op.args.length; i++) { const a = op.args[i]; -%>
+  strncpy(e->arg_defs[<%= i %>].name, "<%= a.name %>", sizeof(e->arg_defs[0].name) - 1);
+  strncpy(e->arg_defs[<%= i %>].gql_type, "<%= a.typeRaw %>", sizeof(e->arg_defs[0].gql_type) - 1);
+<% } -%>
+  e->arg_def_count = <%= op.args.length %>;
+  if (fields) {
+    e->selection = (gql_field_entry_t*)calloc(GQL_MAX_FIELDS, sizeof(gql_field_entry_t));
+    <%= fieldsToSel %>(fields, e->selection, &e->selection_count);
+  }
+}
+
+static inline void <%= bk.prefix %>_<%= cName %>_no_args(gql_builder_t* b, const <%= fieldsType %>* fields) {
+  <%= bk.prefix %>_<%= cName %>(b, NULL, fields);
+}
+<% } else { -%>
+static inline void <%= bk.prefix %>_<%= cName %>(gql_builder_t* b, const <%= fieldsType %>* fields) {
+  gql_root_entry_t* e = &b->entries[b->entry_count++];
+  memset(e, 0, sizeof(*e));
+  strncpy(e->field, "<%= op.name %>", sizeof(e->field) - 1);
+  e->args = cJSON_CreateObject();
+  if (fields) {
+    e->selection = (gql_field_entry_t*)calloc(GQL_MAX_FIELDS, sizeof(gql_field_entry_t));
+    <%= fieldsToSel %>(fields, e->selection, &e->selection_count);
+  }
+}
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+
+#endif /* SDK_GQL_QUERY_BUILDER_H */

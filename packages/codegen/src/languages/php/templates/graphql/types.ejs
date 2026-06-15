@@ -1,0 +1,119 @@
+<?php
+
+declare(strict_types=1);
+
+<% for (const e of it.enums) { -%>
+enum <%= e.name %>: string
+{
+<% for (const v of e.values) { -%>
+    case <%= String(v).replace(/[^a-zA-Z0-9_]/g, '_').toUpperCase() %> = '<%= v %>';
+<% } -%>
+}
+
+<% } -%>
+<% for (const t of it.types) { -%>
+/**
+ * <%= t.name %> GraphQL type.
+<% if (t.description) { -%>
+ * <%= t.description %>
+<% } -%>
+ */
+class <%= t.name %>
+{
+    public function __construct(
+<% for (let i = 0; i < t.fields.length; i++) { -%>
+<% const f = t.fields[i]; -%>
+        public readonly <%= it.mapSchemaField(f) %> $<%= it.naming.propertyName(f.name) %><%= !f.required ? ' = null' : '' %><%= i < t.fields.length - 1 ? ',' : '' %>
+<% } -%>
+    ) {}
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+<% for (let i = 0; i < t.fields.length; i++) { -%>
+            $data['<%= t.fields[i].name %>'] ?? null<%= i < t.fields.length - 1 ? ',' : '' %>
+<% } -%>
+        );
+    }
+
+    public function toArray(): array
+    {
+        return [
+<% for (let i = 0; i < t.fields.length; i++) { -%>
+            '<%= t.fields[i].name %>' => $this-><%= it.naming.propertyName(t.fields[i].name) %><%= i < t.fields.length - 1 ? ',' : '' %>
+<% } -%>
+        ];
+    }
+}
+
+<% } -%>
+<% for (const inp of it.inputs) { -%>
+/**
+ * <%= inp.name %> GraphQL input type.
+ */
+class <%= inp.name %>
+{
+    public function __construct(
+<% for (let i = 0; i < inp.fields.length; i++) { -%>
+<% const f = inp.fields[i]; -%>
+        public readonly <%= it.mapInputField(f) %> $<%= it.naming.propertyName(f.name) %><%= !f.required ? ' = null' : '' %><%= i < inp.fields.length - 1 ? ',' : '' %>
+<% } -%>
+    ) {}
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+<% for (let i = 0; i < inp.fields.length; i++) { -%>
+            $data['<%= inp.fields[i].name %>'] ?? null<%= i < inp.fields.length - 1 ? ',' : '' %>
+<% } -%>
+        );
+    }
+
+    public function toArray(): array
+    {
+        return [
+<% for (let i = 0; i < inp.fields.length; i++) { -%>
+            '<%= inp.fields[i].name %>' => $this-><%= it.naming.propertyName(inp.fields[i].name) %><%= i < inp.fields.length - 1 ? ',' : '' %>
+<% } -%>
+        ];
+    }
+}
+
+<% } -%>
+<% for (const op of it.operations) { -%>
+<% if (op.hasArgs) { -%>
+/**
+ * Variables for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+ */
+class <%= op.variablesTypeName %>
+{
+    public function __construct(
+<% for (let i = 0; i < op.args.length; i++) { -%>
+<% const a = op.args[i]; -%>
+        public readonly <%= it.mapInputField(a) %> $<%= it.naming.propertyName(a.name) %><%= !a.required ? ' = null' : '' %><%= i < op.args.length - 1 ? ',' : '' %>
+<% } -%>
+    ) {}
+
+    public function toArray(): array
+    {
+        return array_filter([
+<% for (let i = 0; i < op.args.length; i++) { -%>
+<% const a = op.args[i]; -%>
+            '<%= a.name %>' => $this-><%= it.naming.propertyName(a.name) %><%= i < op.args.length - 1 ? ',' : '' %>
+<% } -%>
+        ], fn($v) => $v !== null);
+    }
+}
+
+<% } -%>
+/**
+ * Result type for the <%= op.name %> <%= op.kind.toLowerCase() %>.
+ */
+class <%= op.resultTypeName %>
+{
+    public function __construct(
+        public readonly <%= op.returnTypeStr %> $<%= it.naming.propertyName(op.name) %><%= !op.returnRequired ? ' = null' : '' %>
+    ) {}
+}
+
+<% } -%>

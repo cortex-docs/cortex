@@ -1,0 +1,10 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const clientClass = it.clientClass; -%>
+#include "client.hpp"
+#include "types.hpp"
+
+sdk::<%= clientClass %> client({
+  .base_url = "<%= baseUrl %>",
+  .bearer_token = "your-token",
+  // .api_key = "your-api-key",
+});

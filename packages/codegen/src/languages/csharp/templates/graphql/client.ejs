@@ -1,0 +1,224 @@
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+using System.Net.Http.Headers;
+<% if (hasSubscriptions) { -%>
+using System.Net.WebSockets;
+<% } -%>
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+public class <%= it.clientClass %> : IDisposable
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _endpoint;
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
+<% if (hasSubscriptions) { -%>
+    private readonly string _wsEndpoint;
+    private int _subId;
+<% } -%>
+
+    public <%= it.clientClass %>(
+        string endpoint = "<%= it.endpoint %>",
+<% if (hasSubscriptions) { -%>
+        string? wsEndpoint = null,
+<% } -%>
+        string? bearerToken = null,
+        TimeSpan? timeout = null)
+    {
+        _endpoint = endpoint;
+        _httpClient = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) };
+        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        if (bearerToken is not null)
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+<% if (hasSubscriptions) { -%>
+
+        _wsEndpoint = wsEndpoint ?? endpoint.Replace("http://", "ws://").Replace("https://", "wss://");
+<% } -%>
+    }
+
+    public void SetHeader(string key, string value)
+    {
+        _httpClient.DefaultRequestHeaders.Remove(key);
+        _httpClient.DefaultRequestHeaders.Add(key, value);
+    }
+
+    private async Task<JsonElement> ExecuteAsync(string query, Dictionary<string, object?>? variables = null)
+    {
+        var requestBody = new Dictionary<string, object?> { ["query"] = query };
+        if (variables is { Count: > 0 })
+            requestBody["variables"] = variables;
+
+        var content = new StringContent(
+            JsonSerializer.Serialize(requestBody),
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _httpClient.PostAsync(_endpoint, content);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var json = JsonDocument.Parse(responseBody);
+        var root = json.RootElement;
+
+        if (root.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0)
+        {
+            var messages = new List<string>();
+            foreach (var error in errors.EnumerateArray())
+            {
+                if (error.TryGetProperty("message", out var msg))
+                    messages.Add(msg.GetString() ?? "Unknown error");
+            }
+            throw new GqlException(string.Join("; ", messages));
+        }
+
+        return root.TryGetProperty("data", out var data) ? data.Clone() : default;
+    }
+<% if (hasQueries) { %>
+    public async Task<T> QueryAsync<T>(Func<QueryBuilder, QueryBuilder> fn)
+    {
+        var builder = new QueryBuilder();
+        fn(builder);
+        var (query, variables) = builder.BuildDocument("query");
+        var result = await ExecuteAsync(query, variables);
+        return JsonSerializer.Deserialize<T>(result.GetRawText(), JsonOpts)!;
+    }
+<% } -%>
+<% if (hasMutations) { %>
+    public async Task<T> MutateAsync<T>(Func<MutationBuilder, MutationBuilder> fn)
+    {
+        var builder = new MutationBuilder();
+        fn(builder);
+        var (query, variables) = builder.BuildDocument("mutation");
+        var result = await ExecuteAsync(query, variables);
+        return JsonSerializer.Deserialize<T>(result.GetRawText(), JsonOpts)!;
+    }
+<% } -%>
+<% if (hasSubscriptions) { %>
+    public async Task<T> SubscribeOnceAsync<T>(
+        Func<SubscriptionBuilder, SubscriptionBuilder> fn,
+        int timeoutMs = 10000)
+    {
+        var builder = new SubscriptionBuilder();
+        fn(builder);
+        var (query, variables) = builder.BuildDocument("subscription");
+
+        using var ws = new ClientWebSocket();
+        ws.Options.AddSubProtocol("graphql-transport-ws");
+        await ws.ConnectAsync(new Uri(_wsEndpoint), CancellationToken.None);
+
+        await WsSendAsync(ws, new { type = "connection_init" });
+        await WsReceiveAsync(ws);
+
+        var id = $"{Interlocked.Increment(ref _subId)}";
+        await WsSendAsync(ws, new { type = "subscribe", id, payload = new { query, variables } });
+
+        using var cts = new CancellationTokenSource(timeoutMs);
+        while (!cts.Token.IsCancellationRequested)
+        {
+            var msg = await WsReceiveAsync(ws, cts.Token);
+            if (msg.TryGetProperty("type", out var tp))
+            {
+                var type = tp.GetString();
+                if (type == "next" &&
+                    msg.TryGetProperty("payload", out var payload) &&
+                    payload.TryGetProperty("data", out var data))
+                {
+                    try { await WsSendAsync(ws, new { type = "complete", id }); } catch { }
+                    return JsonSerializer.Deserialize<T>(data.GetRawText(), JsonOpts)!;
+                }
+                if (type == "error" || type == "complete") break;
+            }
+        }
+
+        throw new TimeoutException("Subscription timed out");
+    }
+
+    public Action Subscribe(
+        Func<SubscriptionBuilder, SubscriptionBuilder> fn,
+        Action<JsonElement> onData,
+        Action<Exception>? onError = null)
+    {
+        var builder = new SubscriptionBuilder();
+        fn(builder);
+        var (query, variables) = builder.BuildDocument("subscription");
+        var id = $"{Interlocked.Increment(ref _subId)}";
+        var disposed = false;
+        ClientWebSocket? ws = null;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                ws = new ClientWebSocket();
+                ws.Options.AddSubProtocol("graphql-transport-ws");
+                await ws.ConnectAsync(new Uri(_wsEndpoint), CancellationToken.None);
+                await WsSendAsync(ws, new { type = "connection_init" });
+                await WsReceiveAsync(ws);
+                await WsSendAsync(ws, new { type = "subscribe", id, payload = new { query, variables } });
+
+                while (!disposed && ws.State == WebSocketState.Open)
+                {
+                    var msg = await WsReceiveAsync(ws);
+                    if (msg.TryGetProperty("type", out var tp))
+                    {
+                        var type = tp.GetString();
+                        if (type == "next" && !disposed &&
+                            msg.TryGetProperty("payload", out var payload) &&
+                            payload.TryGetProperty("data", out var data))
+                        {
+                            onData(data.Clone());
+                        }
+                        if (type == "error" || type == "complete") break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!disposed) onError?.Invoke(ex);
+            }
+        });
+
+        return () =>
+        {
+            disposed = true;
+            if (ws?.State == WebSocketState.Open)
+            {
+                try { WsSendAsync(ws, new { type = "complete", id }).Wait(); } catch { }
+            }
+            ws?.Dispose();
+        };
+    }
+
+    private static async Task WsSendAsync(ClientWebSocket ws, object msg)
+    {
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(msg));
+        await ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+    }
+
+    private static async Task<JsonElement> WsReceiveAsync(ClientWebSocket ws, CancellationToken ct = default)
+    {
+        var buffer = new byte[8192];
+        using var ms = new MemoryStream();
+        WebSocketReceiveResult result;
+        do
+        {
+            result = await ws.ReceiveAsync(buffer, ct);
+            ms.Write(buffer, 0, result.Count);
+        } while (!result.EndOfMessage);
+
+        return JsonDocument.Parse(ms.ToArray()).RootElement.Clone();
+    }
+<% } -%>
+
+    public void Dispose() => _httpClient.Dispose();
+}
+
+public class GqlException : Exception
+{
+    public GqlException(string message) : base(message) { }
+}

@@ -1,0 +1,25 @@
+<% const method = it.method; -%>
+<% const serviceName = (typeof it.service === 'object' ? it.service.serviceName : it.service) ?? 'PetService'; -%>
+<% const clientVar = it.service.clientVar ?? (serviceName.charAt(0).toLowerCase() + serviceName.slice(1).replace(/Service$/, '').replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '') + '_client'); -%>
+<% const methodSnake = method.callName ?? it.utils.toSnakeCase(method.methodName ?? method.name); -%>
+<% const inputType = method.inputType; -%>
+<% const fields = (method.inputFields ?? []).map(f => `${f.name}: ${f.type === 'number' || f.type === 'integer' ? '0' : f.type === 'boolean' ? 'true' : `"value".into()`}`); -%>
+<% const args = fields.length > 0 ? `grpc::${inputType} { ${fields.join(', ')}, ..Default::default() }` : `grpc::${inputType}::default()`; -%>
+<% if (method.serverStreaming) { -%>
+// <%= method.methodName ?? method.name %> (server streaming)
+use futures::StreamExt;
+
+let mut stream = <%= clientVar %>.<%= methodSnake %>(<%= args %>).await?.into_inner();
+while let Some(item) = stream.next().await {
+    let item = item?;
+    println!("{:?}", item);
+}
+<% } else if (method.clientStreaming) { -%>
+// <%= method.methodName ?? method.name %> (client streaming)
+let mut stream = <%= clientVar %>.<%= methodSnake %>().await?;
+stream.send(<%= args %>).await?;
+let result = stream.close().await?.into_inner();
+<% } else { -%>
+// <%= method.methodName ?? method.name %>
+let result = <%= clientVar %>.<%= methodSnake %>(<%= args %>).await?.into_inner();
+<% } -%>

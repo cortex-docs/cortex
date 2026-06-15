@@ -1,0 +1,35 @@
+<% const opType = it.opType ?? 'query'; -%>
+<% const op = it.op; -%>
+<% const opName = op?.name ?? it.opName ?? 'Items'; -%>
+<% const args = op?.args ?? it.args ?? []; -%>
+<% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return 'true'; if (a.type === 'ID') return `"example_${a.name}"`; return '"value"'; }; -%>
+<% const argsObj = args.length > 0 ? `new { ${args.map(a => `${a.name} = ${exVal(a)}`).join(', ')} }` : 'new {}'; -%>
+<% if (opType === 'query') { -%>
+// Query <%= opName %>
+var result = await gql.QueryAsync<Gql.<%= opName %>Query>(q =>
+    q.<%= opName %>(<%= argsObj %>, p =>
+        p.Id().Name()
+    )
+);
+<% } else if (opType === 'mutation') { -%>
+// Mutation <%= opName %>
+var result = await gql.MutateAsync<Gql.<%= opName %>Mutation>(m =>
+    m.<%= opName %>(<%= argsObj %>, p =>
+        p.Id().Name()
+    )
+);
+<% } else { -%>
+// One-shot subscription (resolves on first event)
+var evt = await gql.SubscribeOnceAsync<Gql.<%= opName %>Subscription>(s =>
+    s.<%= opName %>(<%= argsObj %>, p =>
+        p.Id().Name()
+    )
+);
+
+// Continuous subscription
+var unsubscribe = gql.Subscribe(
+    s => s.<%= opName %>(p => p.Id().Name()),
+    data => Console.WriteLine($"Event: {data}")
+);
+// Later: unsubscribe();
+<% } -%>

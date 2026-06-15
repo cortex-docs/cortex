@@ -1,0 +1,114 @@
+# frozen_string_literal: true
+
+require "json"
+require "websocket-client-simple"
+require_relative "ws-types"
+
+class <%= it.clientClass %>
+  attr_reader :url
+
+  def initialize(
+    url: "<%= it.serverUrl %>",
+    reconnect: true,
+    reconnect_interval: 3,
+    max_reconnect_attempts: 10
+  )
+    @url = url
+    @reconnect = reconnect
+    @reconnect_interval = reconnect_interval
+    @max_reconnect_attempts = max_reconnect_attempts
+    @handlers = {}
+    @ws = nil
+    @reconnect_attempts = 0
+  end
+
+  def connect
+    @ws = WebSocket::Client::Simple.connect(@url)
+    @reconnect_attempts = 0
+    client = self
+
+    @ws.on :message do |msg|
+      client.send(:_handle_message, msg.data)
+    end
+
+    @ws.on :close do |_e|
+      client.send(:_handle_close)
+    end
+
+    @ws.on :error do |e|
+      # connection error
+    end
+
+    self
+  end
+
+  def disconnect
+    @reconnect = false
+    @ws&.close
+    @ws = nil
+  end
+
+  def send_message(channel, payload)
+    raise "WebSocket is not connected" unless @ws
+
+    data = payload.respond_to?(:to_hash) ? payload.to_hash : payload
+    @ws.send(JSON.generate({ channel: channel, payload: data }))
+  end
+
+  def subscribe(channel, &block)
+    @handlers[channel] ||= []
+    @handlers[channel] << block
+
+    -> { @handlers[channel]&.delete(block) }
+  end
+
+<% for (const ch of it.channels) { -%>
+<% if (ch.canSubscribe) { -%>
+<% const hasTypedMsg = ch.subscribeSchema && ch.subscribeSchema.properties.length > 0; -%>
+  # Subscribe to <%= ch.name %>
+<% if (ch.description) { -%>
+  # <%= ch.description %>
+<% } -%>
+<% if (hasTypedMsg) { -%>
+  def on_<%= it.naming.methodName(ch.name.replace(/[^a-zA-Z0-9]/g, '-')) %>(&block)
+    subscribe("<%= ch.name %>") { |payload| block.call(<%= ch.className %>Message.from_hash(payload)) }
+  end
+<% } else { -%>
+  def on_<%= it.naming.methodName(ch.name.replace(/[^a-zA-Z0-9]/g, '-')) %>(&block)
+    subscribe("<%= ch.name %>", &block)
+  end
+<% } -%>
+
+<% } -%>
+<% if (ch.canPublish) { -%>
+  # Publish to <%= ch.name %>
+<% if (ch.description) { -%>
+  # <%= ch.description %>
+<% } -%>
+  def send_<%= it.naming.methodName(ch.name.replace(/[^a-zA-Z0-9]/g, '-')) %>(payload)
+    send_message("<%= ch.name %>", payload)
+  end
+
+<% } -%>
+<% } -%>
+  private
+
+  def _handle_message(raw)
+    data = JSON.parse(raw)
+    channel = data["channel"] || data["type"] || data["event"] || ""
+    return unless @handlers.key?(channel)
+
+    payload = data["payload"] || data["data"] || data
+    @handlers[channel].each { |handler| handler.call(payload) }
+  rescue JSON::ParserError
+    # ignore malformed messages
+  end
+
+  def _handle_close
+    return unless @reconnect && @reconnect_attempts < @max_reconnect_attempts
+
+    @reconnect_attempts += 1
+    sleep(@reconnect_interval)
+    connect
+  end
+end

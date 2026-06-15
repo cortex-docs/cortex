@@ -1,0 +1,77 @@
+<?php
+
+declare(strict_types=1);
+
+<% for (const schema of it.schemas) { -%>
+<% if (schema.properties.length > 0) { -%>
+class <%= schema.className %>
+{
+    public function __construct(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+        public readonly <%= schema.properties[i].type %><%= !schema.properties[i].required ? '|null' : '' %> $<%= it.naming.propertyName(schema.properties[i].originalName) %><%= !schema.properties[i].required ? ' = null' : '' %><%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    ) {}
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+            $data['<%= schema.properties[i].originalName %>'] ?? null<%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+        );
+    }
+
+    public function toArray(): array
+    {
+        return [
+<% for (let i = 0; i < schema.properties.length; i++) { -%>
+            '<%= schema.properties[i].originalName %>' => $this-><%= it.naming.propertyName(schema.properties[i].originalName) %><%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+        ];
+    }
+}
+
+<% } -%>
+<% } -%>
+<% for (const ch of it.channels) { -%>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { -%>
+class <%= ch.className %>Message
+{
+    public function __construct(
+<% for (let i = 0; i < ch.subscribeSchema.properties.length; i++) { -%>
+        public readonly <%= ch.subscribeSchema.properties[i].type %><%= !ch.subscribeSchema.properties[i].required ? '|null' : '' %> $<%= it.naming.propertyName(ch.subscribeSchema.properties[i].originalName) %><%= !ch.subscribeSchema.properties[i].required ? ' = null' : '' %><%= i < ch.subscribeSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    ) {}
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+<% for (let i = 0; i < ch.subscribeSchema.properties.length; i++) { -%>
+            $data['<%= ch.subscribeSchema.properties[i].originalName %>'] ?? null<%= i < ch.subscribeSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+        );
+    }
+}
+
+<% } -%>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { -%>
+class <%= ch.className %>Payload
+{
+    public function __construct(
+<% for (let i = 0; i < ch.publishSchema.properties.length; i++) { -%>
+        public readonly <%= ch.publishSchema.properties[i].type %><%= !ch.publishSchema.properties[i].required ? '|null' : '' %> $<%= it.naming.propertyName(ch.publishSchema.properties[i].originalName) %><%= !ch.publishSchema.properties[i].required ? ' = null' : '' %><%= i < ch.publishSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+    ) {}
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+<% for (let i = 0; i < ch.publishSchema.properties.length; i++) { -%>
+            $data['<%= ch.publishSchema.properties[i].originalName %>'] ?? null<%= i < ch.publishSchema.properties.length - 1 ? ',' : '' %>
+<% } -%>
+        );
+    }
+}
+
+<% } -%>
+<% } -%>

@@ -1,0 +1,16 @@
+<% const tsconfig = {
+  compilerOptions: {
+    target: 'ES2022',
+    module: 'ES2022',
+    moduleResolution: 'bundler',
+    lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+    strict: true,
+    esModuleInterop: true,
+    skipLibCheck: true,
+    declaration: true,
+    outDir: './dist',
+    rootDir: './src',
+  },
+  include: ['src/**/*.ts'],
+  exclude: ['node_modules', 'dist'],
+}; %><%= JSON.stringify(tsconfig, null, 2) %>

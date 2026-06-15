@@ -1,0 +1,200 @@
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+
+public class <%= it.clientClass %> : IDisposable
+{
+    private readonly string _url;
+    private readonly bool _reconnect;
+    private readonly TimeSpan _reconnectInterval;
+    private readonly int _maxReconnectAttempts;
+    private readonly Dictionary<string, List<Action<JsonElement>>> _handlers = new();
+    private ClientWebSocket? _ws;
+    private CancellationTokenSource? _cts;
+    private int _reconnectAttempts;
+    private bool _shouldReconnect;
+
+    public <%= it.clientClass %>(
+        string url = "<%= it.serverUrl %>",
+        bool reconnect = true,
+        TimeSpan? reconnectInterval = null,
+        int maxReconnectAttempts = 10)
+    {
+        _url = url;
+        _shouldReconnect = reconnect;
+        _reconnect = reconnect;
+        _reconnectInterval = reconnectInterval ?? TimeSpan.FromSeconds(3);
+        _maxReconnectAttempts = maxReconnectAttempts;
+    }
+
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        _ws = new ClientWebSocket();
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        await _ws.ConnectAsync(new Uri(_url), _cts.Token);
+        _reconnectAttempts = 0;
+
+        _ = Task.Run(() => ListenAsync(_cts.Token), _cts.Token);
+    }
+
+    public async Task DisconnectAsync()
+    {
+        _shouldReconnect = false;
+        _cts?.Cancel();
+
+        if (_ws is { State: WebSocketState.Open })
+        {
+            await _ws.CloseAsync(
+                WebSocketCloseStatus.NormalClosure,
+                "Client disconnecting",
+                CancellationToken.None);
+        }
+
+        _ws?.Dispose();
+        _ws = null;
+    }
+
+    public async Task SendAsync(string channel, object payload, CancellationToken cancellationToken = default)
+    {
+        if (_ws is null || _ws.State != WebSocketState.Open)
+            throw new InvalidOperationException("WebSocket is not connected");
+
+        var message = JsonSerializer.Serialize(new { channel, payload });
+        var bytes = Encoding.UTF8.GetBytes(message);
+
+        await _ws.SendAsync(
+            new ArraySegment<byte>(bytes),
+            WebSocketMessageType.Text,
+            endOfMessage: true,
+            cancellationToken);
+    }
+
+    public Action Subscribe(string channel, Action<JsonElement> handler)
+    {
+        if (!_handlers.ContainsKey(channel))
+            _handlers[channel] = new List<Action<JsonElement>>();
+
+        _handlers[channel].Add(handler);
+
+        return () => _handlers.GetValueOrDefault(channel)?.Remove(handler);
+    }
+
+<% for (const ch of it.channels) { -%>
+<% if (ch.canSubscribe) { -%>
+    /// <summary>
+    /// Subscribe to <%= ch.name %>
+<% if (ch.description) { -%>
+    /// <%= ch.description %>
+<% } -%>
+    /// </summary>
+    public Action On<%= ch.className %>(Action<JsonElement> handler)
+    {
+        return Subscribe("<%= ch.name %>", handler);
+    }
+
+<% } -%>
+<% if (ch.canPublish) { -%>
+    /// <summary>
+    /// Publish to <%= ch.name %>
+<% if (ch.description) { -%>
+    /// <%= ch.description %>
+<% } -%>
+    /// </summary>
+    public async Task Send<%= ch.className %>Async(object payload, CancellationToken cancellationToken = default)
+    {
+        await SendAsync("<%= ch.name %>", payload, cancellationToken);
+    }
+
+<% } -%>
+<% } -%>
+    private async Task ListenAsync(CancellationToken cancellationToken)
+    {
+        var buffer = new byte[4096];
+
+        try
+        {
+            while (_ws is { State: WebSocketState.Open } && !cancellationToken.IsCancellationRequested)
+            {
+                using var ms = new MemoryStream();
+                WebSocketReceiveResult result;
+
+                do
+                {
+                    result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+                    ms.Write(buffer, 0, result.Count);
+                } while (!result.EndOfMessage);
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                    break;
+
+                var raw = Encoding.UTF8.GetString(ms.ToArray());
+                HandleMessage(raw);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // expected on disconnect
+        }
+        catch (WebSocketException)
+        {
+            // connection lost
+        }
+
+        HandleClose();
+    }
+
+    private void HandleMessage(string raw)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+
+            var channel = root.TryGetProperty("channel", out var ch) ? ch.GetString()
+                : root.TryGetProperty("type", out var t) ? t.GetString()
+                : root.TryGetProperty("event", out var e) ? e.GetString()
+                : "";
+
+            if (channel is null || !_handlers.ContainsKey(channel))
+                return;
+
+            var payload = root.TryGetProperty("payload", out var p) ? p
+                : root.TryGetProperty("data", out var d) ? d
+                : root;
+
+            foreach (var handler in _handlers[channel])
+                handler(payload.Clone());
+        }
+        catch (JsonException)
+        {
+            // ignore malformed messages
+        }
+    }
+
+    private async void HandleClose()
+    {
+        if (!_shouldReconnect || _reconnectAttempts >= _maxReconnectAttempts)
+            return;
+
+        _reconnectAttempts++;
+        await Task.Delay(_reconnectInterval);
+
+        try
+        {
+            await ConnectAsync();
+        }
+        catch
+        {
+            // reconnect failed, will retry on next close
+        }
+    }
+
+    public void Dispose()
+    {
+        _shouldReconnect = false;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _ws?.Dispose();
+    }
+}

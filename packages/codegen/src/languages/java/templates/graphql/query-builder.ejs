@@ -1,0 +1,261 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example'; -%>
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+package <%= pkg %>;
+
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+
+public class GqlDocument {
+    public final String query;
+    public final Map<String, Object> variables;
+
+    public GqlDocument(String query, Map<String, Object> variables) {
+        this.query = query;
+        this.variables = variables;
+    }
+}
+<% for (const t of it.types) { %>
+
+public class <%= t.name %>Selector {
+    final List<Object[]> fields = new ArrayList<>();
+
+<% for (const f of t.fields) { -%>
+<% if (it.isScalarType(f.type) || it.enumNames.has(f.type)) { -%>
+    public <%= t.name %>Selector <%= f.name %>() { fields.add(new Object[]{"<%= f.name %>", null}); return this; }
+<% } else if (it.typesByName.has(f.type)) { -%>
+    public <%= t.name %>Selector <%= f.name %>(Function<<%= f.type %>Selector, <%= f.type %>Selector> fn) {
+        <%= f.type %>Selector sub = new <%= f.type %>Selector();
+        fn.apply(sub);
+        fields.add(new Object[]{"<%= f.name %>", sub.fields});
+        return this;
+    }
+<% } -%>
+<% } -%>
+}
+<% } %>
+
+public class GqlBuilderUtil {
+    private static final Gson GSON = new Gson();
+
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> toMap(Object args) {
+        if (args == null) return null;
+        return GSON.fromJson(GSON.toJson(args), new TypeToken<Map<String, Object>>(){}.getType());
+    }
+
+    @SuppressWarnings("unchecked")
+    static String buildSelection(List<Object[]> fields, String indent) {
+        if (fields == null || fields.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(" {\n");
+        for (Object[] entry : fields) {
+            String name = (String) entry[0];
+            List<Object[]> children = (List<Object[]>) entry[1];
+            sb.append(indent).append("  ").append(name);
+            if (children != null && !children.isEmpty()) {
+                sb.append(buildSelection(children, indent + "  "));
+            }
+            sb.append("\n");
+        }
+        sb.append(indent).append("}");
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    static GqlDocument buildDocument(String kind, List<Object[]> rootFields) {
+        Map<String, Object> variables = new LinkedHashMap<>();
+        List<String> varDefs = new ArrayList<>();
+        StringBuilder body = new StringBuilder();
+
+        for (Object[] rf : rootFields) {
+            String name = (String) rf[0];
+            Map<String, Object> args = (Map<String, Object>) rf[1];
+            Map<String, String> argTypes = (Map<String, String>) rf[2];
+            List<Object[]> selections = (List<Object[]>) rf[3];
+            boolean scalar = (boolean) rf[4];
+
+            body.append("  ").append(name);
+
+            if (args != null && !args.isEmpty()) {
+                List<String> argParts = new ArrayList<>();
+                for (Map.Entry<String, Object> arg : args.entrySet()) {
+                    String varName = name + "_" + arg.getKey();
+                    String gqlType = argTypes != null ? argTypes.getOrDefault(arg.getKey(), "String") : "String";
+                    varDefs.add("$" + varName + ": " + gqlType);
+                    variables.put(varName, arg.getValue());
+                    argParts.add(arg.getKey() + ": $" + varName);
+                }
+                body.append("(").append(String.join(", ", argParts)).append(")");
+            }
+
+            if (!scalar && selections != null && !selections.isEmpty()) {
+                body.append(GqlBuilderUtil.buildSelection(selections, "  "));
+            }
+            body.append("\n");
+        }
+
+        StringBuilder doc = new StringBuilder();
+        doc.append(kind);
+        if (!varDefs.isEmpty()) {
+            doc.append("(").append(String.join(", ", varDefs)).append(")");
+        }
+        doc.append(" {\n").append(body).append("}");
+
+        return new GqlDocument(doc.toString(), variables);
+    }
+}
+<% if (hasQueries) { %>
+
+public class QueryBuilder {
+    final List<Object[]> rootFields = new ArrayList<>();
+
+<% for (const op of it.queries) { -%>
+<% const returnType = op.returnType; -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const allOptional = op.args.length === 0 || op.args.every(a => !a.required); -%>
+<% const varsType = it.naming.className(op.name) + 'QueryVariables'; -%>
+<% if (isScalarReturn) { -%>
+<% if (op.args.length > 0) { -%>
+    public QueryBuilder <%= op.name %>(<%= varsType %> args) {
+        Map<String, String> types = new LinkedHashMap<>();
+<% for (const a of op.args) { -%>
+        types.put("<%= a.name %>", "<%= a.typeRaw %>");
+<% } -%>
+        rootFields.add(new Object[]{"<%= op.name %>", GqlBuilderUtil.toMap(args), types, null, true});
+        return this;
+    }
+
+<% } -%>
+<% if (allOptional) { -%>
+    public QueryBuilder <%= op.name %>() {
+        return <%= op.name %>((<%= varsType %>) null);
+    }
+
+<% } -%>
+<% } else { -%>
+<% if (op.args.length > 0) { -%>
+    public QueryBuilder <%= op.name %>(<%= varsType %> args, Function<<%= returnType %>Selector, <%= returnType %>Selector> fn) {
+        <%= returnType %>Selector s = new <%= returnType %>Selector();
+        fn.apply(s);
+        Map<String, String> types = new LinkedHashMap<>();
+<% for (const a of op.args) { -%>
+        types.put("<%= a.name %>", "<%= a.typeRaw %>");
+<% } -%>
+        rootFields.add(new Object[]{"<%= op.name %>", GqlBuilderUtil.toMap(args), types, s.fields, false});
+        return this;
+    }
+
+<% } -%>
+<% if (allOptional) { -%>
+    public QueryBuilder <%= op.name %>(Function<<%= returnType %>Selector, <%= returnType %>Selector> fn) {
+        return <%= op.name %>((<%= varsType %>) null, fn);
+    }
+
+<% } -%>
+<% } -%>
+<% } -%>
+    public GqlDocument buildDocument() {
+        return GqlBuilderUtil.buildDocument("query", rootFields);
+    }
+}
+<% } -%>
+<% if (hasMutations) { %>
+
+public class MutationBuilder {
+    final List<Object[]> rootFields = new ArrayList<>();
+
+<% for (const op of it.mutations) { -%>
+<% const returnType = op.returnType; -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const varsType = it.naming.className(op.name) + 'MutationVariables'; -%>
+<% if (isScalarReturn) { -%>
+    public MutationBuilder <%= op.name %>(<%= varsType %> args) {
+        Map<String, String> types = new LinkedHashMap<>();
+<% for (const a of op.args) { -%>
+        types.put("<%= a.name %>", "<%= a.typeRaw %>");
+<% } -%>
+        rootFields.add(new Object[]{"<%= op.name %>", GqlBuilderUtil.toMap(args), types, null, true});
+        return this;
+    }
+
+<% } else { -%>
+    public MutationBuilder <%= op.name %>(<%= varsType %> args, Function<<%= returnType %>Selector, <%= returnType %>Selector> fn) {
+        <%= returnType %>Selector s = new <%= returnType %>Selector();
+        fn.apply(s);
+        Map<String, String> types = new LinkedHashMap<>();
+<% for (const a of op.args) { -%>
+        types.put("<%= a.name %>", "<%= a.typeRaw %>");
+<% } -%>
+        rootFields.add(new Object[]{"<%= op.name %>", GqlBuilderUtil.toMap(args), types, s.fields, false});
+        return this;
+    }
+
+<% } -%>
+<% } -%>
+    public GqlDocument buildDocument() {
+        return GqlBuilderUtil.buildDocument("mutation", rootFields);
+    }
+}
+<% } -%>
+<% if (hasSubscriptions) { %>
+
+public class SubscriptionBuilder {
+    final List<Object[]> rootFields = new ArrayList<>();
+
+<% for (const op of it.subscriptions) { -%>
+<% const returnType = op.returnType; -%>
+<% const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const allOptional = op.args.length === 0 || op.args.every(a => !a.required); -%>
+<% const varsType = it.naming.className(op.name) + 'SubscriptionVariables'; -%>
+<% if (isScalarReturn) { -%>
+<% if (op.args.length > 0) { -%>
+    public SubscriptionBuilder <%= op.name %>(<%= varsType %> args) {
+        Map<String, String> types = new LinkedHashMap<>();
+<% for (const a of op.args) { -%>
+        types.put("<%= a.name %>", "<%= a.typeRaw %>");
+<% } -%>
+        rootFields.add(new Object[]{"<%= op.name %>", GqlBuilderUtil.toMap(args), types, null, true});
+        return this;
+    }
+
+<% } -%>
+<% if (allOptional) { -%>
+    public SubscriptionBuilder <%= op.name %>() {
+        return <%= op.name %>((<%= varsType %>) null);
+    }
+
+<% } -%>
+<% } else { -%>
+<% if (op.args.length > 0) { -%>
+    public SubscriptionBuilder <%= op.name %>(<%= varsType %> args, Function<<%= returnType %>Selector, <%= returnType %>Selector> fn) {
+        <%= returnType %>Selector s = new <%= returnType %>Selector();
+        fn.apply(s);
+        Map<String, String> types = new LinkedHashMap<>();
+<% for (const a of op.args) { -%>
+        types.put("<%= a.name %>", "<%= a.typeRaw %>");
+<% } -%>
+        rootFields.add(new Object[]{"<%= op.name %>", GqlBuilderUtil.toMap(args), types, s.fields, false});
+        return this;
+    }
+
+<% } -%>
+<% if (allOptional) { -%>
+    public SubscriptionBuilder <%= op.name %>(Function<<%= returnType %>Selector, <%= returnType %>Selector> fn) {
+        return <%= op.name %>((<%= varsType %>) null, fn);
+    }
+
+<% } -%>
+<% } -%>
+<% } -%>
+    public GqlDocument buildDocument() {
+        return GqlBuilderUtil.buildDocument("subscription", rootFields);
+    }
+}
+<% } %>

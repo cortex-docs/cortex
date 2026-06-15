@@ -1,0 +1,69 @@
+# frozen_string_literal: true
+
+require "faraday"
+require "json"
+require_relative "grpc-types"
+
+# Unified gRPC client for all services.
+class <%= it.clientClass %>
+  def initialize(base_url: "http://localhost:4010")
+    @connection = Faraday.new(url: base_url) do |f|
+      f.options.timeout = 30
+      f.headers["Content-Type"] = "application/json"
+    end
+  end
+
+  def close
+    # no-op for HTTP transport
+  end
+
+<% for (const service of it.services) { -%>
+<% for (const method of service.methods) { -%>
+<% if (method.description) { -%>
+  # <%= method.description %>
+<% } -%>
+<% if (!method.clientStreaming && !method.serverStreaming) { -%>
+  def <%= it.naming.methodName(method.name) %>(request = {}, metadata: {})
+    result = _call("<%= service.name %>", "<%= method.name %>", request)
+    <%= method.outputType %>.from_hash(result)
+  end
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { -%>
+  def <%= it.naming.methodName(method.name) %>(request = {}, metadata: {}, &block)
+    result = _call("<%= service.name %>", "<%= method.name %>", request)
+    items = result["data"] || [result]
+    items = items.map { |item| <%= method.outputType %>.from_hash(item) }
+    items.each { |item| block.call(item) } if block
+    items
+  end
+
+<% } else if (method.clientStreaming && !method.serverStreaming) { -%>
+  def <%= it.naming.methodName(method.name) %>(requests, metadata: {})
+    body = requests.map { |r| r.respond_to?(:to_hash) ? r.to_hash : r }
+    result = _call("<%= service.name %>", "<%= method.name %>", body)
+    <%= method.outputType %>.from_hash(result)
+  end
+
+<% } else { -%>
+  def <%= it.naming.methodName(method.name) %>(requests, metadata: {}, &block)
+    body = requests.map { |r| r.respond_to?(:to_hash) ? r.to_hash : r }
+    result = _call("<%= service.name %>", "<%= method.name %>", body)
+    items = result["data"] || [result]
+    items = items.map { |item| <%= method.outputType %>.from_hash(item) }
+    items.each { |item| block.call(item) } if block
+    items
+  end
+
+<% } -%>
+<% } -%>
+<% } -%>
+  private
+
+  def _call(service, method, request)
+    body = request.respond_to?(:to_hash) ? request.to_hash : request
+    response = @connection.post("/grpc/#{service}/#{method}") do |req|
+      req.body = JSON.generate(body)
+    end
+    JSON.parse(response.body)
+  end
+end

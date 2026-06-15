@@ -1,0 +1,97 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() + '.grpc' : 'com.example.grpc'; -%>
+package <%= pkg %>
+
+import java.io.Closeable
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.serialization.json.*
+import kotlinx.serialization.encodeToString
+
+/**
+ * Unified gRPC client for all services.
+ */
+class <%= it.clientClass %>(
+    private val baseUrl: String = "http://localhost:50051",
+) : Closeable {
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override fun close() { /* no-op for HTTP-based client */ }
+
+<% for (const service of it.services) { -%>
+    private inline fun <reified TReq, reified TResp> call<%= service.name %>(method: String, request: TReq): TResp {
+        val url = URL("${baseUrl.trimEnd('/')}/grpc/<%= service.name %>/$method")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.doOutput = true
+        conn.connectTimeout = 30_000
+        conn.readTimeout = 30_000
+
+        val body = json.encodeToString(request)
+        conn.outputStream.use { it.write(body.toByteArray()) }
+
+        val responseCode = conn.responseCode
+        val responseBody = if (responseCode in 200..299) {
+            conn.inputStream.bufferedReader().readText()
+        } else {
+            val err = conn.errorStream?.bufferedReader()?.readText() ?: ""
+            throw RuntimeException("gRPC call $method failed with status $responseCode: $err")
+        }
+        return json.decodeFromString<TResp>(responseBody)
+    }
+
+    private inline fun <reified TReq, reified TResp> callServerStream<%= service.name %>(method: String, request: TReq): List<TResp> {
+        val url = URL("${baseUrl.trimEnd('/')}/grpc/<%= service.name %>/$method")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.doOutput = true
+        conn.connectTimeout = 30_000
+        conn.readTimeout = 30_000
+
+        val body = json.encodeToString(request)
+        conn.outputStream.use { it.write(body.toByteArray()) }
+
+        val responseCode = conn.responseCode
+        val responseBody = if (responseCode in 200..299) {
+            conn.inputStream.bufferedReader().readText()
+        } else {
+            val err = conn.errorStream?.bufferedReader()?.readText() ?: ""
+            throw RuntimeException("gRPC call $method failed with status $responseCode: $err")
+        }
+
+        val root = json.parseToJsonElement(responseBody).jsonObject
+        val dataArray = root["data"]?.jsonArray
+        if (dataArray != null) {
+            return dataArray.map { json.decodeFromJsonElement<TResp>(it) }
+        }
+        return json.decodeFromString<List<TResp>>(responseBody)
+    }
+
+<% } -%>
+<% for (const service of it.services) { -%>
+<% for (const method of service.methods) { -%>
+<% if (method.description) { -%>
+    /**
+     * <%= method.description %>
+     */
+<% } -%>
+<% if (!method.clientStreaming && !method.serverStreaming) { -%>
+    /**
+     * Unary RPC: <%= method.name %>.
+     */
+    fun <%= it.naming.methodName(method.name) %>(request: <%= method.inputType %>): <%= method.outputType %> =
+        call<%= service.name %><<%= method.inputType %>, <%= method.outputType %>>("<%= method.name %>", request)
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { -%>
+    /**
+     * Server-streaming RPC: <%= method.name %>.
+     */
+    fun <%= it.naming.methodName(method.name) %>(request: <%= method.inputType %>): List<<%= method.outputType %>> =
+        callServerStream<%= service.name %><<%= method.inputType %>, <%= method.outputType %>>("<%= method.name %>", request)
+
+<% } -%>
+<% } -%>
+<% } -%>
+}

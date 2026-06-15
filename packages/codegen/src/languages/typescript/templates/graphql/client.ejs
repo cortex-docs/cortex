@@ -1,0 +1,175 @@
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+import {
+<% if (hasQueries) { -%>
+  type QueryBuilder,
+  createQueryBuilder,
+<% } -%>
+<% if (hasMutations) { -%>
+  type MutationBuilder,
+  createMutationBuilder,
+<% } -%>
+<% if (hasSubscriptions) { -%>
+  type SubscriptionBuilder,
+  createSubscriptionBuilder,
+<% } -%>
+} from './gql-query-builder';
+<% if (hasSubscriptions) { -%>
+import { createClient, type Client as GqlWsClient, type ClientOptions } from 'graphql-ws';
+<% } -%>
+
+export interface <%= it.clientClass %>Options {
+  endpoint?: string;
+<% if (hasSubscriptions) { -%>
+  wsEndpoint?: string;
+  webSocketImpl?: ClientOptions['webSocketImpl'];
+<% } -%>
+  headers?: Record<string, string>;
+  bearerToken?: string;
+}
+
+export class <%= it.clientClass %> {
+  private endpoint: string;
+  private headers: Record<string, string>;
+<% if (hasSubscriptions) { -%>
+  private wsEndpoint: string;
+  private wsClient: GqlWsClient | null = null;
+  private webSocketImpl: ClientOptions['webSocketImpl'];
+<% } -%>
+
+  constructor(options: <%= it.clientClass %>Options = {}) {
+    this.endpoint = options.endpoint ?? '<%= it.endpoint %>';
+    this.headers = { 'Content-Type': 'application/json', ...options.headers };
+    if (options.bearerToken) {
+      this.headers['Authorization'] = `Bearer ${options.bearerToken}`;
+    }
+<% if (hasSubscriptions) { -%>
+    this.wsEndpoint = options.wsEndpoint ?? this.endpoint.replace(/^http/, 'ws');
+    this.webSocketImpl = options.webSocketImpl;
+<% } -%>
+  }
+
+  private async execute<T = unknown>(query: string, variables?: Record<string, unknown>): Promise<T> {
+    const response = await fetch(this.endpoint, {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({ query, variables }),
+    });
+
+    const json = await response.json() as { data?: T; errors?: Array<{ message: string }> };
+
+    if (json.errors?.length) {
+      throw new GqlError(json.errors.map((e) => e.message).join('; '), json.errors);
+    }
+
+    return json.data as T;
+  }
+<% if (hasQueries) { %>
+  async query<T extends {}>(fn: (q: QueryBuilder) => QueryBuilder<T>): Promise<T> {
+    const builder = createQueryBuilder();
+    fn(builder as QueryBuilder);
+    const { query, variables } = (builder as unknown as { __buildDocument(kind: string): { query: string; variables: Record<string, unknown> } }).__buildDocument('query');
+    return this.execute<T>(query, variables);
+  }
+<% } -%>
+<% if (hasMutations) { %>
+  async mutate<T extends {}>(fn: (m: MutationBuilder) => MutationBuilder<T>): Promise<T> {
+    const builder = createMutationBuilder();
+    fn(builder as MutationBuilder);
+    const { query, variables } = (builder as unknown as { __buildDocument(kind: string): { query: string; variables: Record<string, unknown> } }).__buildDocument('mutation');
+    return this.execute<T>(query, variables);
+  }
+<% } -%>
+<% if (hasSubscriptions) { %>
+  subscribe<T extends {}>(
+    fn: (s: SubscriptionBuilder) => SubscriptionBuilder<T>,
+    onData: (data: T) => void,
+    onError?: (error: Error) => void,
+  ): () => void {
+    const builder = createSubscriptionBuilder();
+    fn(builder as SubscriptionBuilder);
+    const { query, variables } = (builder as unknown as { __buildDocument(kind: string): { query: string; variables: Record<string, unknown> } }).__buildDocument('subscription');
+
+    if (!this.wsClient) {
+      this.wsClient = createClient({
+        url: this.wsEndpoint,
+        webSocketImpl: this.webSocketImpl,
+        connectionParams: () => {
+          const params: Record<string, string> = {};
+          if (this.headers['Authorization']) {
+            params['Authorization'] = this.headers['Authorization'];
+          }
+          return params;
+        },
+      });
+    }
+
+    let disposed = false;
+    const dispose = this.wsClient.subscribe<T>(
+      { query, variables },
+      {
+        next: (result) => {
+          if (result.data && !disposed) onData(result.data);
+        },
+        error: (err) => {
+          if (!disposed) {
+            const error = err instanceof Error ? err : new GqlError(
+              Array.isArray(err) ? err.map((e: { message?: string }) => e.message || String(e)).join('; ') || 'subscription error' : String(err),
+              Array.isArray(err) ? err : []
+            );
+            if (onError) onError(error);
+          }
+        },
+        complete: () => {},
+      },
+    );
+
+    return () => {
+      disposed = true;
+      dispose();
+    };
+  }
+
+  subscribeOnce<T extends {}>(
+    fn: (s: SubscriptionBuilder) => SubscriptionBuilder<T>,
+    timeoutMs = 10_000,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let unsubscribe: (() => void) | undefined;
+      const timeout = setTimeout(() => {
+        unsubscribe?.();
+        reject(new Error('subscription timeout'));
+      }, timeoutMs);
+
+      unsubscribe = this.subscribe(
+        fn,
+        (data) => {
+          clearTimeout(timeout);
+          unsubscribe?.();
+          resolve(data);
+        },
+        (error) => {
+          clearTimeout(timeout);
+          unsubscribe?.();
+          reject(error);
+        },
+      );
+    });
+  }
+
+  dispose(): void {
+    if (this.wsClient) {
+      this.wsClient.dispose();
+      this.wsClient = null;
+    }
+  }
+<% } -%>
+}
+
+export class GqlError extends Error {
+  constructor(message: string, public readonly errors: Array<{ message: string }>) {
+    super(message);
+    this.name = 'GqlError';
+  }
+}

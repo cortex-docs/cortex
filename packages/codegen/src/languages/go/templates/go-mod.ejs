@@ -1,0 +1,8 @@
+module <%= it.packageName %>
+
+go 1.21
+<% if (it.hasWs) { %>
+require github.com/gorilla/websocket v1.5.0
+<% } %><% if (it.hasGrpc) { %>
+require google.golang.org/grpc v1.68.0
+<% } %>

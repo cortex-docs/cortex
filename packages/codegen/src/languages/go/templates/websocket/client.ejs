@@ -1,0 +1,134 @@
+<% const pkgName = it.packageName.split('/').pop().replace(/-/g, ''); %>
+package <%= pkgName %>
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
+type wsMessageHandler func(data json.RawMessage)
+
+type <%= it.clientClass %> struct {
+	url               string
+	conn              *websocket.Conn
+	handlers          map[string][]wsMessageHandler
+	mu                sync.RWMutex
+	reconnect         bool
+	reconnectInterval time.Duration
+	maxAttempts       int
+	attempts          int
+}
+
+func New<%= it.clientClass %>(serverURL string) *<%= it.clientClass %> {
+	if serverURL == "" {
+		serverURL = "<%= it.serverUrl %>"
+	}
+	return &<%= it.clientClass %>{
+		url:               serverURL,
+		handlers:          make(map[string][]wsMessageHandler),
+		reconnect:         true,
+		reconnectInterval: 3 * time.Second,
+		maxAttempts:       10,
+	}
+}
+
+func (c *<%= it.clientClass %>) Connect() error {
+	u, _ := url.Parse(c.url)
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("ws connect: %w", err)
+	}
+	c.conn = conn
+	c.attempts = 0
+	go c.listen()
+	return nil
+}
+
+func (c *<%= it.clientClass %>) Disconnect() {
+	c.reconnect = false
+	if c.conn != nil {
+		c.conn.Close()
+	}
+}
+
+func (c *<%= it.clientClass %>) Send(channel string, payload interface{}) error {
+	msg := map[string]interface{}{"channel": channel, "payload": payload}
+	data, _ := json.Marshal(msg)
+	return c.conn.WriteMessage(websocket.TextMessage, data)
+}
+
+func (c *<%= it.clientClass %>) Subscribe(channel string, handler wsMessageHandler) func() {
+	c.mu.Lock()
+	c.handlers[channel] = append(c.handlers[channel], handler)
+	c.mu.Unlock()
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		handlers := c.handlers[channel]
+		for i, h := range handlers {
+			if fmt.Sprintf("%p", h) == fmt.Sprintf("%p", handler) {
+				c.handlers[channel] = append(handlers[:i], handlers[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+func (c *<%= it.clientClass %>) listen() {
+	for {
+		_, raw, err := c.conn.ReadMessage()
+		if err != nil {
+			if c.reconnect && c.attempts < c.maxAttempts {
+				c.attempts++
+				time.Sleep(c.reconnectInterval)
+				c.Connect()
+			}
+			return
+		}
+		var data map[string]interface{}
+		if json.Unmarshal(raw, &data) != nil {
+			continue
+		}
+		ch, _ := data["channel"].(string)
+		if ch == "" { ch, _ = data["type"].(string) }
+		if ch == "" { ch, _ = data["event"].(string) }
+		payload, err := json.Marshal(data["payload"])
+		if err != nil {
+			continue
+		}
+		c.mu.RLock()
+		for _, h := range c.handlers[ch] {
+			h(payload)
+		}
+		c.mu.RUnlock()
+	}
+}
+
+<% for (const ch of it.channels) { %>
+<% if (ch.canSubscribe) { %>
+func (c *<%= it.clientClass %>) On<%= ch.className %>(handler func(<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %><%= ch.className %>Message<% } else { %>json.RawMessage<% } %>)) func() {
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { -%>
+	return c.Subscribe("<%= ch.name %>", func(raw json.RawMessage) {
+		var message <%= ch.className %>Message
+		if err := json.Unmarshal(raw, &message); err == nil {
+			handler(message)
+		}
+	})
+<% } else { -%>
+	return c.Subscribe("<%= ch.name %>", handler)
+<% } -%>
+}
+
+<% } %>
+<% if (ch.canPublish) { %>
+func (c *<%= it.clientClass %>) Send<%= ch.className %>(payload <% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { %><%= ch.className %>Payload<% } else { %>interface{}<% } %>) error {
+	return c.Send("<%= ch.name %>", payload)
+}
+
+<% } %>
+<% } %>

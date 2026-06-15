@@ -1,0 +1,23 @@
+<% const method = it.method; -%>
+<% const serviceName = (typeof it.service === 'object' ? it.service.serviceName : it.service) ?? 'PetService'; -%>
+<% const clientVar = it.service.clientVar ?? (it.utils.toSnakeCase(serviceName.replace(/Service$/, '')) + '_client'); -%>
+<% const methodSnake = method.callName ?? it.utils.toSnakeCase(method.methodName ?? method.name); -%>
+<% const inputType = method.inputType; -%>
+<% const fields = (method.inputFields ?? []).map(f => `.${f.name} = ${f.type === 'number' || f.type === 'integer' ? '0' : f.type === 'boolean' ? 'true' : '"value"'}`); -%>
+<% const args = fields.length > 0 ? `{${fields.join(', ')}}` : '{}'; -%>
+<% if (method.serverStreaming) { -%>
+// <%= method.methodName ?? method.name %> (server streaming)
+auto stream = <%= clientVar %>.<%= methodSnake %>(<%= args %>).into_inner();
+sdk::grpc::<%= method.outputType %> item;
+while (stream.next(item)) {
+  std::cout << "Update received" << std::endl;
+}
+<% } else if (method.clientStreaming) { -%>
+// <%= method.methodName ?? method.name %> (client streaming)
+auto stream = <%= clientVar %>.<%= methodSnake %>();
+stream.write(<%= args %>);
+auto result = stream.close();
+<% } else { -%>
+// <%= method.methodName ?? method.name %>
+auto result = <%= clientVar %>.<%= methodSnake %>(<%= args %>).into_inner();
+<% } -%>

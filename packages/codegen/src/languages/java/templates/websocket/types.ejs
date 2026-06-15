@@ -1,0 +1,74 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() : 'com.example.ws'; -%>
+package <%= pkg %>.models;
+
+import java.util.List;
+import java.util.Map;
+
+<% for (const schema of it.schemas) { -%>
+public class <%= schema.className %> {
+<% for (const prop of schema.properties) { -%>
+    private <%= prop.type %> <%= prop.name %>;
+<% } -%>
+
+    public <%= schema.className %>() {
+    }
+
+<% for (const prop of schema.properties) { -%>
+    public <%= prop.type %> get<%= it.naming.className(prop.originalName) %>() {
+        return <%= prop.name %>;
+    }
+
+    public void set<%= it.naming.className(prop.originalName) %>(<%= prop.type %> <%= prop.name %>) {
+        this.<%= prop.name %> = <%= prop.name %>;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+<% for (const ch of it.channels) { -%>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { -%>
+public class <%= ch.className %>Message {
+<% for (const prop of ch.subscribeSchema.properties) { -%>
+    private <%= prop.type %> <%= prop.name %>;
+<% } -%>
+
+    public <%= ch.className %>Message() {
+    }
+
+<% for (const prop of ch.subscribeSchema.properties) { -%>
+    public <%= prop.type %> get<%= it.naming.className(prop.originalName) %>() {
+        return <%= prop.name %>;
+    }
+
+    public void set<%= it.naming.className(prop.originalName) %>(<%= prop.type %> <%= prop.name %>) {
+        this.<%= prop.name %> = <%= prop.name %>;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { -%>
+public class <%= ch.className %>Payload {
+<% for (const prop of ch.publishSchema.properties) { -%>
+    private <%= prop.type %> <%= prop.name %>;
+<% } -%>
+
+    public <%= ch.className %>Payload() {
+    }
+
+<% for (const prop of ch.publishSchema.properties) { -%>
+    public <%= prop.type %> get<%= it.naming.className(prop.originalName) %>() {
+        return <%= prop.name %>;
+    }
+
+    public void set<%= it.naming.className(prop.originalName) %>(<%= prop.type %> <%= prop.name %>) {
+        this.<%= prop.name %> = <%= prop.name %>;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+<% } -%>

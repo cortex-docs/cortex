@@ -1,0 +1,10 @@
+<%~ include("websocket/init", it) %>
+
+import kotlinx.coroutines.runBlocking
+
+runBlocking {
+    // Connect
+    ws.connect()
+
+<%~ include("websocket/example", it) %>
+}

@@ -1,0 +1,71 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; %>
+<% const clientClass = it.clientClass; %>
+from __future__ import annotations
+
+from typing import Any, Optional
+import httpx
+
+from .exceptions import ApiError
+<% for (const r of it.resources) { %>
+from .resources.<%= it.naming.fileName(r.name) %> import <%= r.className %>
+<% } %>
+
+
+class <%= clientClass %>:
+    def __init__(
+        self,
+        *,
+        base_url: str = "<%= baseUrl %>",
+        api_key: Optional[str] = None,
+        bearer_token: Optional[str] = None,
+        headers: Optional[dict[str, str]] = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self.base_url = base_url
+        self._timeout = timeout
+        self._headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            **(headers or {}),
+        }
+
+        if bearer_token:
+            self._headers["Authorization"] = f"Bearer {bearer_token}"
+        if api_key:
+            self._headers["X-API-Key"] = api_key
+
+<% for (const r of it.resources) { %>
+        self.<%= it.naming.propertyName(r.name) %> = <%= r.className %>(self)
+<% } %>
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Optional[dict[str, Any]] = None,
+        body: Optional[Any] = None,
+        headers: Optional[dict[str, str]] = None,
+    ) -> Any:
+        url = f"{self.base_url}{path}"
+        merged_headers = {**self._headers, **(headers or {})}
+
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.request(
+                method=method,
+                url=url,
+                params=query,
+                json=body,
+                headers=merged_headers,
+            )
+
+        if not response.is_success:
+            raise ApiError(
+                status=response.status_code,
+                message=response.reason_phrase or "Unknown error",
+                body=response.text,
+            )
+
+        if response.status_code == 204:
+            return None
+
+        return response.json()

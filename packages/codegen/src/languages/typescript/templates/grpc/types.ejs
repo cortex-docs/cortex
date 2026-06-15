@@ -1,0 +1,28 @@
+<% for (const e of it.enums) { %>
+export const <%= e.name %> = {
+<% for (const v of e.values) { %>
+  <%= v.name %>: '<%= v.name %>',
+<% } %>
+} as const;
+
+export type <%= e.name %> = (typeof <%= e.name %>)[keyof typeof <%= e.name %>];
+
+<% } %>
+<% for (const msg of it.messages) { %>
+<% if (msg.description) { %>
+/** <%= msg.description %> */
+<% } %>
+export interface <%= msg.name %> {
+<% for (const f of msg.fields) { %>
+<% if (f.description) { %>
+  /** <%= f.description %> */
+<% } %>
+<% if (f.mapKeyType) { %>
+  <%= it.naming.propertyName(f.name) %><%= f.optional ? '?' : '' %>: Record<<%= it.mapProtoType(f.mapKeyType, false, false) %>, <%= it.mapProtoType(f.mapValueType, false, false) %>>;
+<% } else { %>
+  <%= it.naming.propertyName(f.name) %><%= f.optional ? '?' : '' %>: <%= it.mapProtoType(f.type, f.repeated, f.optional) %>;
+<% } %>
+<% } %>
+}
+
+<% } %>

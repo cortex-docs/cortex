@@ -1,0 +1,4 @@
+<% const ns = it.utils.toPascalCase(it.config.languageConfig.package_name); -%>
+using <%= ns %>.Grpc;
+
+var client = new <%= it.clientClass %>(address: "localhost:50051");

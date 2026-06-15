@@ -1,0 +1,163 @@
+<% const pkg = it.packageName ? it.packageName.replace(/-/g, '.').toLowerCase() + '.graphql' : 'com.example.graphql'; -%>
+package <%= pkg %>
+
+// ─── Runtime ──────────────────────────────────────────────
+
+<%
+// Collect all unique field names across all types
+const allFieldNames = new Set();
+for (const t of it.types) {
+  for (const f of t.fields) {
+    allFieldNames.add(f.name);
+  }
+}
+-%>
+class SelectorProxy {
+    internal val fields: MutableList<Pair<String, SelectorProxy?>> = mutableListOf()
+
+<% for (const fieldName of allFieldNames) { -%>
+    fun <%= fieldName %>(selector: ((SelectorProxy) -> SelectorProxy)? = null): SelectorProxy {
+        if (selector != null) {
+            val sub = SelectorProxy()
+            selector(sub)
+            fields.add(Pair("<%= fieldName %>", sub))
+        } else {
+            fields.add(Pair("<%= fieldName %>", null))
+        }
+        return this
+    }
+
+<% } -%>
+    internal fun buildSelection(indent: String): String {
+        return fields.joinToString("\n") { (name, sub) ->
+            if (sub != null) {
+                "$indent$name {\n${sub.buildSelection("$indent  ")}\n$indent}"
+            } else {
+                "$indent$name"
+            }
+        }
+    }
+}
+
+data class RootEntry(
+    val field: String,
+    val args: Map<String, Any?>,
+    val argDefs: List<Map<String, String>>,
+    val selector: SelectorProxy?,
+)
+
+fun buildDocument(entries: List<RootEntry>, kind: String): Pair<String, Map<String, Any?>> {
+    val variables = mutableMapOf<String, Any?>()
+    val varDefs = mutableListOf<String>()
+    val parts = mutableListOf<String>()
+    var vi = 0
+    for (entry in entries) {
+        val argParts = mutableListOf<String>()
+        for (ad in entry.argDefs) {
+            val adName = ad["name"]!!
+            if (entry.args.containsKey(adName)) {
+                val vn = "v$vi"
+                vi++
+                varDefs.add("\$$vn: ${ad["gql_type"]}")
+                argParts.add("$adName: \$$vn")
+                variables[vn] = entry.args[adName]
+            }
+        }
+        val argsStr = if (argParts.isNotEmpty()) "(${argParts.joinToString(", ")})" else ""
+        if (entry.selector != null) {
+            parts.add("    ${entry.field}$argsStr {\n${entry.selector.buildSelection("      ")}\n    }")
+        } else {
+            parts.add("    ${entry.field}$argsStr")
+        }
+    }
+    val vd = if (varDefs.isNotEmpty()) "(${varDefs.joinToString(", ")})" else ""
+    val query = "$kind$vd {\n${parts.joinToString("\n")}\n  }"
+    return Pair(query, variables)
+}
+
+// ─── Builders ─────────────────────────────────────────────
+<% const opKinds = [
+  { name: 'QueryBuilder', ops: it.queries, kind: 'query' },
+  { name: 'MutationBuilder', ops: it.mutations, kind: 'mutation' },
+  { name: 'SubscriptionBuilder', ops: it.subscriptions, kind: 'subscription' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+class <%= bk.name %> {
+    internal val entries: MutableList<RootEntry> = mutableListOf()
+
+    private val argDefs: Map<String, List<Map<String, String>>> = mapOf(
+<% for (const op of bk.ops) { -%>
+        "<%= op.name %>" to listOf(<%= op.args.map(a => `mapOf("name" to "${a.name}", "gql_type" to "${a.typeRaw}")`).join(', ') %>),
+<% } -%>
+    )
+<% for (const op of bk.ops) { -%>
+<% const allOptional = op.args.length === 0 || op.args.every(a => !a.required); -%>
+
+<% if (op.args.length > 0) { -%>
+    fun <%= op.name %>(
+<% for (const arg of op.args) { -%>
+<% const kotlinType = it.resolveType(arg.type); -%>
+<% if (arg.required) { -%>
+        <%= arg.name %>: <%= kotlinType %>,
+<% } else { -%>
+        <%= arg.name %>: <%= kotlinType %>? = null,
+<% } -%>
+<% } -%>
+        selector: ((SelectorProxy) -> SelectorProxy)? = null,
+    ): <%= bk.name %> {
+        val args = mutableMapOf<String, Any?>()
+<% for (const arg of op.args) { -%>
+<% if (arg.required) { -%>
+        args["<%= arg.name %>"] = <%= arg.name %>
+<% } else { -%>
+        if (<%= arg.name %> != null) args["<%= arg.name %>"] = <%= arg.name %>
+<% } -%>
+<% } -%>
+        var sel: SelectorProxy? = null
+        if (selector != null) {
+            sel = SelectorProxy()
+            selector(sel)
+        }
+        entries.add(RootEntry("<%= op.name %>", args, argDefs["<%= op.name %>"] ?: emptyList(), sel))
+        return this
+    }
+<% if (allOptional && op.args.length > 0) { -%>
+
+    fun <%= op.name %>(
+        selector: ((SelectorProxy) -> SelectorProxy)? = null,
+    ): <%= bk.name %> {
+        var sel: SelectorProxy? = null
+        if (selector != null) {
+            sel = SelectorProxy()
+            selector(sel)
+        }
+        entries.add(RootEntry("<%= op.name %>", emptyMap(), argDefs["<%= op.name %>"] ?: emptyList(), sel))
+        return this
+    }
+<% } -%>
+<% } else { -%>
+    fun <%= op.name %>(
+        selector: ((SelectorProxy) -> SelectorProxy)? = null,
+    ): <%= bk.name %> {
+        var sel: SelectorProxy? = null
+        if (selector != null) {
+            sel = SelectorProxy()
+            selector(sel)
+        }
+        entries.add(RootEntry("<%= op.name %>", emptyMap(), argDefs["<%= op.name %>"] ?: emptyList(), sel))
+        return this
+    }
+<% } -%>
+<% } -%>
+
+    fun buildDocument(kind: String): Pair<String, Map<String, Any?>> {
+        return buildDocument(entries, kind)
+    }
+}
+
+fun create<%= bk.name %>(): <%= bk.name %> {
+    return <%= bk.name %>()
+}
+<% } %>

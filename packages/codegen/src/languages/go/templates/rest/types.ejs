@@ -1,0 +1,29 @@
+<% const parts = it.config.languageConfig.package_name.split('/'); %>
+<% const pkgName = parts[parts.length - 1].replace(/-/g, ''); %>
+package <%= pkgName %>
+<% for (const schema of it.schemas) { %>
+
+<% if (schema.isEnum) { %>
+// <%= schema.className %> represents the allowed values for the <%= schema.name %> enum.
+type <%= schema.className %> string
+
+const (
+<% for (const v of schema.enumValues) { %>
+	<%= schema.className %><%= it.naming.className(String(v)) %> <%= schema.className %> = "<%= v %>"
+<% } %>
+)
+<% } else { %>
+// <%= schema.className %> represents the <%= schema.name %> schema.
+type <%= schema.className %> struct {
+<% if (schema.properties.length === 0) { %>
+}
+<% } else { %>
+<% for (const prop of schema.properties) { %>
+<% const omitempty = prop.required ? '' : ',omitempty'; %>
+<% const goType = prop.required ? prop.type : '*' + prop.type; %>
+	<%= prop.name %> <%= goType %> `json:"<%= prop.originalName %><%= omitempty %>"`
+<% } %>
+}
+<% } %>
+<% } %>
+<% } %>

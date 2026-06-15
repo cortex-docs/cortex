@@ -1,0 +1,31 @@
+<% const ns = it.utils.toPascalCase(it.config.languageConfig.package_name); -%>
+<% const clientClass = it.clientClass; -%>
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const op = it.op; -%>
+<% const resource = it.resource; -%>
+// <%= op.summary || op.name %>
+<% if (op.method === 'DELETE' && op.responseType === 'void') { -%>
+await client.<%= it.utils.toPascalCase(resource.name) %>.<%= op.name %>Async(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>);
+<% } else if (op.method === 'GET' && op.pathParams.length === 0) { -%>
+var <%= resource.name %> = await client.<%= it.utils.toPascalCase(resource.name) %>.<%= op.name %>Async(<% if (op.queryParams.length > 0) { %><%= op.queryParams.map(q => `${q.name}: ${q.type === 'int' || q.type === 'long' ? '10' : `"value"`}`).join(', ') %><% } %>);
+<% } else if (op.method === 'GET' && op.pathParams.length > 0) { -%>
+var <%= it.utils.singularize(resource.name) %> = await client.<%= it.utils.toPascalCase(resource.name) %>.<%= op.name %>Async(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>);
+<% } else if (op.hasBody && op.pathParams.length === 0) { -%>
+var created = await client.<%= it.utils.toPascalCase(resource.name) %>.<%= op.name %>Async(new <%= op.bodyType %> {
+<% const bodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (bodySchema) { for (const prop of bodySchema.properties.filter(p => p.required)) { -%>
+    <%= it.utils.toPascalCase(prop.name) %> = <%= prop.type === 'string' ? `"value"` : prop.type === 'int' || prop.type === 'long' || prop.type === 'double' ? '0' : `"value"` %>,
+<% } } else { -%>
+    // <%= op.bodyType %> fields
+<% } -%>
+});
+<% } else if (op.hasBody && op.pathParams.length > 0) { -%>
+var updated = await client.<%= it.utils.toPascalCase(resource.name) %>.<%= op.name %>Async(<%= op.pathParams.map(p => `"example-${p.originalName}"`).join(', ') %>, new <%= op.bodyType %> {
+<% const updBodySchema = it.schemas.find(s => s.className === op.bodyType); -%>
+<% if (updBodySchema) { for (const prop of updBodySchema.properties.slice(0, 3)) { -%>
+    <%= it.utils.toPascalCase(prop.name) %> = <%= prop.type === 'string' ? `"value"` : prop.type === 'int' || prop.type === 'long' || prop.type === 'double' ? '0' : `"value"` %>,
+<% } } else { -%>
+    // <%= op.bodyType %> fields
+<% } -%>
+});
+<% } -%>

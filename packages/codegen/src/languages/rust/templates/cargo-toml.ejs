@@ -1,0 +1,18 @@
+[package]
+name = "<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-') %>"
+version = "<%= it.version %>"
+edition = "2021"
+description = "Rust SDK for <%= it.title %>"
+
+[lib]
+path = "src/index.rs"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+<% if (it.hasWs || it.hasGql) { %>tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+<% } %><% if (it.hasWs || it.hasGql || it.hasGrpc) { %>futures-util = "0.3"
+<% } %>

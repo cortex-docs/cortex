@@ -1,0 +1,232 @@
+<%
+// Topological sort so dependencies are defined first
+const sortedTypes = [];
+const _visited = new Set();
+function _visit(t) {
+    if (_visited.has(t.name)) return;
+    _visited.add(t.name);
+    for (const f of t.fields) {
+        const dep = it.typesByName.get(f.type);
+        if (dep && !it.isScalarType(f.type) && !it.enumNames.has(f.type)) _visit(dep);
+    }
+    sortedTypes.push(t);
+}
+for (const t of it.types) _visit(t);
+
+function argPyType(arg) {
+    const resolved = it.resolveType(arg.type);
+    if (it.enumNames.has(arg.type) || it.inputNames.has(arg.type)) return '_types.' + resolved;
+    return resolved;
+}
+
+const opKinds = [
+    { name: 'query', ops: it.queries, kind: 'Query' },
+    { name: 'mutation', ops: it.mutations, kind: 'Mutation' },
+    { name: 'subscription', ops: it.subscriptions, kind: 'Subscription' },
+];
+-%>
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any, Callable, Optional, TypedDict, overload
+
+from . import gql_types as _types
+
+
+def _serialize_arg(value: Any) -> Any:
+    if hasattr(value, 'model_dump'):
+        return value.model_dump(by_alias=True, exclude_none=True)
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {k: _serialize_arg(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize_arg(v) for v in value]
+    return value
+
+
+# ─── Selection Base ──────────────────────────────────
+
+class _SelectionBase:
+    def __init__(self) -> None:
+        self._fields: list[tuple[str, Optional[_SelectionBase]]] = []
+
+    def _build_selection(self, indent: str) -> str:
+        lines: list[str] = []
+        for name, sub in self._fields:
+            if sub:
+                lines.append(
+                    f"{indent}{name} {{\n{sub._build_selection(indent + '  ')}\n{indent}}}"
+                )
+            else:
+                lines.append(f"{indent}{name}")
+        return "\n".join(lines)
+
+
+# ─── Selector Classes ────────────────────────────────
+<% for (const t of sortedTypes) { %>
+
+class <%= t.name %>Selector(_SelectionBase):
+<% const scalarFields = t.fields.filter(f => it.isScalarType(f.type) || it.enumNames.has(f.type)); -%>
+<% const objectFields = t.fields.filter(f => it.typesByName.has(f.type) && !it.isScalarType(f.type) && !it.enumNames.has(f.type)); -%>
+<% if (scalarFields.length === 0 && objectFields.length === 0) { -%>
+    pass
+<% } -%>
+<% for (const f of scalarFields) { -%>
+    def <%= f.name %>(self) -> <%= t.name %>Selector:
+        self._fields.append(("<%= f.name %>", None))
+        return self
+
+<% } -%>
+<% for (const f of objectFields) { -%>
+    def <%= f.name %>(self, fn: Callable[[<%= f.type %>Selector], <%= f.type %>Selector]) -> <%= t.name %>Selector:
+        sub = <%= f.type %>Selector()
+        fn(sub)
+        self._fields.append(("<%= f.name %>", sub))
+        return self
+
+<% } -%>
+<% } %>
+
+# ─── Root Base ───────────────────────────────────────
+
+class _RootBase:
+    def __init__(self) -> None:
+        self._entries: list[
+            tuple[str, dict[str, Any], list[dict[str, str]], Optional[_SelectionBase]]
+        ] = []
+
+    def _build_document(self, kind: str) -> tuple[str, dict[str, Any]]:
+        variables: dict[str, Any] = {}
+        var_defs: list[str] = []
+        parts: list[str] = []
+        vi = 0
+        for field, args, arg_defs, selector in self._entries:
+            arg_parts: list[str] = []
+            for ad in arg_defs:
+                if ad["name"] in args:
+                    vn = f"v{vi}"
+                    vi += 1
+                    var_defs.append(f"${vn}: {ad['gql_type']}")
+                    arg_parts.append(f"{ad['name']}: ${vn}")
+                    variables[vn] = _serialize_arg(args[ad["name"]])
+            args_str = f"({', '.join(arg_parts)})" if arg_parts else ""
+            if selector:
+                parts.append(
+                    f"    {field}{args_str} {{\n"
+                    f"{selector._build_selection('      ')}\n"
+                    f"    }}"
+                )
+            else:
+                parts.append(f"    {field}{args_str}")
+        vd = f"({', '.join(var_defs)})" if var_defs else ""
+        query = f"{kind}{vd} {{\n" + "\n".join(parts) + "\n  }"
+        return query, variables
+
+
+# ─── Arg Types ───────────────────────────────────────
+<% const allOps = [...it.queries, ...it.mutations, ...it.subscriptions]; -%>
+<% for (const op of allOps) { -%>
+<% if (op.args.length === 0) continue; -%>
+<% const clsName = it.naming.className(op.name) + 'Args'; -%>
+<% const reqArgs = op.args.filter(a => a.required); -%>
+<% const optArgs = op.args.filter(a => !a.required); -%>
+<% if (reqArgs.length > 0 && optArgs.length > 0) { %>
+class _<%= clsName %>Required(TypedDict):
+<% for (const a of reqArgs) { -%>
+    <%= a.name %>: <%= argPyType(a) %>
+<% } -%>
+
+class <%= clsName %>(_<%= clsName %>Required, total=False):
+<% for (const a of optArgs) { -%>
+    <%= a.name %>: <%= argPyType(a) %>
+<% } -%>
+<% } else if (optArgs.length > 0) { %>
+class <%= clsName %>(TypedDict, total=False):
+<% for (const a of optArgs) { -%>
+    <%= a.name %>: <%= argPyType(a) %>
+<% } -%>
+<% } else { %>
+class <%= clsName %>(TypedDict):
+<% for (const a of reqArgs) { -%>
+    <%= a.name %>: <%= argPyType(a) %>
+<% } -%>
+<% } %>
+<% } %>
+
+# ─── Builder Classes ─────────────────────────────────
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+class <%= bk.kind %>Builder(_RootBase):
+<% for (const op of bk.ops) { -%>
+<% const returnType = op.returnType; -%>
+<% const isScalar = it.isScalarType(returnType) || it.enumNames.has(returnType); -%>
+<% const allOptional = op.args.every(a => !a.required); -%>
+<% const hasArgs = op.args.length > 0; -%>
+<% const argsClass = it.naming.className(op.name) + 'Args'; -%>
+<% const selType = returnType + 'Selector'; -%>
+<% const bldType = bk.kind + 'Builder'; -%>
+<% if (isScalar) { -%>
+<% /* Scalar return — no selector function */ -%>
+<% if (hasArgs) { -%>
+    def <%= op.name %>(self, args: <%= argsClass %>) -> <%= bldType %>:
+        self._entries.append(("<%= op.name %>", args, _<%= bk.name %>_arg_defs["<%= op.name %>"], None))
+        return self
+
+<% } else { -%>
+    def <%= op.name %>(self) -> <%= bldType %>:
+        self._entries.append(("<%= op.name %>", {}, _<%= bk.name %>_arg_defs["<%= op.name %>"], None))
+        return self
+
+<% } -%>
+<% } else { -%>
+<% /* Object return — needs selector function */ -%>
+<% if (hasArgs && allOptional) { -%>
+    @overload
+    def <%= op.name %>(self, args: <%= argsClass %>, fn: Callable[[<%= selType %>], <%= selType %>]) -> <%= bldType %>: ...
+    @overload
+    def <%= op.name %>(self, fn: Callable[[<%= selType %>], <%= selType %>]) -> <%= bldType %>: ...
+    def <%= op.name %>(self, *_args: Any) -> <%= bldType %>:
+        fn: Any = next((a for a in _args if callable(a)), None)
+        raw_args: dict[str, Any] = _args[0] if _args and not callable(_args[0]) else {}
+        selector: Optional[<%= selType %>] = None
+        if fn:
+            selector = <%= selType %>()
+            fn(selector)
+        self._entries.append(("<%= op.name %>", raw_args, _<%= bk.name %>_arg_defs["<%= op.name %>"], selector))
+        return self
+
+<% } else if (hasArgs) { -%>
+    def <%= op.name %>(self, args: <%= argsClass %>, fn: Callable[[<%= selType %>], <%= selType %>]) -> <%= bldType %>:
+        selector = <%= selType %>()
+        fn(selector)
+        self._entries.append(("<%= op.name %>", args, _<%= bk.name %>_arg_defs["<%= op.name %>"], selector))
+        return self
+
+<% } else { -%>
+    def <%= op.name %>(self, fn: Callable[[<%= selType %>], <%= selType %>]) -> <%= bldType %>:
+        selector = <%= selType %>()
+        fn(selector)
+        self._entries.append(("<%= op.name %>", {}, _<%= bk.name %>_arg_defs["<%= op.name %>"], selector))
+        return self
+
+<% } -%>
+<% } -%>
+<% } -%>
+<% } %>
+
+# ─── Arg Definitions & Factories ─────────────────────
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+_<%= bk.name %>_arg_defs: dict[str, list[dict[str, str]]] = {
+<% for (const op of bk.ops) { -%>
+    "<%= op.name %>": [<%= op.args.map(a => `{"name": "${a.name}", "gql_type": "${a.typeRaw}"}`).join(', ') %>],
+<% } -%>
+}
+
+
+def create_<%= bk.name %>_builder() -> <%= bk.kind %>Builder:
+    return <%= bk.kind %>Builder()
+<% } %>

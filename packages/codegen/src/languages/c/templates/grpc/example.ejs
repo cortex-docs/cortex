@@ -1,0 +1,30 @@
+<% const method = it.method; -%>
+<% const serviceName = (typeof it.service === 'object' ? it.service.serviceName : it.service) ?? 'PetService'; -%>
+<% const svcSnake = it.utils.toSnakeCase(serviceName); -%>
+<% const clientVar = it.service.clientVar ?? (svcSnake.replace(/_service$/, '') + '_client'); -%>
+<% const methodSnake = method.callName ?? it.utils.toSnakeCase(method.methodName ?? method.name); -%>
+<% const inputType = method.inputType; -%>
+<% const fields = (method.inputFields ?? []).map(f => `.${f.name} = ${f.type === 'number' || f.type === 'integer' ? '0' : f.type === 'boolean' ? '1' : '"value"'}`); -%>
+<% const args = fields.length > 0 ? `{${fields.join(', ')}}` : '{0}'; -%>
+<% if (method.serverStreaming) { -%>
+// <%= method.methodName ?? method.name %> (server streaming)
+grpc_<%= methodSnake %>_request_t stream_req = <%= args %>;
+grpc_<%= svcSnake %>_<%= methodSnake %>_stream_t stream = grpc_<%= svcSnake %>_<%= methodSnake %>(&<%= clientVar %>, &stream_req);
+grpc_<%= methodSnake %>_response_t item;
+while (grpc_<%= svcSnake %>_<%= methodSnake %>_next(&stream, &item)) {
+    printf("Update received\n");
+}
+grpc_<%= svcSnake %>_<%= methodSnake %>_stream_free(&stream);
+<% } else if (method.clientStreaming) { -%>
+// <%= method.methodName ?? method.name %> (client streaming)
+grpc_<%= svcSnake %>_<%= methodSnake %>_stream_t stream = grpc_<%= svcSnake %>_<%= methodSnake %>(&<%= clientVar %>);
+grpc_<%= methodSnake %>_request_t write_req = <%= args %>;
+grpc_<%= svcSnake %>_<%= methodSnake %>_write(&stream, &write_req);
+grpc_<%= methodSnake %>_response_t result = grpc_<%= svcSnake %>_<%= methodSnake %>_close(&stream);
+grpc_<%= methodSnake %>_response_free(&result);
+<% } else { -%>
+// <%= method.methodName ?? method.name %>
+grpc_<%= methodSnake %>_request_t req = <%= args %>;
+grpc_<%= methodSnake %>_response_t resp = grpc_<%= svcSnake %>_<%= methodSnake %>(&<%= clientVar %>, &req);
+grpc_<%= methodSnake %>_response_free(&resp);
+<% } -%>

@@ -1,0 +1,83 @@
+type Pet {
+  id: ID!
+  name: String!
+  species: Species!
+  breed: String
+  age: Int
+  status: PetStatus!
+  ownerId: String
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Owner {
+  id: ID!
+  name: String!
+  email: String!
+  phone: String
+  pets: [Pet!]!
+  createdAt: String!
+}
+
+enum Species {
+  DOG
+  CAT
+  BIRD
+  FISH
+  REPTILE
+}
+
+enum PetStatus {
+  AVAILABLE
+  ADOPTED
+  PENDING
+}
+
+input CreatePetInput {
+  name: String!
+  species: Species!
+  breed: String
+  age: Int
+}
+
+input UpdatePetInput {
+  name: String
+  breed: String
+  age: Int
+  status: PetStatus
+  ownerId: String
+}
+
+input CreateOwnerInput {
+  name: String!
+  email: String!
+  phone: String
+}
+
+type PetConnection {
+  data: [Pet!]!
+  nextCursor: String
+}
+
+type OwnerConnection {
+  data: [Owner!]!
+}
+
+type Query {
+  pets(limit: Int, cursor: String): PetConnection!
+  pet(id: ID!): Pet
+  owners(limit: Int): OwnerConnection!
+  owner(id: ID!): Owner
+}
+
+type Mutation {
+  createPet(input: CreatePetInput!): Pet!
+  updatePet(id: ID!, input: UpdatePetInput!): Pet!
+  deletePet(id: ID!): Boolean!
+  createOwner(input: CreateOwnerInput!): Owner!
+}
+
+type Subscription {
+  petAdopted(species: Species): Pet!
+  ownerActivity(ownerId: ID!): Owner!
+}

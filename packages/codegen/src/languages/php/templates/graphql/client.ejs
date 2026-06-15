@@ -1,0 +1,336 @@
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+<?php
+
+declare(strict_types=1);
+
+use GuzzleHttp\Client as HttpClient;
+use GuzzleHttp\Exception\RequestException;
+
+require_once __DIR__ . '/gql-query-builder.php';
+
+class <%= it.clientClass %>
+{
+    private string $endpoint;
+<% if (hasSubscriptions) { -%>
+    private string $wsEndpoint;
+<% } -%>
+    private HttpClient $httpClient;
+    private array $headers;
+
+    public function __construct(
+        string $endpoint = '<%= it.endpoint %>',
+<% if (hasSubscriptions) { -%>
+        ?string $wsEndpoint = null,
+<% } -%>
+        ?string $bearerToken = null,
+        float $timeout = 30.0,
+    ) {
+        $this->endpoint = $endpoint;
+        $this->headers = ['Content-Type' => 'application/json'];
+
+        if ($bearerToken !== null) {
+            $this->headers['Authorization'] = "Bearer {$bearerToken}";
+        }
+
+        $this->httpClient = new HttpClient([
+            'timeout' => $timeout,
+            'headers' => $this->headers,
+        ]);
+<% if (hasSubscriptions) { -%>
+
+        $this->wsEndpoint = $wsEndpoint ?? preg_replace('/^http/', 'ws', $endpoint);
+<% } -%>
+    }
+
+    public function setHeader(string $key, string $value): void
+    {
+        $this->headers[$key] = $value;
+    }
+
+    /**
+     * @throws GqlException
+     */
+    private function execute(string $query, array $variables = []): mixed
+    {
+        $body = ['query' => $query];
+        if (!empty($variables)) {
+            $body['variables'] = $variables;
+        }
+
+        try {
+            $response = $this->httpClient->request('POST', $this->endpoint, [
+                'json' => $body,
+                'headers' => $this->headers,
+            ]);
+
+            $json = json_decode($response->getBody()->getContents(), true);
+
+            if (!empty($json['errors'])) {
+                $messages = array_map(fn(array $e): string => $e['message'] ?? 'Unknown error', $json['errors']);
+                throw new GqlException(implode('; ', $messages), $json['errors']);
+            }
+
+            return $json['data'] ?? [];
+        } catch (RequestException $e) {
+            $response = $e->getResponse();
+            throw new GqlException(
+                $response ? $response->getBody()->getContents() : $e->getMessage(),
+            );
+        }
+    }
+
+    private function wrapResult(mixed $data): mixed
+    {
+        if (is_array($data)) {
+            $obj = new \stdClass();
+            foreach ($data as $key => $value) {
+                if (is_string($key)) {
+                    $obj->{$key} = $this->wrapResult($value);
+                } else {
+                    return array_map(fn($v) => $this->wrapResult($v), $data);
+                }
+            }
+            return $obj;
+        }
+        return $data;
+    }
+<% if (hasQueries) { %>
+
+    /**
+     * @throws GqlException
+     */
+    public function query(callable $fn): mixed
+    {
+        $builder = createQueryBuilder();
+        $fn($builder);
+        [$query, $variables] = $builder->buildDocument('query');
+        return $this->wrapResult($this->execute($query, $variables));
+    }
+<% } -%>
+<% if (hasMutations) { %>
+
+    /**
+     * @throws GqlException
+     */
+    public function mutate(callable $fn): mixed
+    {
+        $builder = createMutationBuilder();
+        $fn($builder);
+        [$query, $variables] = $builder->buildDocument('mutation');
+        return $this->wrapResult($this->execute($query, $variables));
+    }
+<% } -%>
+<% if (hasSubscriptions) { %>
+
+    /**
+     * @throws GqlException
+     */
+    private function wsConnect(float $timeout = 10.0)
+    {
+        $parsed = parse_url($this->wsEndpoint);
+        $scheme = $parsed['scheme'] ?? 'ws';
+        $host = $parsed['host'] ?? 'localhost';
+        $port = $parsed['port'] ?? ($scheme === 'wss' ? 443 : 80);
+        $path = $parsed['path'] ?? '/';
+
+        $key = base64_encode(random_bytes(16));
+        $transport = ($scheme === 'wss') ? 'ssl' : 'tcp';
+        $socket = @stream_socket_client(
+            "{$transport}://{$host}:{$port}",
+            $errno,
+            $errstr,
+            $timeout,
+        );
+        if ($socket === false) {
+            throw new GqlException("WebSocket connection failed: {$errstr} ({$errno})");
+        }
+        stream_set_timeout($socket, (int) $timeout);
+
+        $headers = "GET {$path} HTTP/1.1\r\n"
+            . "Host: {$host}:{$port}\r\n"
+            . "Upgrade: websocket\r\n"
+            . "Connection: Upgrade\r\n"
+            . "Sec-WebSocket-Key: {$key}\r\n"
+            . "Sec-WebSocket-Version: 13\r\n"
+            . "Sec-WebSocket-Protocol: graphql-transport-ws\r\n"
+            . "\r\n";
+        fwrite($socket, $headers);
+
+        $responseHeader = '';
+        while (($line = fgets($socket)) !== false) {
+            $responseHeader .= $line;
+            if ($line === "\r\n") {
+                break;
+            }
+        }
+        if (!str_contains($responseHeader, '101')) {
+            fclose($socket);
+            throw new GqlException('WebSocket upgrade failed: ' . trim($responseHeader));
+        }
+
+        return $socket;
+    }
+
+    private function wsSendFrame($socket, string $data): void
+    {
+        $len = strlen($data);
+        $mask = random_bytes(4);
+        $frame = chr(0x81);
+        if ($len < 126) {
+            $frame .= chr($len | 0x80);
+        } elseif ($len < 65536) {
+            $frame .= chr(126 | 0x80) . pack('n', $len);
+        } else {
+            $frame .= chr(127 | 0x80) . pack('J', $len);
+        }
+        $frame .= $mask;
+        for ($i = 0; $i < $len; $i++) {
+            $frame .= $data[$i] ^ $mask[$i % 4];
+        }
+        fwrite($socket, $frame);
+    }
+
+    private function wsReadFrame($socket): ?string
+    {
+        $header = fread($socket, 2);
+        if ($header === false || strlen($header) < 2) {
+            return null;
+        }
+        $len = ord($header[1]) & 0x7F;
+        if ($len === 126) {
+            $ext = fread($socket, 2);
+            $len = unpack('n', $ext)[1];
+        } elseif ($len === 127) {
+            $ext = fread($socket, 8);
+            $len = unpack('J', $ext)[1];
+        }
+        $masked = (ord($header[1]) & 0x80) !== 0;
+        $mask = $masked ? fread($socket, 4) : null;
+        $data = '';
+        $remaining = $len;
+        while ($remaining > 0) {
+            $chunk = fread($socket, $remaining);
+            if ($chunk === false) {
+                break;
+            }
+            $data .= $chunk;
+            $remaining -= strlen($chunk);
+        }
+        if ($masked && $mask !== null) {
+            for ($i = 0; $i < strlen($data); $i++) {
+                $data[$i] = $data[$i] ^ $mask[$i % 4];
+            }
+        }
+        return $data;
+    }
+
+    private function wsInitSubscription($socket, string $query, array $variables, string $id = '1'): void
+    {
+        $this->wsSendFrame($socket, json_encode(['type' => 'connection_init']));
+
+        $ack = json_decode($this->wsReadFrame($socket), true);
+        if (($ack['type'] ?? '') !== 'connection_ack') {
+            throw new GqlException('Expected connection_ack, got: ' . ($ack['type'] ?? 'null'));
+        }
+
+        $this->wsSendFrame($socket, json_encode([
+            'type' => 'subscribe',
+            'id' => $id,
+            'payload' => ['query' => $query, 'variables' => (object) $variables],
+        ]));
+    }
+
+    /**
+     * @throws GqlException
+     */
+    public function subscribeOnce(callable $fn, float $timeout = 10.0): mixed
+    {
+        $builder = createSubscriptionBuilder();
+        $fn($builder);
+        [$query, $variables] = $builder->buildDocument('subscription');
+
+        $socket = $this->wsConnect($timeout);
+        try {
+            $this->wsInitSubscription($socket, $query, $variables);
+
+            while (true) {
+                $raw = $this->wsReadFrame($socket);
+                if ($raw === null) {
+                    throw new GqlException('subscription: connection closed unexpectedly');
+                }
+                $msg = json_decode($raw, true);
+                $type = $msg['type'] ?? '';
+                if ($type === 'next') {
+                    return $this->wrapResult($msg['payload']['data'] ?? []);
+                } elseif ($type === 'error') {
+                    $errors = $msg['payload'] ?? [];
+                    $messages = array_map(fn($e) => $e['message'] ?? (string) $e, $errors);
+                    throw new GqlException(implode('; ', $messages), $errors);
+                } elseif ($type === 'complete') {
+                    throw new GqlException('subscription completed without data');
+                }
+            }
+        } finally {
+            @fclose($socket);
+        }
+    }
+
+    /**
+     * @return callable Unsubscribe function that closes the connection
+     * @throws GqlException
+     */
+    public function subscribe(callable $builderFn, callable $onEvent): callable
+    {
+        $builder = createSubscriptionBuilder();
+        $builderFn($builder);
+        [$query, $variables] = $builder->buildDocument('subscription');
+
+        $socket = $this->wsConnect(10.0);
+        $this->wsInitSubscription($socket, $query, $variables);
+
+        while (true) {
+            $raw = $this->wsReadFrame($socket);
+            if ($raw === null) {
+                break;
+            }
+            $msg = json_decode($raw, true);
+            $type = $msg['type'] ?? '';
+            if ($type === 'next') {
+                $onEvent($this->wrapResult($msg['payload']['data'] ?? []));
+            } elseif ($type === 'complete' || $type === 'error') {
+                break;
+            }
+        }
+
+        $closed = false;
+        return function () use ($socket, &$closed): void {
+            if (!$closed) {
+                $closed = true;
+                @fclose($socket);
+            }
+        };
+    }
+
+    public function dispose(): void
+    {
+    }
+<% } -%>
+}
+
+class GqlException extends \Exception
+{
+    private array $errors;
+
+    public function __construct(string $message, array $errors = [])
+    {
+        parent::__construct($message);
+        $this->errors = $errors;
+    }
+
+    public function getErrors(): array
+    {
+        return $this->errors;
+    }
+}

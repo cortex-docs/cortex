@@ -1,0 +1,77 @@
+// @ts-nocheck — generated MCP server, runtime-validated by Zod
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
+import { z } from 'zod';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import {
+<% for (const tool of it.tools) { %>
+  handle_<%= tool.name %>,
+<% } %>
+} from './handlers';
+
+const BASE_URL = '<%= it.baseUrl %>';
+
+export function createServer(baseUrl: string = BASE_URL): McpServer {
+  const server = new McpServer({
+    name: '<%= it.serverName %>',
+    version: '0.1.0',
+  });
+
+  // --- API Spec Resources (readable by AI agents) ---
+<% if (it.specs.openapi) { %>
+  server.resource(
+    'openapi-spec',
+    'api://specs/openapi',
+    { description: 'OpenAPI specification — full REST API documentation', mimeType: 'text/yaml' },
+    async () => ({
+      contents: [{ uri: 'api://specs/openapi', text: fs.readFileSync(path.resolve('<%= it.esc(it.specs.openapi) %>'), 'utf-8'), mimeType: 'text/yaml' }],
+    }),
+  );
+<% } %>
+<% if (it.specs.asyncapi) { %>
+  server.resource(
+    'asyncapi-spec',
+    'api://specs/asyncapi',
+    { description: 'AsyncAPI specification — WebSocket channels and messages', mimeType: 'text/yaml' },
+    async () => ({
+      contents: [{ uri: 'api://specs/asyncapi', text: fs.readFileSync(path.resolve('<%= it.esc(it.specs.asyncapi) %>'), 'utf-8'), mimeType: 'text/yaml' }],
+    }),
+  );
+<% } %>
+<% if (it.specs.graphql) { %>
+  server.resource(
+    'graphql-schema',
+    'api://specs/graphql',
+    { description: 'GraphQL schema — types, queries, mutations, and subscriptions', mimeType: 'text/plain' },
+    async () => ({
+      contents: [{ uri: 'api://specs/graphql', text: fs.readFileSync(path.resolve('<%= it.esc(it.specs.graphql) %>'), 'utf-8'), mimeType: 'text/plain' }],
+    }),
+  );
+<% } %>
+<% if (it.specs.grpc) { %>
+  server.resource(
+    'grpc-proto',
+    'api://specs/grpc',
+    { description: 'Protocol Buffer definition — gRPC services and messages', mimeType: 'text/plain' },
+    async () => ({
+      contents: [{ uri: 'api://specs/grpc', text: fs.readFileSync(path.resolve('<%= it.esc(it.specs.grpc) %>'), 'utf-8'), mimeType: 'text/plain' }],
+    }),
+  );
+<% } %>
+
+  // --- Tools ---
+<% for (const tool of it.tools) { %>
+  server.tool(
+    '<%= tool.name %>',
+    '<%= it.esc(tool.description) %>',
+    {
+<% for (const [paramName, param] of Object.entries(tool.inputSchema.properties)) { %>
+      <%= paramName %>: <%= it.zodType(param.type, tool.inputSchema.required.includes(paramName), param.description) %>,
+<% } %>
+    },
+    async (params: any) => handle_<%= tool.name %>(params, baseUrl),
+  );
+
+<% } %>
+  return server;
+}

@@ -1,0 +1,121 @@
+<?php
+
+declare(strict_types=1);
+
+class SelectorProxy
+{
+    /** @var list<array{string, ?SelectorProxy}> */
+    private array $fields = [];
+
+    public function __call(string $name, array $args): self
+    {
+        $fn = null;
+        foreach ($args as $arg) {
+            if ($arg instanceof \Closure) {
+                $fn = $arg;
+                break;
+            }
+        }
+        if ($fn !== null) {
+            $sub = new self();
+            $fn($sub);
+            $this->fields[] = [$name, $sub];
+        } else {
+            $this->fields[] = [$name, null];
+        }
+        return $this;
+    }
+
+    public function buildSelection(string $indent): string
+    {
+        $lines = [];
+        foreach ($this->fields as [$name, $sub]) {
+            if ($sub !== null) {
+                $lines[] = "{$indent}{$name} {\n{$sub->buildSelection($indent . '  ')}\n{$indent}}";
+            } else {
+                $lines[] = "{$indent}{$name}";
+            }
+        }
+        return implode("\n", $lines);
+    }
+}
+
+class RootProxy
+{
+    /** @var list<array{string, array<string, mixed>, list<array{name: string, gqlType: string}>, ?SelectorProxy}> */
+    private array $entries = [];
+    private array $argDefs;
+
+    public function __construct(array $argDefs)
+    {
+        $this->argDefs = $argDefs;
+    }
+
+    public function __call(string $name, array $methodArgs): self
+    {
+        $fn = null;
+        $args = [];
+        foreach ($methodArgs as $arg) {
+            if ($arg instanceof \Closure) {
+                $fn = $arg;
+            } elseif (is_array($arg)) {
+                $args = $arg;
+            }
+        }
+        $selector = null;
+        if ($fn !== null) {
+            $selector = new SelectorProxy();
+            $fn($selector);
+        }
+        $this->entries[] = [$name, $args, $this->argDefs[$name] ?? [], $selector];
+        return $this;
+    }
+
+    /** @return array{string, array<string, mixed>} */
+    public function buildDocument(string $kind): array
+    {
+        $variables = [];
+        $varDefs = [];
+        $parts = [];
+        $vi = 0;
+        foreach ($this->entries as [$field, $args, $argDefs, $selector]) {
+            $argParts = [];
+            foreach ($argDefs as $ad) {
+                if (array_key_exists($ad['name'], $args)) {
+                    $vn = "v{$vi}";
+                    $vi++;
+                    $varDefs[] = "\${$vn}: {$ad['gqlType']}";
+                    $argParts[] = "{$ad['name']}: \${$vn}";
+                    $variables[$vn] = $args[$ad['name']];
+                }
+            }
+            $argsStr = count($argParts) > 0 ? '(' . implode(', ', $argParts) . ')' : '';
+            if ($selector !== null) {
+                $parts[] = "    {$field}{$argsStr} {\n{$selector->buildSelection('      ')}\n    }";
+            } else {
+                $parts[] = "    {$field}{$argsStr}";
+            }
+        }
+        $vd = count($varDefs) > 0 ? '(' . implode(', ', $varDefs) . ')' : '';
+        $query = "{$kind}{$vd} {\n" . implode("\n", $parts) . "\n  }";
+        return [$query, $variables];
+    }
+}
+
+<% const opKinds = [
+  { name: 'Query', ops: it.queries },
+  { name: 'Mutation', ops: it.mutations },
+  { name: 'Subscription', ops: it.subscriptions },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; -%>
+
+function create<%= bk.name %>Builder(): RootProxy
+{
+    return new RootProxy([
+<% for (const op of bk.ops) { -%>
+        '<%= op.name %>' => [<%= op.args.map(a => `['name' => '${a.name}', 'gqlType' => '${a.typeRaw}']`).join(', ') %>],
+<% } -%>
+    ]);
+}
+<% } %>

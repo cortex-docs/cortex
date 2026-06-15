@@ -1,0 +1,171 @@
+use serde_json::Value;
+
+// ─── Field Selection Runtime ──────────────────────────────
+
+enum FieldEntry {
+    Scalar(String),
+    Nested(String, Vec<FieldEntry>),
+}
+
+fn build_selection(entries: &[FieldEntry], indent: &str) -> String {
+    entries.iter().map(|e| match e {
+        FieldEntry::Scalar(name) => format!("{}{}", indent, name),
+        FieldEntry::Nested(name, children) => {
+            let child_indent = format!("{}  ", indent);
+            let inner = build_selection(children, &child_indent);
+            format!("{}{} {{\n{}\n{}}}", indent, name, inner, indent)
+        }
+    }).collect::<Vec<_>>().join("\n")
+}
+
+// ─── Selector Structs ─────────────────────────────────────
+<% for (const t of it.types) { %>
+
+pub struct <%= t.name %>Selector {
+    fields: Vec<FieldEntry>,
+}
+
+impl <%= t.name %>Selector {
+    pub fn new() -> Self {
+        Self { fields: Vec::new() }
+    }
+<% for (const f of t.fields) { -%>
+<% const rustName = it.naming.propertyName(f.name); -%>
+<% if (it.isScalarType(f.type) || it.enumNames.has(f.type)) { %>
+    pub fn <%= rustName %>(mut self) -> Self {
+        self.fields.push(FieldEntry::Scalar("<%= f.name %>".to_string()));
+        self
+    }
+<% } else if (it.typesByName.has(f.type)) { %>
+    pub fn <%= rustName %>(mut self, f: impl FnOnce(<%= f.type %>Selector) -> <%= f.type %>Selector) -> Self {
+        let sub = f(<%= f.type %>Selector::new());
+        self.fields.push(FieldEntry::Nested("<%= f.name %>".to_string(), sub.fields));
+        self
+    }
+<% } -%>
+<% } -%>
+}
+<% } %>
+
+// ─── Root Builder Entry ───────────────────────────────────
+
+struct RootEntry {
+    field: String,
+    args: Value,
+    arg_defs: Vec<(&'static str, &'static str)>,
+    selection: Vec<FieldEntry>,
+}
+
+fn build_document(kind: &str, entries: &[RootEntry]) -> (String, Value) {
+    let mut variables = serde_json::Map::new();
+    let mut var_defs = Vec::new();
+    let mut parts = Vec::new();
+    let mut vi = 0usize;
+
+    for entry in entries {
+        let mut arg_parts = Vec::new();
+        if let Some(args_obj) = entry.args.as_object() {
+            for (def_name, def_gql_type) in &entry.arg_defs {
+                if let Some(val) = args_obj.get(*def_name) {
+                    let vn = format!("v{}", vi);
+                    vi += 1;
+                    var_defs.push(format!("${}: {}", vn, def_gql_type));
+                    arg_parts.push(format!("{}: ${}", def_name, vn));
+                    variables.insert(vn, val.clone());
+                }
+            }
+        }
+        let args_str = if arg_parts.is_empty() { String::new() } else { format!("({})", arg_parts.join(", ")) };
+        if entry.selection.is_empty() {
+            parts.push(format!("    {}{}", entry.field, args_str));
+        } else {
+            let sel = build_selection(&entry.selection, "      ");
+            parts.push(format!("    {}{} {{\n{}\n    }}", entry.field, args_str, sel));
+        }
+    }
+
+    let vd = if var_defs.is_empty() { String::new() } else { format!("({})", var_defs.join(", ")) };
+    let query = format!("{}{} {{\n{}\n  }}", kind, vd, parts.join("\n"));
+    (query, Value::Object(variables))
+}
+
+// ─── Root Builders ────────────────────────────────────────
+<% const opKinds = [
+  { name: 'QueryBuilder', ops: it.queries, kind: 'Query' },
+  { name: 'MutationBuilder', ops: it.mutations, kind: 'Mutation' },
+  { name: 'SubscriptionBuilder', ops: it.subscriptions, kind: 'Subscription' },
+]; -%>
+<% for (const bk of opKinds) { -%>
+<% if (bk.ops.length === 0) continue; %>
+
+pub struct <%= bk.name %> {
+    entries: Vec<RootEntry>,
+}
+
+impl <%= bk.name %> {
+    pub fn new() -> Self {
+        Self { entries: Vec::new() }
+    }
+
+    pub(crate) fn build_document(self) -> (String, Value) {
+        build_document("<%= bk.kind.toLowerCase() %>", &self.entries)
+    }
+<% for (const op of bk.ops) { -%>
+<%
+  const rustName = it.naming.propertyName(op.name);
+  const returnType = op.returnType;
+  const isScalarReturn = it.isScalarType(returnType) || it.enumNames.has(returnType);
+  const argDefs = op.args.map(a => `("${a.name}", "${a.typeRaw}")`).join(', ');
+  const hasArgs = op.args.length > 0;
+  const varTypeName = it.naming.className(op.name) + bk.kind + 'Variables';
+-%>
+<% if (isScalarReturn) { %>
+<% if (hasArgs) { %>
+    pub fn <%= rustName %>(mut self, args: crate::gql_types::<%= varTypeName %>) -> Self {
+        self.entries.push(RootEntry {
+            field: "<%= op.name %>".to_string(),
+            args: serde_json::to_value(&args).unwrap(),
+            arg_defs: vec![<%= argDefs %>],
+            selection: Vec::new(),
+        });
+        self
+    }
+<% } else { %>
+    pub fn <%= rustName %>(mut self) -> Self {
+        self.entries.push(RootEntry {
+            field: "<%= op.name %>".to_string(),
+            args: Value::Object(serde_json::Map::new()),
+            arg_defs: vec![],
+            selection: Vec::new(),
+        });
+        self
+    }
+<% } %>
+<% } else { %>
+<% if (hasArgs) { %>
+    pub fn <%= rustName %>(mut self, args: crate::gql_types::<%= varTypeName %>, f: impl FnOnce(<%= returnType %>Selector) -> <%= returnType %>Selector) -> Self {
+        let sub = f(<%= returnType %>Selector::new());
+        self.entries.push(RootEntry {
+            field: "<%= op.name %>".to_string(),
+            args: serde_json::to_value(&args).unwrap(),
+            arg_defs: vec![<%= argDefs %>],
+            selection: sub.fields,
+        });
+        self
+    }
+<% } else { %>
+    pub fn <%= rustName %>(mut self, f: impl FnOnce(<%= returnType %>Selector) -> <%= returnType %>Selector) -> Self {
+        let sub = f(<%= returnType %>Selector::new());
+        self.entries.push(RootEntry {
+            field: "<%= op.name %>".to_string(),
+            args: Value::Object(serde_json::Map::new()),
+            arg_defs: vec![],
+            selection: sub.fields,
+        });
+        self
+    }
+<% } %>
+<% } -%>
+<% } -%>
+}
+<% } %>

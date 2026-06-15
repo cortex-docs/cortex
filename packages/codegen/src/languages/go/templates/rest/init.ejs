@@ -1,0 +1,12 @@
+<% const clientClass = it.clientClass; -%>
+<% const _baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const _parts = (it.pkgName ?? it.config.languageConfig.package_name).split('/'); -%>
+<% const _pkgShort = _parts[_parts.length - 1].replace(/-/g, ''); -%>
+<% const _pkgFull = it.pkgName ?? it.config.languageConfig.package_name; -%>
+import "<%= _pkgFull %>"
+
+client := <%= _pkgShort %>.New<%= clientClass %>(
+	<%= _pkgShort %>.WithBaseURL("<%= _baseUrl %>"),
+	<%= _pkgShort %>.WithBearerToken("your-token"),
+	// <%= _pkgShort %>.WithAPIKey("your-api-key"),
+)

@@ -1,0 +1,47 @@
+export type Maybe<T> = T | null;
+export type InputMaybe<T> = Maybe<T>;
+
+export type Scalars = {
+<% for (const [gqlName, tsType] of it.scalarEntries) { -%>
+  <%= gqlName %>: { input: <%= tsType %>; output: <%= tsType %> };
+<% } -%>
+};
+<% for (const e of it.enums) { %>
+
+<% if (e.description) { -%>
+/** <%= e.description %> */
+<% } -%>
+export const <%= e.name %> = {
+<% for (const v of e.values) { -%>
+  <%= v %>: '<%= v %>',
+<% } -%>
+} as const;
+
+export type <%= e.name %> = (typeof <%= e.name %>)[keyof typeof <%= e.name %>];
+<% } %>
+<% for (const t of it.types) { -%>
+
+<% if (t.description) { -%>
+/** <%= t.description %> */
+<% } -%>
+export type <%= t.name %> = {
+  __typename?: '<%= t.name %>';
+<% for (const f of t.fields) { -%>
+<% if (f.description) { -%>
+  /** <%= f.description %> */
+<% } -%>
+  <%= f.name %><%= f.required ? '' : '?' %>: <%= it.mapSchemaField(f) %>;
+<% } -%>
+};
+<% } %>
+<% for (const inp of it.inputs) { -%>
+
+<% if (inp.description) { -%>
+/** <%= inp.description %> */
+<% } -%>
+export type <%= inp.name %> = {
+<% for (const f of inp.fields) { -%>
+  <%= f.name %><%= f.required ? '' : '?' %>: <%= it.mapInputField(f) %>;
+<% } -%>
+};
+<% } %>

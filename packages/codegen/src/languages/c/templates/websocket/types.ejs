@@ -1,0 +1,130 @@
+#ifndef SDK_WS_TYPES_H
+#define SDK_WS_TYPES_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include "cjson/cJSON.h"
+
+<% for (const schema of it.schemas) { %>
+typedef struct {
+<% for (const prop of schema.properties) { %>
+<% if (prop.type === 'char*' || prop.type === 'std::string') { %>
+  char* <%= prop.name %>;
+<% } else if (prop.type === 'int64_t') { %>
+  int64_t <%= prop.name %>;
+<% } else if (prop.type === 'double') { %>
+  double <%= prop.name %>;
+<% } else if (prop.type === 'int' || prop.type === 'bool') { %>
+  int <%= prop.name %>;
+<% } else { %>
+  cJSON* <%= prop.name %>;
+<% } %>
+<% } %>
+} ws_<%= it.naming.propertyName(schema.name) %>_t;
+
+static inline void ws_<%= it.naming.propertyName(schema.name) %>_from_json(const cJSON* j, ws_<%= it.naming.propertyName(schema.name) %>_t* v) {
+  memset(v, 0, sizeof(*v));
+  if (!j) return;
+<% for (const prop of schema.properties) { %>
+<% if (prop.type === 'char*' || prop.type === 'std::string') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsString(f)) v-><%= prop.name %> = strdup(f->valuestring); }
+<% } else if (prop.type === 'int64_t') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsNumber(f)) v-><%= prop.name %> = (int64_t)f->valuedouble; }
+<% } else if (prop.type === 'double') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsNumber(f)) v-><%= prop.name %> = f->valuedouble; }
+<% } else if (prop.type === 'int' || prop.type === 'bool') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f) v-><%= prop.name %> = cJSON_IsTrue(f); }
+<% } else { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f) v-><%= prop.name %> = cJSON_Duplicate(f, 1); }
+<% } %>
+<% } %>
+}
+
+static inline void ws_<%= it.naming.propertyName(schema.name) %>_free(ws_<%= it.naming.propertyName(schema.name) %>_t* v) {
+  if (!v) return;
+<% for (const prop of schema.properties) { %>
+<% if (prop.type === 'char*' || prop.type === 'std::string') { %>
+  free(v-><%= prop.name %>);
+<% } else if (prop.type !== 'int64_t' && prop.type !== 'double' && prop.type !== 'int' && prop.type !== 'bool') { %>
+  if (v-><%= prop.name %>) cJSON_Delete(v-><%= prop.name %>);
+<% } %>
+<% } %>
+}
+
+<% } %>
+<% for (const ch of it.channels) { %>
+<% if (ch.subscribeSchema && ch.subscribeSchema.properties.length > 0) { %>
+typedef struct {
+<% for (const prop of ch.subscribeSchema.properties) { %>
+<% if (prop.type === 'char*' || prop.type === 'std::string') { %>
+  char* <%= prop.name %>;
+<% } else if (prop.type === 'int64_t') { %>
+  int64_t <%= prop.name %>;
+<% } else if (prop.type === 'double') { %>
+  double <%= prop.name %>;
+<% } else if (prop.type === 'int' || prop.type === 'bool') { %>
+  int <%= prop.name %>;
+<% } else { %>
+  cJSON* <%= prop.name %>;
+<% } %>
+<% } %>
+} ws_<%= ch.className %>_message_t;
+
+static inline void ws_<%= ch.methodName %>_message_from_json(const cJSON* j, ws_<%= ch.className %>_message_t* v) {
+  memset(v, 0, sizeof(*v));
+  if (!j) return;
+<% for (const prop of ch.subscribeSchema.properties) { %>
+<% if (prop.type === 'char*' || prop.type === 'std::string') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsString(f)) v-><%= prop.name %> = strdup(f->valuestring); }
+<% } else if (prop.type === 'int64_t') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsNumber(f)) v-><%= prop.name %> = (int64_t)f->valuedouble; }
+<% } else if (prop.type === 'double') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsNumber(f)) v-><%= prop.name %> = f->valuedouble; }
+<% } else if (prop.type === 'int' || prop.type === 'bool') { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f) v-><%= prop.name %> = cJSON_IsTrue(f); }
+<% } else { %>
+  { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f) v-><%= prop.name %> = cJSON_Duplicate(f, 1); }
+<% } %>
+<% } %>
+}
+
+<% } %>
+<% if (ch.publishSchema && ch.publishSchema.properties.length > 0) { %>
+typedef struct {
+<% for (const prop of ch.publishSchema.properties) { %>
+<% if (prop.type === 'char*' || prop.type === 'std::string') { %>
+  char* <%= prop.name %>;
+<% } else if (prop.type === 'int64_t') { %>
+  int64_t <%= prop.name %>;
+<% } else if (prop.type === 'double') { %>
+  double <%= prop.name %>;
+<% } else if (prop.type === 'int' || prop.type === 'bool') { %>
+  int <%= prop.name %>;
+<% } else { %>
+  cJSON* <%= prop.name %>;
+<% } %>
+<% } %>
+} ws_<%= ch.className %>_payload_t;
+
+static inline cJSON* ws_<%= ch.methodName %>_payload_to_json(const ws_<%= ch.className %>_payload_t* v) {
+  cJSON* j = cJSON_CreateObject();
+<% for (const prop of ch.publishSchema.properties) { %>
+<% if (prop.type === 'char*' || prop.type === 'std::string') { %>
+  if (v-><%= prop.name %>) cJSON_AddStringToObject(j, "<%= prop.originalName %>", v-><%= prop.name %>);
+<% } else if (prop.type === 'int64_t') { %>
+  cJSON_AddNumberToObject(j, "<%= prop.originalName %>", (double)v-><%= prop.name %>);
+<% } else if (prop.type === 'double') { %>
+  cJSON_AddNumberToObject(j, "<%= prop.originalName %>", v-><%= prop.name %>);
+<% } else if (prop.type === 'int' || prop.type === 'bool') { %>
+  cJSON_AddBoolToObject(j, "<%= prop.originalName %>", v-><%= prop.name %>);
+<% } else { %>
+  if (v-><%= prop.name %>) cJSON_AddItemToObject(j, "<%= prop.originalName %>", cJSON_Duplicate(v-><%= prop.name %>, 1));
+<% } %>
+<% } %>
+  return j;
+}
+
+<% } %>
+<% } %>
+#endif /* SDK_WS_TYPES_H */

@@ -1,0 +1,76 @@
+async function apiRequest(
+  baseUrl: string,
+  method: string,
+  path: string,
+  params: Record<string, unknown>,
+  pathParams: string[],
+  queryParams: string[],
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  let resolvedPath = path;
+  for (const p of pathParams) {
+    resolvedPath = resolvedPath.replace(`{${p}}`, String(params[p] ?? ''));
+  }
+
+  const url = new URL(resolvedPath, baseUrl);
+  for (const q of queryParams) {
+    if (params[q] !== undefined) {
+      url.searchParams.set(q, String(params[q]));
+    }
+  }
+
+  const bodyParams = Object.fromEntries(
+    Object.entries(params).filter(([k]) => !pathParams.includes(k) && !queryParams.includes(k)),
+  );
+  const hasBody = method !== 'GET' && method !== 'DELETE' && Object.keys(bodyParams).length > 0;
+
+  const response = await fetch(url.toString(), {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: hasBody ? JSON.stringify(bodyParams) : undefined,
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    return { content: [{ type: 'text', text: `Error ${response.status}: ${text}` }] };
+  }
+
+  return { content: [{ type: 'text', text }] };
+}
+
+<% for (const tool of it.tools) { %>
+<% if (tool.source === 'websocket' && tool.name.startsWith('ws_describe_')) { %>
+export async function handle_<%= tool.name %>(
+  params: Record<string, unknown>,
+  baseUrl: string,
+) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify({
+      channel: '<%= it.esc(tool.channel?.name) %>',
+      description: '<%= it.esc(tool.channel?.description) %>',
+      subscribe: <%= tool.channel?.subscribe?.summary ? "'" + it.esc(tool.channel.subscribe.summary) + "'" : 'null' %>,
+      publish: <%= tool.channel?.publish?.summary ? "'" + it.esc(tool.channel.publish.summary) + "'" : 'null' %>,
+    }, null, 2) }],
+  };
+}
+
+<% } else if (tool.source === 'websocket') { %>
+export async function handle_<%= tool.name %>(
+  params: Record<string, unknown>,
+  baseUrl: string,
+) {
+  return {
+    content: [{ type: 'text' as const, text: `WebSocket: ${JSON.stringify(params, null, 2)}` }],
+  };
+}
+
+<% } else if (tool.operation) { %>
+export async function handle_<%= tool.name %>(
+  params: Record<string, unknown>,
+  baseUrl: string,
+) {
+  return apiRequest(baseUrl, '<%= tool.operation.method.toUpperCase() %>', '<%= tool.operation.path %>', params, [<%= tool.operation.parameters.filter(p => p.in === 'path').map(p => "'" + p.name + "'").join(', ') %>], [<%= tool.operation.parameters.filter(p => p.in === 'query').map(p => "'" + p.name + "'").join(', ') %>]);
+}
+
+<% } %>
+<% } %>

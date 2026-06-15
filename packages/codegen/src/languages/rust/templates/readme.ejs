@@ -1,0 +1,381 @@
+<% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const clientClass = it.clientClass; -%>
+<% const pkgName = it.config.languageConfig.package_name; -%>
+<% const crateName = it.utils.toSnakeCase(it.config.languageConfig.package_name); -%>
+<% const hasWs = it.config.config.sources.some(s => s.type === 'asyncapi-spec'); -%>
+<% const hasGql = it.config.config.sources.some(s => s.type === 'graphql-spec'); -%>
+<% const hasGrpc = it.config.config.sources.some(s => s.type === 'grpc-spec'); -%>
+<% const version = it.spec.info.version; -%>
+<%
+// ── REST type helpers ──
+const schemaMap = new Map(it.schemas.map(s => [s.className, s]));
+const extractBase = (t) => t.replace(/^Option<(.+)>$/, '$1').replace(/^Vec<(.+)>$/, '$1').trim();
+const isArr = (t) => t.startsWith('Vec<');
+const primitives = new Set(['String', 'i32', 'i64', 'f32', 'f64', 'bool', 'u8', 'u32', 'u64', '()', 'serde_json::Value']);
+const lnkRest = (t) => {
+  if (!t || primitives.has(t)) return `\`${t}\``;
+  const b = extractBase(t);
+  if (schemaMap.has(b)) return `[\`${t}\`](#${b.toLowerCase()})`;
+  return `\`${t}\``;
+};
+
+// ── GraphQL type helpers ──
+const gqlTypeMap = it.gql ? new Map([...it.gql.types.map(t => [t.name, t]), ...it.gql.inputs.map(i => [i.name, i])]) : new Map();
+const gqlEnumSet = it.gql ? new Set(it.gql.enums.map(e => e.name)) : new Set();
+const gqlInputSet = it.gql ? new Set(it.gql.inputs.map(i => i.name)) : new Set();
+const gqlScalars = new Set(['ID', 'String', 'Int', 'Float', 'Boolean']);
+const extractGqlBase = (t) => t.replace(/[\[\]!]/g, '').trim();
+const isGqlList = (t) => t.includes('[');
+const lnkGql = (t) => {
+  const b = extractGqlBase(t);
+  if (gqlScalars.has(b)) return `\`${t}\``;
+  if (gqlEnumSet.has(b)) return `[\`${t}\`](#${b.toLowerCase()}-enum)`;
+  if (gqlInputSet.has(b)) return `[\`${t}\`](#${b.toLowerCase()}-input)`;
+  if (gqlTypeMap.has(b)) return `[\`${t}\`](#${b.toLowerCase()})`;
+  return `\`${t}\``;
+};
+
+// ── gRPC type helpers ──
+const grpcMsgMap = it.grpcTypes ? new Map(it.grpcTypes.messages.map(m => [m.name, m])) : new Map();
+const grpcEnumSet = it.grpcTypes ? new Set(it.grpcTypes.enums.map(e => e.name)) : new Set();
+const grpcScalars = new Set(['string', 'bytes', 'bool', 'int32', 'int64', 'uint32', 'uint64', 'sint32', 'sint64', 'fixed32', 'fixed64', 'sfixed32', 'sfixed64', 'float', 'double']);
+const lnkGrpc = (t) => {
+  if (grpcScalars.has(t)) return `\`${t}\``;
+  if (grpcMsgMap.has(t)) return `[\`${t}\`](#${t.toLowerCase()})`;
+  if (grpcEnumSet.has(t)) return `[\`${t}\`](#${t.toLowerCase()}-enum)`;
+  return `\`${t}\``;
+};
+-%>
+# <%= pkgName %>
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+<%= crateName %> = "<%= version %>"
+```
+
+## API Client
+
+### Initialization
+
+```rust
+<%~ include("rest/init", it) %>
+```
+
+### Resources
+<% for (const resource of it.resources) { -%>
+
+#### `client.<%= it.utils.toSnakeCase(resource.name) %>`
+
+| Method | HTTP | Request | Response | Description |
+|--------|------|---------|----------|-------------|
+<% for (const op of resource.operations) { -%>
+<% const sig = []; -%>
+<% sig.push('&client'); -%>
+<% for (const p of op.pathParams) sig.push(`"${p.name}"`); -%>
+<% if (op.hasBody) sig.push(`&${op.bodyType} { ... }`); -%>
+<% if (op.queryParams.length > 0) sig.push('options...'); -%>
+| `<%= op.name %>(<%= sig.join(', ') %>)` | `<%= op.method %>` | <%= op.hasBody ? lnkRest(op.bodyType) : '—' %> | <%= op.responseType !== 'void' && op.responseType !== '()' ? lnkRest(op.responseType) : '—' %> | <%= op.summary || '' %> |
+<% } -%>
+<% } -%>
+
+### Examples
+
+```rust
+<%~ include("rest/init", it) %>
+<% for (const resource of it.resources) { %>
+// ── <%= it.utils.toPascalCase(resource.name) %> ──
+<% for (const op of resource.operations) { %>
+<%~ include("rest/example", { ...it, op, resource }) %>
+<% } -%>
+<% } -%>
+```
+
+### Types
+<% for (const schema of it.schemas) { -%>
+<% if (schema.isEnum) { -%>
+
+#### `<%= schema.className %>` (enum)
+
+Values: <%= schema.enumValues.map(v => `\`${v}\``).join(' | ') %>
+<% } else if (schema.properties.length > 0) { -%>
+
+#### `<%= schema.className %>`
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+<% for (const prop of schema.properties) { -%>
+| `<%= it.utils.toSnakeCase(prop.name) %>` | <%= prop.description || '—' %> | <%= lnkRest(prop.type) %> | <%= prop.required ? 'Yes' : 'No' %> |
+<% const childBase = extractBase(prop.type); const child = schemaMap.get(childBase); -%>
+<% if (child && child.properties.length > 0 && child.className !== schema.className) { -%>
+<% const pfx = isArr(prop.type) ? `${it.utils.toSnakeCase(prop.name)}[]` : it.utils.toSnakeCase(prop.name); -%>
+<% for (const cp of child.properties) { -%>
+| `<%= pfx %>.<%= it.utils.toSnakeCase(cp.name) %>` | <%= cp.description || '—' %> | <%= lnkRest(cp.type) %> | <%= cp.required ? 'Yes' : 'No' %> |
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% if (hasGql && it.gql) { -%>
+
+## GraphQL Client
+
+### Initialization
+
+```rust
+<%~ include("graphql/init", it) %>
+```
+<% if (it.gql.queries.length > 0) { -%>
+
+### Queries
+
+| Operation | Arguments | Returns | Description |
+|-----------|-----------|---------|-------------|
+<% for (const q of it.gql.queries) { -%>
+| `<%= q.name %>` | <%= q.args.length > 0 ? q.args.map(a => `\`${a.name}\`: ${lnkGql(a.typeRaw)}`).join(', ') : '—' %> | <%= lnkGql(q.returnTypeRaw) %> | <%= q.description || '' %> |
+<% } -%>
+
+```rust
+use <%= crateName %>::gql::*;
+
+<% for (const query of it.gql.queries) { -%>
+<%~ include("graphql/example", { ...it, op: query, opType: 'query' }) %>
+
+<% } -%>
+<% if (it.gql.queries.length > 1) { -%>
+<%~ include("graphql/multi-query", { ...it, queries: it.gql.queries.slice(0, 2) }) %>
+<% } -%>
+```
+<% } -%>
+<% if (it.gql.mutations.length > 0) { -%>
+
+### Mutations
+
+| Operation | Arguments | Returns | Description |
+|-----------|-----------|---------|-------------|
+<% for (const m of it.gql.mutations) { -%>
+| `<%= m.name %>` | <%= m.args.length > 0 ? m.args.map(a => `\`${a.name}\`: ${lnkGql(a.typeRaw)}`).join(', ') : '—' %> | <%= lnkGql(m.returnTypeRaw) %> | <%= m.description || '' %> |
+<% } -%>
+
+```rust
+use <%= crateName %>::gql::*;
+
+<% for (const mutation of it.gql.mutations) { -%>
+<%~ include("graphql/example", { ...it, op: mutation, opType: 'mutation' }) %>
+
+<% } -%>
+```
+<% } -%>
+<% if (it.gql.subscriptions.length > 0) { -%>
+
+### Subscriptions
+
+| Operation | Arguments | Returns | Description |
+|-----------|-----------|---------|-------------|
+<% for (const s of it.gql.subscriptions) { -%>
+| `<%= s.name %>` | <%= s.args.length > 0 ? s.args.map(a => `\`${a.name}\`: ${lnkGql(a.typeRaw)}`).join(', ') : '—' %> | <%= lnkGql(s.returnTypeRaw) %> | <%= s.description || '' %> |
+<% } -%>
+
+```rust
+use <%= crateName %>::gql::*;
+
+<% for (const sub of it.gql.subscriptions) { -%>
+<%~ include("graphql/example", { ...it, op: sub, opType: 'subscription' }) %>
+
+<% } -%>
+// Cleanup
+drop(gql);
+```
+<% } -%>
+
+### Types
+<% for (const t of it.gql.types) { -%>
+
+#### `<%= t.name %>`
+<% if (t.description) { -%>
+
+<%= t.description %>
+<% } -%>
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+<% for (const f of t.fields) { -%>
+| `<%= f.name %>` | <%= f.description || '—' %> | <%= lnkGql(f.typeRaw) %> | <%= f.required ? 'Yes' : 'No' %> |
+<% const fBase = extractGqlBase(f.typeRaw); const fChild = gqlTypeMap.get(fBase); -%>
+<% if (fChild && fChild.fields && fChild.name !== t.name) { -%>
+<% const pfx = isGqlList(f.typeRaw) ? `${f.name}[]` : f.name; -%>
+<% for (const cf of fChild.fields) { -%>
+| `<%= pfx %>.<%= cf.name %>` | <%= cf.description || '—' %> | <%= lnkGql(cf.typeRaw) %> | <%= cf.required ? 'Yes' : 'No' %> |
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% for (const i of it.gql.inputs) { -%>
+
+#### `<%= i.name %>` (input)
+<% if (i.description) { -%>
+
+<%= i.description %>
+<% } -%>
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+<% for (const f of i.fields) { -%>
+| `<%= f.name %>` | <%= f.description || '—' %> | <%= lnkGql(f.typeRaw) %> | <%= f.required ? 'Yes' : 'No' %> |
+<% const fBase = extractGqlBase(f.typeRaw); const fChild = gqlTypeMap.get(fBase); -%>
+<% if (fChild && fChild.fields && fChild.name !== i.name) { -%>
+<% const pfx = isGqlList(f.typeRaw) ? `${f.name}[]` : f.name; -%>
+<% for (const cf of fChild.fields) { -%>
+| `<%= pfx %>.<%= cf.name %>` | <%= cf.description || '—' %> | <%= lnkGql(cf.typeRaw) %> | <%= cf.required ? 'Yes' : 'No' %> |
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% for (const e of it.gql.enums) { -%>
+
+#### `<%= e.name %>` (enum)
+
+Values: <%= e.values.map(v => `\`${v}\``).join(' | ') %>
+<% } -%>
+<% } -%>
+<% if (hasWs && it.wsChannels && it.wsChannels.length > 0) { -%>
+
+## WebSocket Client
+
+### Initialization
+
+```rust
+<%~ include("websocket/init", it) %>
+```
+
+### Channels
+
+| Channel | Direction | Method | Properties |
+|---------|-----------|--------|------------|
+<% for (const ch of it.wsChannels) { -%>
+<% const snakeName = ch.channelId.split('/').map(s => s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')).join('_').replace(/-/g, '_'); -%>
+<% if (ch.canSubscribe) { -%>
+| `<%= ch.channelId %>` | Subscribe | `ws.on_<%= snakeName %>(handler)` | <%= ch.subscribeMessage && ch.subscribeMessage.properties.length > 0 ? ch.subscribeMessage.properties.map(p => `\`${p.name}: ${p.type}\``).join(', ') : '—' %> |
+<% } -%>
+<% if (ch.canPublish) { -%>
+| `<%= ch.channelId %>` | Publish | `ws.send_<%= snakeName %>(data)` | <%= ch.publishMessage && ch.publishMessage.properties.length > 0 ? ch.publishMessage.properties.map(p => `\`${p.name}: ${p.type}\``).join(', ') : '—' %> |
+<% } -%>
+<% } -%>
+
+### Examples
+
+```rust
+ws.connect().await?;
+
+<% for (const ch of it.wsChannels) { -%>
+<%~ include("websocket/example", { ...it, channel: ch }) %>
+
+<% } -%>
+ws.disconnect().await;
+```
+<% if (it.wsSchemas && it.wsSchemas.length > 0) { -%>
+<% const wsSchemaMap = new Map(it.wsSchemas.map(s => [s.className, s])); -%>
+
+### Types
+<% for (const schema of it.wsSchemas) { -%>
+
+#### `<%= schema.className %>`
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+<% for (const prop of schema.properties) { -%>
+<% const wsChild = wsSchemaMap.get(it.utils.toPascalCase(prop.type)); -%>
+| `<%= prop.name %>` | <%= prop.description || '—' %> | <%= wsChild ? `[\`${prop.type}\`](#${prop.type.toLowerCase()})` : `\`${prop.type}\`` %> | <%= prop.required ? 'Yes' : 'No' %> |
+<% if (wsChild && wsChild.className !== schema.className) { -%>
+<% for (const cp of wsChild.properties) { -%>
+| `<%= prop.name %>.<%= cp.name %>` | <%= cp.description || '—' %> | `<%= cp.type %>` | <%= cp.required ? 'Yes' : 'No' %> |
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% if (hasGrpc && it.grpcServices && it.grpcServices.length > 0) { -%>
+<% const grpcClass = it.grpcClientClass ?? it.grpcServices[0].clientClass; -%>
+<% const grpcVar = grpcClass.charAt(0).toLowerCase() + grpcClass.slice(1); -%>
+
+## gRPC Client
+
+### Initialization
+
+```rust
+<%~ include("grpc/init", { ...it, service: grpcClass }) %>
+```
+<% for (const service of it.grpcServices) { -%>
+
+### `<%= service.serviceName %>`
+
+| Method | Input | Output | Type |
+|--------|-------|--------|------|
+<% for (const m of service.methods) { -%>
+<% const streamType = m.serverStreaming && m.clientStreaming ? 'Bidirectional' : m.serverStreaming ? 'Server Stream' : m.clientStreaming ? 'Client Stream' : 'Unary'; -%>
+| `<%= grpcVar %>.<%= m.callName %>()` | <%= lnkGrpc(m.inputType) %> | <%= lnkGrpc(m.outputType) %> | <%= streamType %> |
+<% } -%>
+<% } -%>
+
+### Examples
+
+```rust
+<% for (const service of it.grpcServices) { -%>
+// ── <%= service.serviceName %> ──
+
+<% for (const method of service.methods) { -%>
+<%~ include("grpc/example", { ...it, method, service: { ...service, clientVar: grpcVar } }) %>
+
+<% } -%>
+<% } -%>
+```
+
+### Cleanup
+
+```rust
+drop(<%= grpcVar %>);
+```
+<% if (it.grpcTypes) { -%>
+
+### Types
+<% for (const msg of it.grpcTypes.messages) { -%>
+
+#### `<%= msg.name %>`
+<% if (msg.description) { -%>
+
+<%= msg.description %>
+<% } -%>
+
+| Field | Description | Type | Repeated | Optional |
+|-------|-------------|------|----------|----------|
+<% for (const f of msg.fields) { -%>
+| `<%= f.name %>` | <%= f.description || '—' %> | <%= lnkGrpc(f.type) %> | <%= f.repeated ? 'Yes' : 'No' %> | <%= f.optional ? 'Yes' : 'No' %> |
+<% const grpcChild = grpcMsgMap.get(f.type); -%>
+<% if (grpcChild && grpcChild.name !== msg.name) { -%>
+<% const pfx = f.repeated ? `${f.name}[]` : f.name; -%>
+<% for (const cf of grpcChild.fields) { -%>
+| `<%= pfx %>.<%= cf.name %>` | <%= cf.description || '—' %> | <%= lnkGrpc(cf.type) %> | <%= cf.repeated ? 'Yes' : 'No' %> | <%= cf.optional ? 'Yes' : 'No' %> |
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>
+<% for (const e of it.grpcTypes.enums) { -%>
+
+#### `<%= e.name %>` (enum)
+<% if (e.description) { -%>
+
+<%= e.description %>
+<% } -%>
+
+| Name | Value |
+|------|-------|
+<% for (const v of e.values) { -%>
+| `<%= v.name %>` | `<%= v.number %>` |
+<% } -%>
+<% } -%>
+<% } -%>
+<% } -%>

@@ -1,0 +1,12 @@
+<%~ include("graphql/init", it) %>
+
+<%~ include("graphql/example", it) %>
+<% if (it.queries && it.queries.length > 1) { -%>
+<% const currentName = it.opName ?? it.op?.name; -%>
+<% const current = it.queries.find(q => q.name === currentName) ?? it.queries[0]; -%>
+<% const other = it.queries.find(q => q.name !== currentName) ?? it.queries[1]; -%>
+
+<%~ include("graphql/multi-query", { ...it, queries: [current, other] }) %>
+<% } -%>
+
+gql_client_free(&gql);

@@ -1,0 +1,125 @@
+<% const r = it.resource; -%>
+<% const cppKeywords = new Set(['delete', 'new', 'class', 'template', 'operator', 'namespace', 'using', 'return', 'throw', 'catch', 'try', 'virtual', 'friend', 'inline', 'static', 'const', 'volatile', 'register', 'auto', 'extern', 'typedef', 'sizeof', 'alignof', 'switch', 'case', 'default', 'if', 'else', 'for', 'while', 'do', 'break', 'continue', 'goto', 'struct', 'union', 'enum', 'void', 'int', 'long', 'short', 'char', 'float', 'double', 'signed', 'unsigned', 'bool', 'true', 'false', 'nullptr', 'this', 'explicit', 'export', 'mutable', 'private', 'protected', 'public', 'typename']); -%>
+<% const safeName = (name) => cppKeywords.has(name) ? name + '_' : name; -%>
+<% const schemaTypeNames = new Set(it.schemas.map(s => s.className)); -%>
+<% const isTypedBody = (type) => type !== 'nlohmann::json' && type !== 'void' && schemaTypeNames.has(type); -%>
+<% const isTypedResponse = (type) => type !== 'nlohmann::json' && type !== 'void' && (schemaTypeNames.has(type) || schemaTypeNames.has(type.replace(/^std::vector<(.+)>$/, '$1'))); -%>
+<% const isVoid = (type) => type === 'void'; -%>
+<% /* Build inline struct name for operations with inline response/body schemas */ -%>
+<% const inlineStructs = []; -%>
+<% for (const op of r.operations) { -%>
+<%   const opClassName = it.naming.className(op.name); -%>
+<%   if (op.responseInlineProps && op.responseInlineProps.length > 0) { -%>
+<%     const structName = r.className.replace(/Resource$/, '') + opClassName + 'Response'; -%>
+<%     inlineStructs.push({ name: structName, props: op.responseInlineProps }); -%>
+<%     op._responseStructName = structName; -%>
+<%   } -%>
+<%   if (op.bodyInlineProps && op.bodyInlineProps.length > 0) { -%>
+<%     const structName = r.className.replace(/Resource$/, '') + opClassName + 'Body'; -%>
+<%     inlineStructs.push({ name: structName, props: op.bodyInlineProps }); -%>
+<%     op._bodyStructName = structName; -%>
+<%   } -%>
+<% } -%>
+#pragma once
+
+#include <string>
+#include <map>
+#include <vector>
+#include <functional>
+#include <optional>
+#include <cstdint>
+#include <nlohmann/json.hpp>
+#include "../types.hpp"
+
+namespace sdk {
+
+using RequestFn = std::function<nlohmann::json(
+  const std::string&,
+  const std::string&,
+  const std::map<std::string, std::string>&,
+  const nlohmann::json*
+)>;
+<% for (const s of inlineStructs) { %>
+
+struct <%= s.name %> {
+<% for (const p of s.props) { -%>
+<% if (p.required) { -%>
+  <%= p.type %> <%= p.name %>;
+<% } else { -%>
+  std::optional<<%= p.type %>> <%= p.name %>;
+<% } -%>
+<% } -%>
+};
+
+inline void to_json(nlohmann::json& j, const <%= s.name %>& v) {
+  j = nlohmann::json{};
+<% for (const p of s.props) { -%>
+<% if (p.required) { -%>
+  j["<%= p.originalName %>"] = v.<%= p.name %>;
+<% } else { -%>
+  if (v.<%= p.name %>.has_value()) j["<%= p.originalName %>"] = v.<%= p.name %>.value();
+<% } -%>
+<% } -%>
+}
+
+inline void from_json(const nlohmann::json& j, <%= s.name %>& v) {
+<% for (const p of s.props) { -%>
+<% if (p.required) { -%>
+  if (j.contains("<%= p.originalName %>")) j.at("<%= p.originalName %>").get_to(v.<%= p.name %>);
+<% } else { -%>
+  if (j.contains("<%= p.originalName %>") && !j["<%= p.originalName %>"].is_null()) v.<%= p.name %> = j["<%= p.originalName %>"].get<<%= p.type %>>();
+<% } -%>
+<% } -%>
+}
+<% } %>
+
+class <%= r.className %> {
+  RequestFn do_request_;
+
+public:
+  <%= r.className %>() = default;
+  explicit <%= r.className %>(RequestFn fn) : do_request_(std::move(fn)) {}
+<% for (const op of r.operations) { -%>
+<% const bodyTyped = op.hasBody && (isTypedBody(op.bodyType) || op._bodyStructName); -%>
+<% const hasInlineResp = !!op._responseStructName; -%>
+<% const respTyped = isTypedResponse(op.responseType) || hasInlineResp; -%>
+<% const respVoid = isVoid(op.responseType); -%>
+<% const retType = respVoid ? 'void' : hasInlineResp ? op._responseStructName : respTyped ? op.responseType : 'nlohmann::json'; -%>
+<% const bodyParamType = op._bodyStructName || op.bodyType; -%>
+<% const params = []; -%>
+<% for (const p of op.pathParams) { params.push(`const std::string& ${p.name}`); } -%>
+<% if (op.hasBody) { -%>
+<%   if (bodyTyped) { params.push(`const ${bodyParamType}& body`); } -%>
+<%   else { params.push('const nlohmann::json& body'); } -%>
+<% } -%>
+<% for (const p of op.queryParams) { params.push(`const std::optional<std::string>& ${p.name} = std::nullopt`); } -%>
+<% let pathExpr = op.path; for (const p of op.pathParams) { pathExpr = pathExpr.replace(`{${p.originalName}}`, '" + ' + p.name + ' + "'); } -%>
+
+<% if (op.summary) { -%>
+  /// <%= op.summary %>
+<% } -%>
+  <%= retType %> <%= safeName(op.name) %>(<%= params.join(', ') %>) const {
+<% if (op.queryParams.length > 0) { -%>
+    std::map<std::string, std::string> query;
+<% for (const q of op.queryParams) { -%>
+    if (<%= q.name %>.has_value()) query["<%= q.originalName %>"] = <%= q.name %>.value();
+<% } -%>
+<% } -%>
+<% if (bodyTyped) { -%>
+    nlohmann::json body_json = body;
+<% } -%>
+<% const queryArg = op.queryParams.length > 0 ? 'query' : '{}'; -%>
+<% const bodyArg = op.hasBody ? (bodyTyped ? '&body_json' : '&body') : 'nullptr'; -%>
+<% if (respVoid) { -%>
+    do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>);
+<% } else if (respTyped) { -%>
+    nlohmann::json result = do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>);
+    return result.get<<%= retType %>>();
+<% } else { -%>
+    return do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>);
+<% } -%>
+  }
+<% } %>
+};
+
+} // namespace sdk

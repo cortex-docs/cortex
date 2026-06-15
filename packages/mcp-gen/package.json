@@ -1,0 +1,27 @@
+{
+  "name": "@cortex/mcp-gen",
+  "version": "0.1.0",
+  "description": "MCP server generator for Cortex — generates Model Context Protocol servers from OpenAPI specs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc && cp -r templates dist/templates",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@cortex/core": "*",
+    "eta": "^3.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

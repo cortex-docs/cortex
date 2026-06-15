@@ -1,0 +1,6 @@
+<% const _clientPrefix = 'grpc_' + it.utils.toSnakeCase(it.clientClass); -%>
+#include "grpc_client.h"
+#include "grpc_types.h"
+
+<%= _clientPrefix %>_client_t client;
+<%= _clientPrefix %>_client_init(&client, "localhost:50051");

@@ -1,0 +1,14 @@
+<% const clientClass = it.clientClass; %>
+from .client import <%= clientClass %>
+from .exceptions import ApiError
+<% for (const schema of it.schemas) { %>
+from .types import <%= schema.className %>
+<% } %>
+
+__all__ = [
+    "<%= clientClass %>",
+    "ApiError",
+<% for (const schema of it.schemas) { %>
+    "<%= schema.className %>",
+<% } %>
+]

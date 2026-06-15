@@ -1,0 +1,100 @@
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace <%= it.naming.className(it.packageName) %>.Grpc;
+
+internal class LenientEnumConverterFactory : JsonConverterFactory
+{
+    public override bool CanConvert(Type typeToConvert) => typeToConvert.IsEnum;
+
+    public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+    {
+        return (JsonConverter)Activator.CreateInstance(
+            typeof(LenientEnumConverter<>).MakeGenericType(typeToConvert))!;
+    }
+}
+
+internal class LenientEnumConverter<T> : JsonConverter<T> where T : struct, Enum
+{
+    public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var intVal))
+            return (T)Enum.ToObject(typeof(T), intVal);
+
+        var str = reader.GetString() ?? "";
+        if (Enum.TryParse<T>(str, true, out var exact)) return exact;
+
+        foreach (var name in Enum.GetNames<T>())
+        {
+            if (name.EndsWith(str, StringComparison.OrdinalIgnoreCase) ||
+                name.Replace("_", "").EndsWith(str.Replace("_", ""), StringComparison.OrdinalIgnoreCase))
+                return Enum.Parse<T>(name);
+        }
+        return default;
+    }
+
+    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value.ToString());
+    }
+}
+
+public class <%= it.clientClass %> : IDisposable
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _address;
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new LenientEnumConverterFactory() },
+    };
+
+    public <%= it.clientClass %>(string address = "http://localhost:50051")
+    {
+        _address = address.TrimEnd('/');
+        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+    }
+
+    public void Close() => Dispose();
+    public void Dispose() => _httpClient.Dispose();
+
+<% for (const service of it.services) { -%>
+    private async Task<TResponse> CallAsync<%= service.name %><TRequest, TResponse>(string method, TRequest request)
+    {
+        var json = JsonSerializer.Serialize(request);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _httpClient.PostAsync($"{_address}/grpc/<%= service.name %>/{method}", content);
+        var body = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+            throw new Exception($"gRPC call {method} failed with status {(int)response.StatusCode}: {body}");
+        return JsonSerializer.Deserialize<TResponse>(body, JsonOpts)!;
+    }
+
+<% for (const method of service.methods) { -%>
+<% if (method.description) { -%>
+    /// <summary><%= method.description %></summary>
+<% } -%>
+<% if (!method.clientStreaming && !method.serverStreaming) { -%>
+    public async Task<<%= method.outputType %>> <%= it.naming.className(method.name) %>Async(<%= method.inputType %> request)
+    {
+        return await CallAsync<%= service.name %><<%= method.inputType %>, <%= method.outputType %>>("<%= method.name %>", request);
+    }
+
+<% } else if (!method.clientStreaming && method.serverStreaming) { -%>
+    public async Task<List<<%= method.outputType %>>> <%= it.naming.className(method.name) %>Async(<%= method.inputType %> request)
+    {
+        var json = JsonSerializer.Serialize(request);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await _httpClient.PostAsync($"{_address}/grpc/<%= service.name %>/<%= method.name %>", content);
+        var body = await response.Content.ReadAsStringAsync();
+        var root = JsonDocument.Parse(body).RootElement;
+        if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+            return JsonSerializer.Deserialize<List<<%= method.outputType %>>>(data.GetRawText(), JsonOpts) ?? new();
+        return JsonSerializer.Deserialize<List<<%= method.outputType %>>>(body, JsonOpts) ?? new();
+    }
+
+<% } -%>
+<% } -%>
+<% } -%>
+}

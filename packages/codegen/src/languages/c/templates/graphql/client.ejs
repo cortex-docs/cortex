@@ -1,0 +1,418 @@
+<% const hasQueries = it.queries.length > 0; -%>
+<% const hasMutations = it.mutations.length > 0; -%>
+<% const hasSubscriptions = it.subscriptions.length > 0; -%>
+#ifndef SDK_GQL_CLIENT_H
+#define SDK_GQL_CLIENT_H
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <curl/curl.h>
+#include "cjson/cJSON.h"
+#include "gql-query-builder.h"
+<% if (hasSubscriptions) { -%>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+<% } -%>
+
+typedef struct {
+  char* endpoint;
+<% if (hasSubscriptions) { -%>
+  char* ws_endpoint;
+<% } -%>
+} gql_client_options_t;
+
+typedef struct {
+  char* data;
+  size_t size;
+} gql_resp_buf_t;
+
+static size_t gql_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+  size_t total = size * nmemb;
+  gql_resp_buf_t* buf = (gql_resp_buf_t*)userp;
+  char* tmp = (char*)realloc(buf->data, buf->size + total + 1);
+  if (!tmp) return 0;
+  buf->data = tmp;
+  memcpy(buf->data + buf->size, contents, total);
+  buf->size += total;
+  buf->data[buf->size] = '\0';
+  return total;
+}
+
+typedef struct {
+  char* endpoint;
+<% if (hasSubscriptions) { -%>
+  char* ws_endpoint;
+<% } -%>
+} gql_client_t;
+
+static inline void gql_client_init(gql_client_t* c, const gql_client_options_t* opts) {
+  memset(c, 0, sizeof(*c));
+  c->endpoint = strdup(opts->endpoint);
+<% if (hasSubscriptions) { -%>
+  if (opts->ws_endpoint && opts->ws_endpoint[0]) {
+    c->ws_endpoint = strdup(opts->ws_endpoint);
+  } else {
+    c->ws_endpoint = strdup(opts->endpoint);
+    if (strncmp(c->ws_endpoint, "https", 5) == 0) {
+      char* tmp = (char*)malloc(strlen(c->ws_endpoint) + 1);
+      sprintf(tmp, "wss%s", c->ws_endpoint + 5);
+      free(c->ws_endpoint);
+      c->ws_endpoint = tmp;
+    } else if (strncmp(c->ws_endpoint, "http", 4) == 0) {
+      char* tmp = (char*)malloc(strlen(c->ws_endpoint) + 1);
+      sprintf(tmp, "ws%s", c->ws_endpoint + 4);
+      free(c->ws_endpoint);
+      c->ws_endpoint = tmp;
+    }
+  }
+<% } -%>
+}
+
+static inline void gql_client_free(gql_client_t* c) {
+  free(c->endpoint);
+<% if (hasSubscriptions) { -%>
+  free(c->ws_endpoint);
+<% } -%>
+  memset(c, 0, sizeof(*c));
+}
+
+static inline cJSON* gql_execute(gql_client_t* client, const char* query, const cJSON* variables) {
+  CURL* curl = curl_easy_init();
+  if (!curl) return NULL;
+
+  cJSON* req_body = cJSON_CreateObject();
+  cJSON_AddStringToObject(req_body, "query", query);
+  if (variables && !cJSON_IsNull(variables) && cJSON_GetArraySize(variables) > 0) {
+    cJSON_AddItemToObject(req_body, "variables", cJSON_Duplicate(variables, 1));
+  }
+  char* body_str = cJSON_PrintUnformatted(req_body);
+  cJSON_Delete(req_body);
+
+  gql_resp_buf_t resp = {NULL, 0};
+  struct curl_slist* headers = NULL;
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+
+  curl_easy_setopt(curl, CURLOPT_URL, client->endpoint);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_POST, 1L);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, gql_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+  CURLcode res = curl_easy_perform(curl);
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  free(body_str);
+
+  if (res != CURLE_OK) { free(resp.data); return NULL; }
+
+  cJSON* json = cJSON_Parse(resp.data);
+  free(resp.data);
+  if (!json) return NULL;
+
+  cJSON* data = cJSON_GetObjectItem(json, "data");
+  if (data) {
+    cJSON* result = cJSON_Duplicate(data, 1);
+    cJSON_Delete(json);
+    return result;
+  }
+  cJSON_Delete(json);
+  return NULL;
+}
+<% if (hasQueries) { %>
+
+static inline void gql_qb_init(gql_builder_t* b) { gql_builder_init(b, "query"); }
+
+static inline gql_query_result_t gql_query(gql_client_t* client, gql_query_builder_t* builder) {
+  gql_document_t doc = gql_builder_build(builder);
+  cJSON* raw = gql_execute(client, doc.query, doc.variables);
+  gql_document_free(&doc);
+  gql_query_result_t result;
+  gql_query_result_from_json(raw, &result);
+  if (raw) cJSON_Delete(raw);
+  return result;
+}
+<% } -%>
+<% if (hasMutations) { %>
+
+static inline void gql_mb_init(gql_builder_t* b) { gql_builder_init(b, "mutation"); }
+
+static inline gql_mutation_result_t gql_mutate(gql_client_t* client, gql_mutation_builder_t* builder) {
+  gql_document_t doc = gql_builder_build(builder);
+  cJSON* raw = gql_execute(client, doc.query, doc.variables);
+  gql_document_free(&doc);
+  gql_mutation_result_t result;
+  gql_mutation_result_from_json(raw, &result);
+  if (raw) cJSON_Delete(raw);
+  return result;
+}
+<% } -%>
+<% if (hasSubscriptions) { %>
+
+typedef struct {
+  volatile int cancelled;
+  pthread_t thread;
+} gql_subscription_handle_t;
+
+typedef struct {
+  char ws_endpoint[512];
+  char query[8192];
+  cJSON* variables;
+  void (*on_data)(const cJSON*);
+  volatile int* cancelled;
+} gql_sub_ctx_t;
+
+static inline void gql_ws_send(int sock, const char* data) {
+  size_t len = strlen(data);
+  unsigned char frame[14];
+  int hdr_len = 2;
+  frame[0] = 0x81;
+  unsigned char mask_bit = 0x80;
+  if (len < 126) {
+    frame[1] = mask_bit | (unsigned char)len;
+  } else if (len < 65536) {
+    frame[1] = mask_bit | 126;
+    frame[2] = (len >> 8) & 0xFF;
+    frame[3] = len & 0xFF;
+    hdr_len = 4;
+  } else {
+    frame[1] = mask_bit | 127;
+    for (int i = 7; i >= 0; --i) frame[2 + (7 - i)] = (len >> (i * 8)) & 0xFF;
+    hdr_len = 10;
+  }
+  unsigned char mask[4] = {0x12, 0x34, 0x56, 0x78};
+  char* buf = (char*)malloc(hdr_len + 4 + len);
+  memcpy(buf, frame, hdr_len);
+  memcpy(buf + hdr_len, mask, 4);
+  for (size_t i = 0; i < len; i++) buf[hdr_len + 4 + i] = data[i] ^ mask[i % 4];
+  send(sock, buf, hdr_len + 4 + len, 0);
+  free(buf);
+}
+
+static inline char* gql_ws_recv(int sock) {
+  unsigned char header[2];
+  if (recv(sock, header, 2, MSG_WAITALL) != 2) return NULL;
+  uint64_t len = header[1] & 0x7F;
+  int masked = header[1] & 0x80;
+  if (len == 126) {
+    unsigned char ext[2];
+    recv(sock, ext, 2, MSG_WAITALL);
+    len = ((uint64_t)ext[0] << 8) | ext[1];
+  } else if (len == 127) {
+    unsigned char ext[8];
+    recv(sock, ext, 8, MSG_WAITALL);
+    len = 0;
+    for (int i = 0; i < 8; ++i) len = (len << 8) | ext[i];
+  }
+  unsigned char mask[4] = {0};
+  if (masked) recv(sock, mask, 4, MSG_WAITALL);
+  char* data = (char*)malloc(len + 1);
+  size_t received = 0;
+  while (received < len) {
+    int r = recv(sock, data + received, len - received, 0);
+    if (r <= 0) { free(data); return NULL; }
+    received += r;
+  }
+  if (masked) for (size_t i = 0; i < len; ++i) data[i] ^= mask[i % 4];
+  data[len] = '\0';
+  return data;
+}
+
+static void* gql_sub_thread(void* arg) {
+  gql_sub_ctx_t* ctx = (gql_sub_ctx_t*)arg;
+
+  char host[256] = "", path[512] = "/graphql";
+  int port = 80;
+  char* url = ctx->ws_endpoint;
+  if (strncmp(url, "ws://", 5) == 0) url += 5;
+  else if (strncmp(url, "wss://", 6) == 0) url += 6;
+  char* slash = strchr(url, '/');
+  if (slash) {
+    strncpy(path, slash, sizeof(path) - 1);
+    size_t hlen = slash - url;
+    strncpy(host, url, hlen < sizeof(host) ? hlen : sizeof(host) - 1);
+  } else {
+    strncpy(host, url, sizeof(host) - 1);
+  }
+  char* colon = strchr(host, ':');
+  if (colon) { *colon = '\0'; port = atoi(colon + 1); }
+
+  struct addrinfo hints = {0}, *res;
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  char port_str[16];
+  snprintf(port_str, sizeof(port_str), "%d", port);
+  if (getaddrinfo(host, port_str, &hints, &res) != 0) goto done;
+
+  int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+  if (sock < 0) { freeaddrinfo(res); goto done; }
+  if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) { close(sock); freeaddrinfo(res); goto done; }
+  freeaddrinfo(res);
+
+  {
+    char handshake[1024];
+    snprintf(handshake, sizeof(handshake),
+      "GET %s HTTP/1.1\r\n"
+      "Host: %s:%d\r\n"
+      "Upgrade: websocket\r\n"
+      "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+      "Sec-WebSocket-Version: 13\r\n"
+      "Sec-WebSocket-Protocol: graphql-transport-ws\r\n"
+      "\r\n", path, host, port);
+    send(sock, handshake, strlen(handshake), 0);
+
+    char buf[4096];
+    recv(sock, buf, sizeof(buf) - 1, 0);
+
+    gql_ws_send(sock, "{\"type\":\"connection_init\"}");
+
+    while (1) {
+      char* msg = gql_ws_recv(sock);
+      if (!msg) { close(sock); goto done; }
+      cJSON* parsed = cJSON_Parse(msg);
+      free(msg);
+      if (!parsed) continue;
+      cJSON* type = cJSON_GetObjectItem(parsed, "type");
+      if (type && cJSON_IsString(type) && strcmp(type->valuestring, "connection_ack") == 0) {
+        cJSON_Delete(parsed);
+        break;
+      }
+      cJSON_Delete(parsed);
+    }
+
+    cJSON* sub_msg = cJSON_CreateObject();
+    cJSON_AddStringToObject(sub_msg, "id", "1");
+    cJSON_AddStringToObject(sub_msg, "type", "subscribe");
+    cJSON* payload = cJSON_CreateObject();
+    cJSON_AddStringToObject(payload, "query", ctx->query);
+    if (ctx->variables) cJSON_AddItemToObject(payload, "variables", cJSON_Duplicate(ctx->variables, 1));
+    cJSON_AddItemToObject(sub_msg, "payload", payload);
+    char* sub_str = cJSON_PrintUnformatted(sub_msg);
+    gql_ws_send(sock, sub_str);
+    free(sub_str);
+    cJSON_Delete(sub_msg);
+
+    while (!*(ctx->cancelled)) {
+      char* msg = gql_ws_recv(sock);
+      if (!msg) break;
+      cJSON* parsed = cJSON_Parse(msg);
+      free(msg);
+      if (!parsed) continue;
+      cJSON* type = cJSON_GetObjectItem(parsed, "type");
+      if (type && cJSON_IsString(type)) {
+        if (strcmp(type->valuestring, "next") == 0) {
+          cJSON* p = cJSON_GetObjectItem(parsed, "payload");
+          cJSON* d = p ? cJSON_GetObjectItem(p, "data") : NULL;
+          if (d && ctx->on_data) ctx->on_data(d);
+        } else if (strcmp(type->valuestring, "complete") == 0) {
+          cJSON_Delete(parsed);
+          break;
+        }
+      }
+      cJSON_Delete(parsed);
+    }
+
+    gql_ws_send(sock, "{\"id\":\"1\",\"type\":\"complete\"}");
+    close(sock);
+  }
+
+done:
+  if (ctx->variables) cJSON_Delete(ctx->variables);
+  free(ctx);
+  return NULL;
+}
+
+static inline void gql_sb_init(gql_builder_t* b) { gql_builder_init(b, "subscription"); }
+
+static inline gql_subscription_handle_t gql_subscribe(gql_client_t* client,
+    gql_subscription_builder_t* builder,
+    void (*on_data)(const cJSON*))
+{
+  gql_subscription_handle_t handle;
+  memset(&handle, 0, sizeof(handle));
+
+  gql_document_t doc = gql_builder_build(builder);
+
+  gql_sub_ctx_t* ctx = (gql_sub_ctx_t*)calloc(1, sizeof(gql_sub_ctx_t));
+  strncpy(ctx->ws_endpoint, client->ws_endpoint, sizeof(ctx->ws_endpoint) - 1);
+  strncpy(ctx->query, doc.query, sizeof(ctx->query) - 1);
+  ctx->variables = doc.variables ? cJSON_Duplicate(doc.variables, 1) : NULL;
+  ctx->on_data = on_data;
+  ctx->cancelled = &handle.cancelled;
+
+  gql_document_free(&doc);
+
+  pthread_create(&handle.thread, NULL, gql_sub_thread, ctx);
+  return handle;
+}
+
+static inline void gql_subscription_unsubscribe(gql_subscription_handle_t* h) {
+  h->cancelled = 1;
+  pthread_detach(h->thread);
+}
+
+typedef struct {
+  cJSON* result;
+  pthread_mutex_t mtx;
+  pthread_cond_t cv;
+  int received;
+} gql_sub_once_ctx_t;
+
+static gql_sub_once_ctx_t* g_sub_once_ctx = NULL;
+
+static inline void gql_sub_once_cb(const cJSON* data) {
+  if (!g_sub_once_ctx) return;
+  pthread_mutex_lock(&g_sub_once_ctx->mtx);
+  if (!g_sub_once_ctx->received) {
+    g_sub_once_ctx->result = cJSON_Duplicate(data, 1);
+    g_sub_once_ctx->received = 1;
+    pthread_cond_signal(&g_sub_once_ctx->cv);
+  }
+  pthread_mutex_unlock(&g_sub_once_ctx->mtx);
+}
+
+static inline gql_subscription_result_t gql_subscribe_once(gql_client_t* client,
+    gql_subscription_builder_t* builder,
+    int timeout_ms)
+{
+  gql_sub_once_ctx_t once_ctx;
+  memset(&once_ctx, 0, sizeof(once_ctx));
+  pthread_mutex_init(&once_ctx.mtx, NULL);
+  pthread_cond_init(&once_ctx.cv, NULL);
+  g_sub_once_ctx = &once_ctx;
+
+  gql_subscription_handle_t handle = gql_subscribe(client, builder, gql_sub_once_cb);
+
+  pthread_mutex_lock(&once_ctx.mtx);
+  if (!once_ctx.received) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+    if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+    pthread_cond_timedwait(&once_ctx.cv, &once_ctx.mtx, &ts);
+  }
+  pthread_mutex_unlock(&once_ctx.mtx);
+
+  gql_subscription_unsubscribe(&handle);
+  g_sub_once_ctx = NULL;
+
+  pthread_mutex_destroy(&once_ctx.mtx);
+  pthread_cond_destroy(&once_ctx.cv);
+
+  gql_subscription_result_t result;
+  gql_subscription_result_from_json(once_ctx.result, &result);
+  if (once_ctx.result) cJSON_Delete(once_ctx.result);
+  return result;
+}
+
+static inline void gql_dispose(gql_client_t* c) { (void)c; }
+<% } -%>
+
+#endif /* SDK_GQL_CLIENT_H */

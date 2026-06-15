@@ -1,0 +1,48 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "e2e", "e2e", "{36695022-115B-4ABA-B650-0F2673D85EB6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docker", "docker", "{2A7B22BC-CD90-50AC-4E6B-010536AE700B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A30B1CEC-A827-65ED-B82A-041D0BF0408A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestCsharp", "e2e\docker\tests\test-csharp\TestCsharp.csproj", "{FDC02FF6-E2E5-71A2-10D7-619A4E9A9B31}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test-csharp", "test-csharp", "{B15ED488-6000-3AE7-E34D-3DC3CCF38874}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "generated", "generated", "{6F9FBAB2-D2B5-EB89-1705-053094F19E9C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestProject", "e2e\docker\tests\test-csharp\generated\csharp\TestProject.csproj", "{396C2D49-28FD-5BB4-2F02-B483107715CB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FDC02FF6-E2E5-71A2-10D7-619A4E9A9B31}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FDC02FF6-E2E5-71A2-10D7-619A4E9A9B31}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FDC02FF6-E2E5-71A2-10D7-619A4E9A9B31}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FDC02FF6-E2E5-71A2-10D7-619A4E9A9B31}.Release|Any CPU.Build.0 = Release|Any CPU
+		{396C2D49-28FD-5BB4-2F02-B483107715CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{396C2D49-28FD-5BB4-2F02-B483107715CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{396C2D49-28FD-5BB4-2F02-B483107715CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{396C2D49-28FD-5BB4-2F02-B483107715CB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2A7B22BC-CD90-50AC-4E6B-010536AE700B} = {36695022-115B-4ABA-B650-0F2673D85EB6}
+		{A30B1CEC-A827-65ED-B82A-041D0BF0408A} = {2A7B22BC-CD90-50AC-4E6B-010536AE700B}
+		{FDC02FF6-E2E5-71A2-10D7-619A4E9A9B31} = {A30B1CEC-A827-65ED-B82A-041D0BF0408A}
+		{B15ED488-6000-3AE7-E34D-3DC3CCF38874} = {A30B1CEC-A827-65ED-B82A-041D0BF0408A}
+		{6F9FBAB2-D2B5-EB89-1705-053094F19E9C} = {B15ED488-6000-3AE7-E34D-3DC3CCF38874}
+		{396C2D49-28FD-5BB4-2F02-B483107715CB} = {6F9FBAB2-D2B5-EB89-1705-053094F19E9C}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1DBE45CC-3B97-40BB-B2AC-60D96E345DB7}
+	EndGlobalSection
+EndGlobal
