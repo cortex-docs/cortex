@@ -1,0 +1,70 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <map>
+#include <optional>
+#include <nlohmann/json.hpp>
+
+namespace sdk {
+namespace openrpc {
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+enum class <%= className %> {
+<% for (const v of schema.enum) { -%>
+    <%= it.naming.enumValue(v) %>,
+<% } -%>
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(<%= className %>, {
+<% for (const v of schema.enum) { -%>
+    {<%= className %>::<%= it.naming.enumValue(v) %>, "<%= v %>"},
+<% } -%>
+})
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+/// <%= schema.description %>
+<% } -%>
+struct <%= className %> {
+<% const required = schema.required ?? []; -%>
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const cppType = it.mapJsonSchemaType(propSchema); -%>
+<% const isRequired = required.includes(propName); -%>
+<% if (propSchema.description) { -%>
+    /// <%= propSchema.description %>
+<% } -%>
+<% if (isRequired) { -%>
+    <%= cppType %> <%= it.naming.propertyName(propName) %>;
+<% } else { -%>
+    std::optional<<%= cppType %>> <%= it.naming.propertyName(propName) %>;
+<% } -%>
+<% } -%>
+};
+
+inline void to_json(nlohmann::json& j, const <%= className %>& v) {
+    j = nlohmann::json{
+<% for (const [propName] of Object.entries(schema.properties)) { -%>
+        {"<%= propName %>", v.<%= it.naming.propertyName(propName) %>},
+<% } -%>
+    };
+}
+
+inline void from_json(const nlohmann::json& j, <%= className %>& v) {
+<% for (const [propName] of Object.entries(schema.properties)) { -%>
+<% const isRequired = required.includes(propName); -%>
+<% if (isRequired) { -%>
+    j.at("<%= propName %>").get_to(v.<%= it.naming.propertyName(propName) %>);
+<% } else { -%>
+    if (j.contains("<%= propName %>")) j.at("<%= propName %>").get_to(v.<%= it.naming.propertyName(propName) %>);
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+<% } -%>
+
+} // namespace openrpc
+} // namespace sdk

@@ -1,0 +1,37 @@
+using System.Text.Json.Serialization;
+
+namespace <%= it.naming.className(it.packageName) %>;
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum <%= className %>
+{
+<% for (const v of schema.enum) { -%>
+    <%= it.naming.enumValue(v) %>,
+<% } -%>
+}
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+/// <summary><%= schema.description %></summary>
+<% } -%>
+public class <%= className %>
+{
+<% const required = schema.required ?? []; -%>
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const csType = it.mapJsonSchemaType(propSchema); -%>
+<% const isRequired = required.includes(propName); -%>
+<% if (propSchema.description) { -%>
+    /// <summary><%= propSchema.description %></summary>
+<% } -%>
+    [JsonPropertyName("<%= propName %>")]
+    public <%= isRequired ? csType : csType + '?' %> <%= it.naming.propertyName(propName) %> { get; set; }
+
+<% } -%>
+}
+
+<% } -%>
+<% } -%>

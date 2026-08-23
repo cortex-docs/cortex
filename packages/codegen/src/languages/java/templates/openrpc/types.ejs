@@ -1,0 +1,59 @@
+package <%= it.packageName.replace(/-/g, '.').toLowerCase() %>;
+
+import java.util.List;
+import java.util.Map;
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+
+public enum <%= className %> {
+<% for (let i = 0; i < schema.enum.length; i++) { -%>
+    <%= it.naming.enumValue(schema.enum[i]) %>("<%= schema.enum[i] %>")<%= i < schema.enum.length - 1 ? ',' : ';' %>
+<% } -%>
+
+    private final String value;
+
+    <%= className %>(String value) {
+        this.value = value;
+    }
+
+    public String getValue() {
+        return value;
+    }
+}
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+/** <%= schema.description %> */
+<% } -%>
+public class <%= className %> {
+
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const javaType = it.mapJsonSchemaType(propSchema); -%>
+<% if (propSchema.description) { -%>
+    /** <%= propSchema.description %> */
+<% } -%>
+    private <%= javaType %> <%= it.naming.propertyName(propName) %>;
+<% } -%>
+
+    public <%= className %>() {}
+
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const javaType = it.mapJsonSchemaType(propSchema); -%>
+<% const fieldName = it.naming.propertyName(propName); -%>
+<% const getterName = 'get' + fieldName.charAt(0).toUpperCase() + fieldName.slice(1); -%>
+<% const setterName = 'set' + fieldName.charAt(0).toUpperCase() + fieldName.slice(1); -%>
+    public <%= javaType %> <%= getterName %>() {
+        return this.<%= fieldName %>;
+    }
+
+    public void <%= setterName %>(<%= javaType %> <%= fieldName %>) {
+        this.<%= fieldName %> = <%= fieldName %>;
+    }
+
+<% } -%>
+}
+
+<% } -%>
+<% } -%>

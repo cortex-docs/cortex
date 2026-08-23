@@ -1,0 +1,4 @@
+<% const crateName = it.utils?.toSnakeCase?.(it.config?.languageConfig?.package_name) ?? it.pkgName ?? it.config?.languageConfig?.package_name; -%>
+use <%= crateName %>::<%= it.clientClass %>;
+
+let client = <%= it.clientClass %>::new("<%= it.serverUrl ?? it.baseUrl ?? 'http://localhost:3000/rpc' %>");

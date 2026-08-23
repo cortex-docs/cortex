@@ -1,0 +1,96 @@
+<?php
+
+namespace <%= it.packageName.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('\\') %>;
+
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
+
+class JsonRpcError extends \RuntimeException
+{
+    public int $rpcCode;
+    public ?string $rpcMessage;
+    public mixed $data;
+
+    public function __construct(int $code, string $message, mixed $data = null)
+    {
+        parent::__construct("JSON-RPC error {$code}: {$message}");
+        $this->rpcCode = $code;
+        $this->rpcMessage = $message;
+        $this->data = $data;
+    }
+}
+
+class <%= it.clientClass %>
+{
+    private string $url;
+    private Client $httpClient;
+    private array $headers;
+    private int $idCounter = 0;
+
+    public function __construct(string $url = '<%= it.serverUrl %>', array $headers = [])
+    {
+        $this->url = $url;
+        $this->httpClient = new Client();
+        $this->headers = $headers;
+    }
+
+    public function setHeader(string $key, string $value): void
+    {
+        $this->headers[$key] = $value;
+    }
+
+    /**
+     * @throws JsonRpcError
+     * @throws GuzzleException
+     */
+    private function call(string $method, ?array $params = null): mixed
+    {
+        $this->idCounter++;
+        $body = [
+            'jsonrpc' => '2.0',
+            'method' => $method,
+            'id' => $this->idCounter,
+        ];
+        if ($params !== null) {
+            $body['params'] = $params;
+        }
+
+        $response = $this->httpClient->post($this->url, [
+            'json' => $body,
+            'headers' => array_merge(['Content-Type' => 'application/json'], $this->headers),
+        ]);
+
+        $result = json_decode($response->getBody()->getContents(), true);
+
+        if (isset($result['error']) && $result['error'] !== null) {
+            $error = $result['error'];
+            throw new JsonRpcError(
+                $error['code'] ?? -1,
+                $error['message'] ?? 'Unknown error',
+                $error['data'] ?? null,
+            );
+        }
+
+        return $result['result'] ?? null;
+    }
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% if (method.summary || method.description) { -%>
+    /** <%= method.summary ?? method.description %> */
+<% } -%>
+<% if (params.length > 0) { -%>
+    public function <%= methodName %>(array $params = []): mixed
+    {
+        return $this->call('<%= method.name %>', $params);
+    }
+<% } else { -%>
+    public function <%= methodName %>(): mixed
+    {
+        return $this->call('<%= method.name %>');
+    }
+<% } -%>
+
+<% } -%>
+}

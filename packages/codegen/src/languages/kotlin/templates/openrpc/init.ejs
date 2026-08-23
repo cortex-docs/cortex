@@ -1,0 +1,6 @@
+<% const pkg = it.pkg ?? it.config?.languageConfig?.package_name?.replace(/-/g, '.').toLowerCase(); -%>
+import <%= pkg %>.<%= it.clientClass %>
+
+val client = <%= it.clientClass %>(
+    url = "<%= it.serverUrl ?? it.baseUrl ?? 'http://localhost:3000/rpc' %>"
+)

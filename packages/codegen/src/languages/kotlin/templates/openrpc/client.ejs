@@ -1,0 +1,80 @@
+package <%= it.packageName.replace(/-/g, '.').toLowerCase() %>
+
+import kotlinx.serialization.json.*
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.util.concurrent.atomic.AtomicLong
+
+class <%= it.clientClass %>(
+    private val url: String = "<%= it.serverUrl %>",
+    private val headers: MutableMap<String, String> = mutableMapOf(),
+) {
+    private val httpClient = HttpClient.newHttpClient()
+    private val json = Json { ignoreUnknownKeys = true }
+    private val idCounter = AtomicLong(0)
+
+    fun setHeader(key: String, value: String) {
+        headers[key] = value
+    }
+
+    private fun call(method: String, params: JsonElement? = null): JsonElement? {
+        val id = idCounter.incrementAndGet()
+        val request = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("method", method)
+            if (params != null) put("params", params)
+            put("id", id)
+        }
+
+        val builder = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(request.toString()))
+
+        headers.forEach { (k, v) -> builder.header(k, v) }
+
+        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+        val rpcResponse = json.parseToJsonElement(response.body()).jsonObject
+
+        val error = rpcResponse["error"]
+        if (error != null && error !is JsonNull) {
+            val errorObj = error.jsonObject
+            val code = errorObj["code"]?.jsonPrimitive?.int ?: -1
+            val message = errorObj["message"]?.jsonPrimitive?.content ?: "Unknown error"
+            throw RuntimeException("JSON-RPC error $code: $message")
+        }
+
+        return rpcResponse["result"]
+    }
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% if (method.summary || method.description) { -%>
+    /** <%= method.summary ?? method.description %> */
+<% } -%>
+<% if (params.length > 0) { -%>
+    fun <%= methodName %>(params: Map<String, Any?>): JsonElement? {
+        val jsonParams = buildJsonObject {
+            params.forEach { (k, v) ->
+                when (v) {
+                    is String -> put(k, v)
+                    is Number -> put(k, v)
+                    is Boolean -> put(k, v)
+                    null -> put(k, JsonNull)
+                    else -> put(k, json.encodeToJsonElement(kotlinx.serialization.serializer(), v.toString()))
+                }
+            }
+        }
+        return call("<%= method.name %>", jsonParams)
+    }
+<% } else { -%>
+    fun <%= methodName %>(): JsonElement? {
+        return call("<%= method.name %>")
+    }
+<% } -%>
+
+<% } -%>
+}

@@ -1,0 +1,11 @@
+<% const method = it.method; -%>
+<% const callName = it.naming?.methodName?.(method.name) ?? method.methodName ?? method.name; -%>
+<% const params = (method.params ?? []).map(p => `"${p.name}": ${p.type === 'number' || p.type === 'integer' ? '0' : p.type === 'boolean' ? 'true' : '"value"'}`); -%>
+<% if (params.length > 0) { -%>
+let result = client.<%= callName %>(serde_json::json!({
+    <%= params.join(',\n    ') %>
+})).await?;
+<% } else { -%>
+let result = client.<%= callName %>().await?;
+<% } -%>
+println!("{:?}", result);

@@ -1,0 +1,6 @@
+<% const pkgFull = it.pkgName ?? it.config?.languageConfig?.package_name; -%>
+<% const _parts = pkgFull.split('/'); -%>
+<% const pkgShort = _parts[_parts.length - 1].replace(/-/g, ''); -%>
+import "<%= pkgFull %>"
+
+client := <%= pkgShort %>.New<%= it.clientClass %>("<%= it.serverUrl ?? it.baseUrl ?? 'http://localhost:3000/rpc' %>")

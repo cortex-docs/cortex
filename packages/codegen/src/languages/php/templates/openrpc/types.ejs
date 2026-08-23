@@ -1,0 +1,53 @@
+<?php
+
+namespace <%= it.packageName.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('\\') %>;
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+
+enum <%= className %>: string
+{
+<% for (const v of schema.enum) { -%>
+    case <%= it.naming.enumValue(v) %> = '<%= v %>';
+<% } -%>
+}
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+/** <%= schema.description %> */
+<% } -%>
+class <%= className %>
+{
+    public function __construct(
+<% const propEntries = Object.entries(schema.properties); -%>
+<% const required = schema.required ?? []; -%>
+<% for (let i = 0; i < propEntries.length; i++) { -%>
+<% const [propName, propSchema] = propEntries[i]; -%>
+<% const phpType = it.mapJsonSchemaType(propSchema); -%>
+<% const isRequired = required.includes(propName); -%>
+        public <%= isRequired ? phpType : '?' + phpType %> $<%= it.naming.propertyName(propName) %><%= isRequired ? '' : ' = null' %><%= i < propEntries.length - 1 ? ',' : '' %>
+<% } -%>
+    ) {}
+
+    public function toArray(): array
+    {
+        return array_filter([
+<% for (const [propName] of propEntries) { -%>
+            '<%= propName %>' => $this-><%= it.naming.propertyName(propName) %>,
+<% } -%>
+        ], fn($v) => $v !== null);
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+<% for (const [propName] of propEntries) { -%>
+            <%= it.naming.propertyName(propName) %>: $data['<%= propName %>'] ?? null,
+<% } -%>
+        );
+    }
+}
+
+<% } -%>
+<% } -%>

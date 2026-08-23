@@ -1,0 +1,79 @@
+<% const entries = Array.from(it.schemas.entries()); -%>
+<% const hasTypes = entries.some(([_, s]) => s.type === 'object' && s.properties); -%>
+<% if (hasTypes) { -%>
+import type {
+<% for (const [name, schema] of entries) { -%>
+<% if (schema.type === 'object' && schema.properties) { -%>
+  <%= it.naming.className(name) %>,
+<% } -%>
+<% } -%>
+} from './openrpc-types';
+<% } -%>
+
+export interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  method: string;
+  params?: Record<string, unknown>;
+  id: number;
+}
+
+export interface JsonRpcResponse<T = unknown> {
+  jsonrpc: '2.0';
+  result?: T;
+  error?: { code: number; message: string; data?: unknown };
+  id: number;
+}
+
+export interface <%= it.clientClass %>Options {
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+export class <%= it.clientClass %> {
+  private url: string;
+  private headers: Record<string, string>;
+  private idCounter = 0;
+
+  constructor(options: <%= it.clientClass %>Options = {}) {
+    this.url = options.url ?? '<%= it.serverUrl %>';
+    this.headers = options.headers ?? {};
+  }
+
+  private async call<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+    const id = ++this.idCounter;
+    const body: JsonRpcRequest = { jsonrpc: '2.0', method, params, id };
+    const response = await fetch(this.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...this.headers },
+      body: JSON.stringify(body),
+    });
+    const json: JsonRpcResponse<T> = await response.json();
+    if (json.error) {
+      throw new Error(`JSON-RPC error ${json.error.code}: ${json.error.message}`);
+    }
+    return json.result as T;
+  }
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% const returnType = method.result?.schema ? it.mapJsonSchemaType(method.result.schema) : 'unknown'; -%>
+<% if (method.summary || method.description) { -%>
+  /** <%= method.summary ?? method.description %> */
+<% } -%>
+<% if (params.length > 0) { -%>
+  async <%= methodName %>(params: {
+<% for (const p of params) { -%>
+    <%= it.naming.parameterName(p.name) %><%= p.required === false ? '?' : '' %>: <%= it.mapJsonSchemaType(p.schema ?? p) %>;
+<% } -%>
+  }): Promise<<%= returnType %>> {
+    return this.call<<%= returnType %>>('<%= method.name %>', params as unknown as Record<string, unknown>);
+  }
+<% } else { -%>
+  async <%= methodName %>(): Promise<<%= returnType %>> {
+    return this.call<<%= returnType %>>('<%= method.name %>');
+  }
+<% } -%>
+
+<% } -%>
+}

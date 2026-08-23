@@ -1,0 +1,77 @@
+require 'json'
+require 'net/http'
+require 'uri'
+
+class <%= it.clientClass %>
+  class JsonRpcError < StandardError
+    attr_reader :code, :rpc_message, :data
+
+    def initialize(code, message, data = nil)
+      super("JSON-RPC error #{code}: #{message}")
+      @code = code
+      @rpc_message = message
+      @data = data
+    end
+  end
+
+  def initialize(url: '<%= it.serverUrl %>', headers: {})
+    @url = url
+    @headers = headers
+    @id_counter = 0
+  end
+
+  def set_header(key, value)
+    @headers[key] = value
+  end
+
+  private
+
+  def call(method, params = nil)
+    @id_counter += 1
+    body = {
+      jsonrpc: '2.0',
+      method: method,
+      params: params,
+      id: @id_counter,
+    }.to_json
+
+    uri = URI.parse(@url)
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == 'https'
+
+    request = Net::HTTP::Post.new(uri.request_uri)
+    request['Content-Type'] = 'application/json'
+    @headers.each { |k, v| request[k] = v }
+    request.body = body
+
+    response = http.request(request)
+    parsed = JSON.parse(response.body)
+
+    if parsed['error']
+      err = parsed['error']
+      raise JsonRpcError.new(err['code'] || -1, err['message'] || 'Unknown error', err['data'])
+    end
+
+    parsed['result']
+  end
+
+  public
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% if (method.summary || method.description) { -%>
+  # <%= method.summary ?? method.description %>
+<% } -%>
+<% if (params.length > 0) { -%>
+  def <%= methodName %>(params = {})
+    call('<%= method.name %>', params)
+  end
+<% } else { -%>
+  def <%= methodName %>
+    call('<%= method.name %>')
+  end
+<% } -%>
+
+<% } -%>
+end

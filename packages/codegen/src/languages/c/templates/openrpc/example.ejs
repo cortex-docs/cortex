@@ -1,0 +1,25 @@
+<% const method = it.method; -%>
+<% const callName = it.naming?.methodName?.(method.name) ?? method.methodName ?? method.name; -%>
+<% const _clientPrefix = 'jsonrpc_' + (it.utils?.toSnakeCase?.(it.clientClass) ?? it.clientClass.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')); -%>
+<% const params = (method.params ?? []); -%>
+<% if (params.length > 0) { -%>
+cJSON* params = cJSON_CreateObject();
+<% for (const p of params) { -%>
+<% if (p.type === 'number' || p.type === 'integer') { -%>
+cJSON_AddNumberToObject(params, "<%= p.name %>", 0);
+<% } else if (p.type === 'boolean') { -%>
+cJSON_AddBoolToObject(params, "<%= p.name %>", 1);
+<% } else { -%>
+cJSON_AddStringToObject(params, "<%= p.name %>", "value");
+<% } -%>
+<% } -%>
+cJSON* result = <%= _clientPrefix %>_<%= callName %>(&client, params);
+<% } else { -%>
+cJSON* result = <%= _clientPrefix %>_<%= callName %>(&client);
+<% } -%>
+if (result) {
+    char* str = cJSON_Print(result);
+    printf("%s\n", str);
+    free(str);
+    cJSON_Delete(result);
+}

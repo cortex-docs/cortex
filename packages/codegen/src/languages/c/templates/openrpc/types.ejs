@@ -1,0 +1,84 @@
+#ifndef OPENRPC_TYPES_H
+#define OPENRPC_TYPES_H
+
+#include <stdint.h>
+#include <cJSON.h>
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% const snakeName = it.naming.propertyName(name); -%>
+<% if (schema.enum) { -%>
+
+typedef enum {
+<% for (let i = 0; i < schema.enum.length; i++) { -%>
+    <%= snakeName.toUpperCase() %>_<%= it.naming.enumValue(schema.enum[i]) %><%= i < schema.enum.length - 1 ? ',' : '' %>
+<% } -%>
+} <%= snakeName %>_t;
+
+static const char* <%= snakeName %>_to_string(<%= snakeName %>_t value) {
+    switch (value) {
+<% for (let i = 0; i < schema.enum.length; i++) { -%>
+        case <%= snakeName.toUpperCase() %>_<%= it.naming.enumValue(schema.enum[i]) %>: return "<%= schema.enum[i] %>";
+<% } -%>
+        default: return "unknown";
+    }
+}
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+/* <%= schema.description %> */
+<% } -%>
+typedef struct {
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const cType = it.mapJsonSchemaType(propSchema); -%>
+<% if (propSchema.description) { -%>
+    /* <%= propSchema.description %> */
+<% } -%>
+    <%= cType %> <%= it.naming.propertyName(propName) %>;
+<% } -%>
+} <%= snakeName %>_t;
+
+static cJSON* <%= snakeName %>_to_json(const <%= snakeName %>_t* v) {
+    cJSON* obj = cJSON_CreateObject();
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const cType = it.mapJsonSchemaType(propSchema); -%>
+<% if (cType === 'char*') { -%>
+    if (v-><%= it.naming.propertyName(propName) %>) cJSON_AddStringToObject(obj, "<%= propName %>", v-><%= it.naming.propertyName(propName) %>);
+<% } else if (cType === 'int64_t') { -%>
+    cJSON_AddNumberToObject(obj, "<%= propName %>", (double)v-><%= it.naming.propertyName(propName) %>);
+<% } else if (cType === 'double') { -%>
+    cJSON_AddNumberToObject(obj, "<%= propName %>", v-><%= it.naming.propertyName(propName) %>);
+<% } else if (cType === 'int') { -%>
+    cJSON_AddBoolToObject(obj, "<%= propName %>", v-><%= it.naming.propertyName(propName) %>);
+<% } else { -%>
+    if (v-><%= it.naming.propertyName(propName) %>) cJSON_AddItemToObject(obj, "<%= propName %>", cJSON_Duplicate(v-><%= it.naming.propertyName(propName) %>, 1));
+<% } -%>
+<% } -%>
+    return obj;
+}
+
+static void <%= snakeName %>_from_json(const cJSON* json, <%= snakeName %>_t* v) {
+    memset(v, 0, sizeof(<%= snakeName %>_t));
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const cType = it.mapJsonSchemaType(propSchema); -%>
+    {
+        cJSON* item = cJSON_GetObjectItem(json, "<%= propName %>");
+<% if (cType === 'char*') { -%>
+        if (item && cJSON_IsString(item)) v-><%= it.naming.propertyName(propName) %> = strdup(item->valuestring);
+<% } else if (cType === 'int64_t') { -%>
+        if (item && cJSON_IsNumber(item)) v-><%= it.naming.propertyName(propName) %> = (int64_t)item->valuedouble;
+<% } else if (cType === 'double') { -%>
+        if (item && cJSON_IsNumber(item)) v-><%= it.naming.propertyName(propName) %> = item->valuedouble;
+<% } else if (cType === 'int') { -%>
+        if (item) v-><%= it.naming.propertyName(propName) %> = cJSON_IsTrue(item);
+<% } else { -%>
+        if (item) v-><%= it.naming.propertyName(propName) %> = cJSON_Duplicate(item, 1);
+<% } -%>
+    }
+<% } -%>
+}
+
+<% } -%>
+<% } -%>
+
+#endif /* OPENRPC_TYPES_H */

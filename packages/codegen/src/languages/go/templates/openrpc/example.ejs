@@ -1,0 +1,14 @@
+<% const method = it.method; -%>
+<% const callName = it.naming?.methodName?.(method.name) ?? method.methodName ?? method.name; -%>
+<% const params = (method.params ?? []).map(p => `"${p.name}": ${p.type === 'number' || p.type === 'integer' ? '0' : p.type === 'boolean' ? 'true' : '"value"'}`); -%>
+<% if (params.length > 0) { -%>
+result, err := client.<%= callName %>(map[string]interface{}{
+	<%= params.join(',\n\t') %>,
+})
+<% } else { -%>
+result, err := client.<%= callName %>()
+<% } -%>
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println(result)

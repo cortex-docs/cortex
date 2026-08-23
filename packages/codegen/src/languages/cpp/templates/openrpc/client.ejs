@@ -1,0 +1,115 @@
+#pragma once
+
+#include <string>
+#include <map>
+#include <stdexcept>
+#include <atomic>
+#include <sstream>
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+
+namespace sdk {
+namespace openrpc {
+
+class JsonRpcError : public std::runtime_error {
+public:
+    int code;
+    std::string rpc_message;
+    nlohmann::json data;
+
+    JsonRpcError(int code, const std::string& message, const nlohmann::json& data = nullptr)
+        : std::runtime_error("JSON-RPC error " + std::to_string(code) + ": " + message),
+          code(code), rpc_message(message), data(data) {}
+};
+
+static size_t write_callback(void* contents, size_t size, size_t nmemb, std::string* userp) {
+    userp->append(static_cast<char*>(contents), size * nmemb);
+    return size * nmemb;
+}
+
+class <%= it.clientClass %> {
+private:
+    std::string url_;
+    std::map<std::string, std::string> headers_;
+    std::atomic<int64_t> id_counter_{0};
+
+    nlohmann::json call(const std::string& method, const nlohmann::json& params = nullptr) {
+        int64_t id = ++id_counter_;
+        nlohmann::json request = {
+            {"jsonrpc", "2.0"},
+            {"method", method},
+            {"id", id}
+        };
+        if (!params.is_null()) {
+            request["params"] = params;
+        }
+
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            throw std::runtime_error("Failed to initialize curl");
+        }
+
+        std::string response_body;
+        std::string request_body = request.dump();
+
+        struct curl_slist* curl_headers = nullptr;
+        curl_headers = curl_slist_append(curl_headers, "Content-Type: application/json");
+        for (const auto& [key, value] : headers_) {
+            curl_headers = curl_slist_append(curl_headers, (key + ": " + value).c_str());
+        }
+
+        curl_easy_setopt(curl, CURLOPT_URL, url_.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_body.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, curl_headers);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+
+        CURLcode res = curl_easy_perform(curl);
+        curl_slist_free_all(curl_headers);
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
+            throw std::runtime_error(std::string("curl error: ") + curl_easy_strerror(res));
+        }
+
+        auto rpc_response = nlohmann::json::parse(response_body);
+
+        if (rpc_response.contains("error") && !rpc_response["error"].is_null()) {
+            auto& error = rpc_response["error"];
+            int code = error.value("code", -1);
+            std::string message = error.value("message", "Unknown error");
+            throw JsonRpcError(code, message, error.value("data", nlohmann::json(nullptr)));
+        }
+
+        return rpc_response.value("result", nlohmann::json(nullptr));
+    }
+
+public:
+    explicit <%= it.clientClass %>(const std::string& url = "<%= it.serverUrl %>")
+        : url_(url) {}
+
+    void set_header(const std::string& key, const std::string& value) {
+        headers_[key] = value;
+    }
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% if (method.summary || method.description) { -%>
+    /// <%= method.summary ?? method.description %>
+<% } -%>
+<% if (params.length > 0) { -%>
+    nlohmann::json <%= methodName %>(const nlohmann::json& params) {
+        return call("<%= method.name %>", params);
+    }
+<% } else { -%>
+    nlohmann::json <%= methodName %>() {
+        return call("<%= method.name %>");
+    }
+<% } -%>
+
+<% } -%>
+};
+
+} // namespace openrpc
+} // namespace sdk

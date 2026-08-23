@@ -1,0 +1,34 @@
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+module <%= className %>
+<% for (const v of schema.enum) { -%>
+  <%= it.naming.enumValue(v) %> = '<%= v %>'
+<% } -%>
+end
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+# <%= schema.description %>
+<% } -%>
+class <%= className %>
+<% const propEntries = Object.entries(schema.properties); -%>
+  attr_accessor <%= propEntries.map(([n]) => ':' + it.naming.propertyName(n)).join(', ') %>
+
+  def initialize(<%= propEntries.map(([n]) => it.naming.propertyName(n) + ': nil').join(', ') %>)
+<% for (const [propName] of propEntries) { -%>
+    @<%= it.naming.propertyName(propName) %> = <%= it.naming.propertyName(propName) %>
+<% } -%>
+  end
+
+  def to_h
+    {
+<% for (const [propName] of propEntries) { -%>
+      '<%= propName %>' => @<%= it.naming.propertyName(propName) %>,
+<% } -%>
+    }.compact
+  end
+end
+
+<% } -%>
+<% } -%>

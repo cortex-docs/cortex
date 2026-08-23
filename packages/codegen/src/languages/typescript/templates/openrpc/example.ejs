@@ -1,0 +1,5 @@
+<% const method = it.method; -%>
+<% const callName = it.naming?.methodName?.(method.name) ?? method.methodName ?? method.name; -%>
+<% const params = (method.params ?? []).map(p => `${it.naming?.parameterName?.(p.name) ?? p.name}: ${p.type === 'number' || p.type === 'integer' ? '0' : p.type === 'boolean' ? 'true' : "'value'"}`); -%>
+<% const args = params.length > 0 ? `{\n  ${params.join(',\n  ')},\n}` : undefined; -%>
+const result = await client.<%= callName %>(<%= args %>);

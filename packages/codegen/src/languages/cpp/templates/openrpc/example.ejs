@@ -1,0 +1,11 @@
+<% const method = it.method; -%>
+<% const callName = it.naming?.methodName?.(method.name) ?? method.methodName ?? method.name; -%>
+<% const params = (method.params ?? []).map(p => `{"${p.name}", ${p.type === 'number' || p.type === 'integer' ? '0' : p.type === 'boolean' ? 'true' : '"value"'}}`); -%>
+<% if (params.length > 0) { -%>
+auto result = client.<%= callName %>(nlohmann::json({
+    <%= params.join(',\n    ') %>
+}));
+<% } else { -%>
+auto result = client.<%= callName %>();
+<% } -%>
+std::cout << result.dump(2) << std::endl;

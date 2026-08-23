@@ -1,0 +1,125 @@
+package <%= it.packageName.split('/').pop().replace(/-/g, '') %>
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync/atomic"
+)
+
+type jsonRpcRequest struct {
+	Jsonrpc string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+	Params  interface{} `json:"params,omitempty"`
+	ID      int64       `json:"id"`
+}
+
+type jsonRpcError struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+type jsonRpcResponse struct {
+	Jsonrpc string          `json:"jsonrpc"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *jsonRpcError   `json:"error,omitempty"`
+	ID      int64           `json:"id"`
+}
+
+type <%= it.clientClass %> struct {
+	url       string
+	client    *http.Client
+	headers   map[string]string
+	idCounter int64
+}
+
+func New<%= it.clientClass %>(url string) *<%= it.clientClass %> {
+	return &<%= it.clientClass %>{
+		url:    url,
+		client: &http.Client{},
+		headers: map[string]string{},
+	}
+}
+
+func (c *<%= it.clientClass %>) SetHeader(key, value string) {
+	c.headers[key] = value
+}
+
+func (c *<%= it.clientClass %>) call(method string, params interface{}) (json.RawMessage, error) {
+	id := atomic.AddInt64(&c.idCounter, 1)
+	reqBody := jsonRpcRequest{
+		Jsonrpc: "2.0",
+		Method:  method,
+		Params:  params,
+		ID:      id,
+	}
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.url, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var rpcResp jsonRpcResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("JSON-RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+	}
+	return rpcResp.Result, nil
+}
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% const returnType = method.result?.schema ? it.mapJsonSchemaType(method.result.schema) : 'json.RawMessage'; -%>
+<% if (method.summary || method.description) { -%>
+// <%= methodName %> - <%= method.summary ?? method.description %>
+<% } -%>
+<% if (params.length > 0) { -%>
+func (c *<%= it.clientClass %>) <%= methodName %>(params map[string]interface{}) (<%= returnType %>, error) {
+	raw, err := c.call("<%= method.name %>", params)
+	if err != nil {
+		var zero <%= returnType %>
+		return zero, err
+	}
+	var result <%= returnType %>
+	if err := json.Unmarshal(raw, &result); err != nil {
+		var zero <%= returnType %>
+		return zero, fmt.Errorf("unmarshal result: %w", err)
+	}
+	return result, nil
+}
+<% } else { -%>
+func (c *<%= it.clientClass %>) <%= methodName %>() (<%= returnType %>, error) {
+	raw, err := c.call("<%= method.name %>", nil)
+	if err != nil {
+		var zero <%= returnType %>
+		return zero, err
+	}
+	var result <%= returnType %>
+	if err := json.Unmarshal(raw, &result); err != nil {
+		var zero <%= returnType %>
+		return zero, fmt.Errorf("unmarshal result: %w", err)
+	}
+	return result, nil
+}
+<% } -%>
+
+<% } -%>

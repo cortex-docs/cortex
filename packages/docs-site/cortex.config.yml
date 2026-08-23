@@ -1,0 +1,54 @@
+# Cortex Documentation Site
+
+project: Cortex
+title: Cortex Docs
+logo_dark: ./assets/logo_dark.svg
+logo_light: ./assets/logo_light.svg
+logoHeight: 24
+showLogoDocsLabel: true
+favicon: ./assets/favicon.svg
+theme: system
+primaryColor: '#ffffff'
+home:
+  title: Cortex Docs
+  description: Generate typed SDKs, interactive documentation, and MCP servers from your API specifications.
+  cta:
+    label: Getting Started
+    href: /docs
+  sections:
+    - title: Documentation
+      description: Guides for getting started, configuration, SDK generation, publishing, and more.
+      badge: Docs
+      href: /docs
+      icon: assets/docs-icon.svg
+    - title: MCP Server
+      description: Hook up AI coding agents via our MCP in seconds and integrate Cortex with your project.
+      badge: AI Agents
+      href: /mcp
+      icon: assets/mcp-icon.svg
+docs:
+  - section: Getting Started
+    sources:
+      - title: Quickstart
+        document: docs/quickstart.md
+      - title: Configuration
+        document: docs/configuration.md
+  - section: SDK Generation
+    sources:
+      - title: OpenAPI
+        document: docs/sdk-generation.md
+      - title: WebSocket SDKs
+        document: docs/websocket-sdks.md
+      - title: GraphQL
+        document: docs/graphql.md
+      - title: OpenRPC / JSON-RPC
+        document: docs/openrpc.md
+  - section: Features
+    sources:
+      - title: Documentation
+        document: docs/api-docs.md
+      - title: MCP Servers
+        document: docs/mcp-servers.md
+      - title: Publishing
+        document: docs/publishing.md
+mcp: {}

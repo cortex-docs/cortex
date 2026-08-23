@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+
+class <%= className %>(str, Enum):
+<% for (const v of schema.enum) { -%>
+    <%= it.naming.enumValue(v) %> = '<%= v %>'
+<% } -%>
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+
+# <%= schema.description %>
+<% } -%>
+
+@dataclass
+class <%= className %>:
+<% const propEntries = Object.entries(schema.properties); -%>
+<% const required = schema.required ?? []; -%>
+<% if (propEntries.length === 0) { -%>
+    pass
+<% } else { -%>
+<% for (const [propName, propSchema] of propEntries) { -%>
+<% if (propSchema.description) { -%>
+    # <%= propSchema.description %>
+<% } -%>
+<% const propType = it.mapJsonSchemaType(propSchema); -%>
+<% if (!required.includes(propName)) { -%>
+    <%= it.naming.propertyName(propName) %>: Optional[<%= propType %>] = None
+<% } else { -%>
+    <%= it.naming.propertyName(propName) %>: <%= propType %> = <%= propType === 'str' ? "''" : propType === 'int' ? '0' : propType === 'float' ? '0.0' : propType === 'bool' ? 'False' : propType.startsWith('list') ? 'field(default_factory=list)' : propType.startsWith('dict') ? 'field(default_factory=dict)' : 'None' %>
+<% } -%>
+<% } -%>
+<% } -%>
+
+<% } else { -%>
+
+<%= className %> = <%= it.mapJsonSchemaType(schema) %>
+
+<% } -%>
+<% } -%>

@@ -1,0 +1,39 @@
+use serde::{Deserialize, Serialize};
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum <%= className %> {
+<% for (const v of schema.enum) { -%>
+    #[serde(rename = "<%= v %>")]
+    <%= it.naming.enumValue(v) %>,
+<% } -%>
+}
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+/// <%= schema.description %>
+<% } -%>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct <%= className %> {
+<% const required = schema.required ?? []; -%>
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const rsType = it.mapJsonSchemaType(propSchema); -%>
+<% const isRequired = required.includes(propName); -%>
+<% if (propSchema.description) { -%>
+    /// <%= propSchema.description %>
+<% } -%>
+    #[serde(rename = "<%= propName %>")]
+<% if (!isRequired) { -%>
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub <%= it.naming.propertyName(propName) %>: Option<<%= rsType %>>,
+<% } else { -%>
+    pub <%= it.naming.propertyName(propName) %>: <%= rsType %>,
+<% } -%>
+<% } -%>
+}
+
+<% } -%>
+<% } -%>

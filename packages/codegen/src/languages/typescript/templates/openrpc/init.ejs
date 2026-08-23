@@ -1,0 +1,4 @@
+<% const pkgName = it.pkgName ?? it.config?.languageConfig?.package_name; -%>
+import { <%= it.clientClass %> } from '<%= pkgName %>';
+
+const client = new <%= it.clientClass %>({ url: '<%= it.serverUrl ?? it.baseUrl ?? "http://localhost:3000/rpc" %>' });

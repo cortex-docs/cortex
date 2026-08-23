@@ -1,0 +1,84 @@
+package <%= it.packageName.replace(/-/g, '.').toLowerCase() %>;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+public class <%= it.clientClass %> {
+
+    private final String url;
+    private final HttpClient httpClient;
+    private final Gson gson;
+    private final Map<String, String> headers;
+    private final AtomicLong idCounter = new AtomicLong(0);
+
+    public <%= it.clientClass %>(String url) {
+        this.url = url;
+        this.httpClient = HttpClient.newHttpClient();
+        this.gson = new Gson();
+        this.headers = new HashMap<>();
+    }
+
+    public void setHeader(String key, String value) {
+        this.headers.put(key, value);
+    }
+
+    private JsonElement call(String method, Object params) throws IOException, InterruptedException {
+        long id = idCounter.incrementAndGet();
+        JsonObject request = new JsonObject();
+        request.addProperty("jsonrpc", "2.0");
+        request.addProperty("method", method);
+        if (params != null) {
+            request.add("params", gson.toJsonTree(params));
+        }
+        request.addProperty("id", id);
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+            .uri(URI.create(this.url))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(request)));
+
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            builder.header(entry.getKey(), entry.getValue());
+        }
+
+        HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        JsonObject rpcResponse = JsonParser.parseString(response.body()).getAsJsonObject();
+
+        if (rpcResponse.has("error") && !rpcResponse.get("error").isJsonNull()) {
+            JsonObject error = rpcResponse.getAsJsonObject("error");
+            throw new RuntimeException(String.format("JSON-RPC error %d: %s",
+                error.get("code").getAsInt(), error.get("message").getAsString()));
+        }
+
+        return rpcResponse.has("result") ? rpcResponse.get("result") : null;
+    }
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% if (method.summary || method.description) { -%>
+    /** <%= method.summary ?? method.description %> */
+<% } -%>
+<% if (params.length > 0) { -%>
+    public JsonElement <%= methodName %>(Map<String, Object> params) throws IOException, InterruptedException {
+        return call("<%= method.name %>", params);
+    }
+<% } else { -%>
+    public JsonElement <%= methodName %>() throws IOException, InterruptedException {
+        return call("<%= method.name %>", null);
+    }
+<% } -%>
+
+<% } -%>
+}

@@ -1,0 +1,28 @@
+package <%= it.packageName.split('/').pop().replace(/-/g, '') %>
+
+<% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
+<% const className = it.naming.className(name); -%>
+<% if (schema.enum) { -%>
+
+type <%= className %> string
+
+const (
+<% for (const v of schema.enum) { -%>
+	<%= className %><%= it.naming.enumValue(v) %> <%= className %> = "<%= v %>"
+<% } -%>
+)
+
+<% } else if (schema.type === 'object' && schema.properties) { -%>
+<% if (schema.description) { -%>
+// <%= className %> - <%= schema.description %>
+<% } -%>
+type <%= className %> struct {
+<% for (const [propName, propSchema] of Object.entries(schema.properties)) { -%>
+<% const goName = it.naming.propertyName(propName); -%>
+<% const goType = it.mapJsonSchemaType(propSchema); -%>
+	<%= goName %> <%= goType %> `json:"<%= propName %>,omitempty"`
+<% } -%>
+}
+
+<% } -%>
+<% } -%>

@@ -1,0 +1,4 @@
+#include "openrpc_client.hpp"
+#include "openrpc_types.hpp"
+
+sdk::openrpc::<%= it.clientClass %> client("<%= it.serverUrl ?? it.baseUrl ?? 'http://localhost:3000/rpc' %>");

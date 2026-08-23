@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+import json
+import urllib.request
+from dataclasses import dataclass, field, asdict
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+<% const entries = Array.from(it.schemas.entries()); -%>
+<% const hasTypes = entries.some(([_, s]) => s.type === 'object' && s.properties); -%>
+<% if (hasTypes) { -%>
+from .openrpc_types import (
+<% for (const [name, schema] of entries) { -%>
+<% if (schema.type === 'object' && schema.properties) { -%>
+    <%= it.naming.className(name) %>,
+<% } -%>
+<% } -%>
+)
+<% } -%>
+
+
+class JsonRpcError(Exception):
+    def __init__(self, code: int, message: str, data: Any = None) -> None:
+        super().__init__(f"JSON-RPC error {code}: {message}")
+        self.code = code
+        self.rpc_message = message
+        self.data = data
+
+
+class <%= it.clientClass %>:
+    """JSON-RPC 2.0 client."""
+
+    def __init__(self, url: str = '<%= it.serverUrl %>', headers: Optional[Dict[str, str]] = None) -> None:
+        self._url = url
+        self._headers = headers or {}
+        self._id_counter = 0
+
+    def _call(self, method: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        self._id_counter += 1
+        payload = {
+            'jsonrpc': '2.0',
+            'method': method,
+            'params': params or {},
+            'id': self._id_counter,
+        }
+        data = json.dumps(payload).encode('utf-8')
+        headers = {'Content-Type': 'application/json', **self._headers}
+        req = urllib.request.Request(self._url, data=data, headers=headers, method='POST')
+        with urllib.request.urlopen(req) as resp:
+            body = json.loads(resp.read().decode('utf-8'))
+        if 'error' in body and body['error']:
+            err = body['error']
+            raise JsonRpcError(err.get('code', -1), err.get('message', 'Unknown error'), err.get('data'))
+        return body.get('result')
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% const returnType = method.result?.schema ? it.mapJsonSchemaType(method.result.schema) : 'Any'; -%>
+<% if (method.summary || method.description) { -%>
+    # <%= method.summary ?? method.description %>
+<% } -%>
+<% if (params.length > 0) { -%>
+    def <%= methodName %>(
+        self,
+<% for (const p of params) { -%>
+<% const paramType = it.mapJsonSchemaType(p.schema ?? p); -%>
+<% if (p.required === false) { -%>
+        <%= it.naming.parameterName(p.name) %>: Optional[<%= paramType %>] = None,
+<% } else { -%>
+        <%= it.naming.parameterName(p.name) %>: <%= paramType %> = None,
+<% } -%>
+<% } -%>
+    ) -> <%= returnType %>:
+        params: Dict[str, Any] = {}
+<% for (const p of params) { -%>
+        if <%= it.naming.parameterName(p.name) %> is not None:
+            params['<%= p.name %>'] = <%= it.naming.parameterName(p.name) %>
+<% } -%>
+        return self._call('<%= method.name %>', params)
+<% } else { -%>
+    def <%= methodName %>(self) -> <%= returnType %>:
+        return self._call('<%= method.name %>')
+<% } -%>
+
+<% } -%>

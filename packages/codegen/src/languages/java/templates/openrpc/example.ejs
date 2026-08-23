@@ -1,0 +1,9 @@
+<% const method = it.method; -%>
+<% const callName = it.naming?.methodName?.(method.name) ?? method.methodName ?? method.name; -%>
+<% const params = (method.params ?? []).map(p => `"${p.name}", ${p.type === 'number' || p.type === 'integer' ? '0' : p.type === 'boolean' ? 'true' : '"value"'}`); -%>
+<% if (params.length > 0) { -%>
+var result = client.<%= callName %>(java.util.Map.of(<%= params.join(', ') %>));
+<% } else { -%>
+var result = client.<%= callName %>();
+<% } -%>
+System.out.println(result);

@@ -1,0 +1,130 @@
+#ifndef OPENRPC_CLIENT_H
+#define OPENRPC_CLIENT_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <curl/curl.h>
+#include <cJSON.h>
+
+<% const snakeClass = it.naming.methodName(it.clientClass); -%>
+<% const prefix = 'jsonrpc_' + snakeClass; -%>
+
+typedef struct {
+    char* url;
+    int64_t id_counter;
+} <%= prefix %>_t;
+
+typedef struct {
+    char* data;
+    size_t size;
+} response_buffer_t;
+
+static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t total = size * nmemb;
+    response_buffer_t* buf = (response_buffer_t*)userp;
+    char* tmp = realloc(buf->data, buf->size + total + 1);
+    if (!tmp) return 0;
+    buf->data = tmp;
+    memcpy(buf->data + buf->size, contents, total);
+    buf->size += total;
+    buf->data[buf->size] = '\0';
+    return total;
+}
+
+static int <%= prefix %>_init(<%= prefix %>_t* client, const char* url) {
+    client->url = strdup(url);
+    client->id_counter = 0;
+    return 0;
+}
+
+static void <%= prefix %>_destroy(<%= prefix %>_t* client) {
+    if (client->url) {
+        free(client->url);
+        client->url = NULL;
+    }
+}
+
+static cJSON* <%= prefix %>_call(<%= prefix %>_t* client, const char* method, cJSON* params) {
+    client->id_counter++;
+
+    cJSON* request = cJSON_CreateObject();
+    cJSON_AddStringToObject(request, "jsonrpc", "2.0");
+    cJSON_AddStringToObject(request, "method", method);
+    if (params) {
+        cJSON_AddItemToObject(request, "params", params);
+    }
+    cJSON_AddNumberToObject(request, "id", (double)client->id_counter);
+
+    char* request_str = cJSON_PrintUnformatted(request);
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        cJSON_Delete(request);
+        free(request_str);
+        return NULL;
+    }
+
+    response_buffer_t response = { .data = malloc(1), .size = 0 };
+    response.data[0] = '\0';
+
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    curl_easy_setopt(curl, CURLOPT_URL, client->url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_str);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    CURLcode res = curl_easy_perform(curl);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    cJSON_Delete(request);
+    free(request_str);
+
+    if (res != CURLE_OK) {
+        free(response.data);
+        return NULL;
+    }
+
+    cJSON* rpc_response = cJSON_Parse(response.data);
+    free(response.data);
+
+    if (!rpc_response) return NULL;
+
+    cJSON* error = cJSON_GetObjectItem(rpc_response, "error");
+    if (error && !cJSON_IsNull(error)) {
+        fprintf(stderr, "JSON-RPC error %d: %s\n",
+            cJSON_GetObjectItem(error, "code") ? cJSON_GetObjectItem(error, "code")->valueint : -1,
+            cJSON_GetObjectItem(error, "message") ? cJSON_GetObjectItem(error, "message")->valuestring : "Unknown error");
+        cJSON_Delete(rpc_response);
+        return NULL;
+    }
+
+    cJSON* result = cJSON_DetachItemFromObject(rpc_response, "result");
+    cJSON_Delete(rpc_response);
+    return result;
+}
+
+<% for (const method of it.methods) { -%>
+<% const methodName = it.naming.methodName(method.name); -%>
+<% const params = method.params ?? []; -%>
+<% if (method.summary || method.description) { -%>
+/* <%= method.summary ?? method.description %> */
+<% } -%>
+<% if (params.length > 0) { -%>
+static cJSON* <%= prefix %>_<%= methodName %>(<%= prefix %>_t* client, cJSON* params) {
+    return <%= prefix %>_call(client, "<%= method.name %>", params);
+}
+<% } else { -%>
+static cJSON* <%= prefix %>_<%= methodName %>(<%= prefix %>_t* client) {
+    return <%= prefix %>_call(client, "<%= method.name %>", NULL);
+}
+<% } -%>
+
+<% } -%>
+
+#endif /* OPENRPC_CLIENT_H */

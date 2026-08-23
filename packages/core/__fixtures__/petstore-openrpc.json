@@ -1,0 +1,227 @@
+{
+  "openrpc": "1.3.2",
+  "info": {
+    "title": "Petstore JSON-RPC API",
+    "version": "1.0.0",
+    "description": "A sample JSON-RPC API for managing pets and owners."
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com/rpc",
+      "name": "Production"
+    }
+  ],
+  "methods": [
+    {
+      "name": "listPets",
+      "summary": "List all pets",
+      "description": "Returns a paginated list of pets.",
+      "params": [
+        {
+          "name": "limit",
+          "required": false,
+          "schema": { "type": "integer" },
+          "description": "Maximum number of pets to return"
+        },
+        {
+          "name": "cursor",
+          "required": false,
+          "schema": { "type": "string" },
+          "description": "Pagination cursor"
+        }
+      ],
+      "result": {
+        "name": "petList",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/Pet" }
+            },
+            "nextCursor": { "type": "string" }
+          }
+        }
+      },
+      "tags": [{ "name": "pets" }]
+    },
+    {
+      "name": "getPet",
+      "summary": "Get a pet by ID",
+      "params": [
+        {
+          "name": "id",
+          "required": true,
+          "schema": { "type": "string" },
+          "description": "The pet ID"
+        }
+      ],
+      "result": {
+        "name": "pet",
+        "schema": { "$ref": "#/components/schemas/Pet" }
+      },
+      "tags": [{ "name": "pets" }]
+    },
+    {
+      "name": "createPet",
+      "summary": "Create a new pet",
+      "params": [
+        {
+          "name": "name",
+          "required": true,
+          "schema": { "type": "string" },
+          "description": "Pet name"
+        },
+        {
+          "name": "species",
+          "required": true,
+          "schema": { "$ref": "#/components/schemas/Species" },
+          "description": "Pet species"
+        },
+        {
+          "name": "breed",
+          "required": false,
+          "schema": { "type": "string" },
+          "description": "Pet breed"
+        },
+        {
+          "name": "age",
+          "required": false,
+          "schema": { "type": "integer" },
+          "description": "Pet age"
+        }
+      ],
+      "result": {
+        "name": "pet",
+        "schema": { "$ref": "#/components/schemas/Pet" }
+      },
+      "tags": [{ "name": "pets" }]
+    },
+    {
+      "name": "deletePet",
+      "summary": "Delete a pet",
+      "params": [
+        {
+          "name": "id",
+          "required": true,
+          "schema": { "type": "string" },
+          "description": "The pet ID"
+        }
+      ],
+      "result": {
+        "name": "success",
+        "schema": { "type": "boolean" }
+      },
+      "tags": [{ "name": "pets" }]
+    },
+    {
+      "name": "listOwners",
+      "summary": "List all owners",
+      "params": [
+        {
+          "name": "limit",
+          "required": false,
+          "schema": { "type": "integer" },
+          "description": "Maximum number of owners to return"
+        }
+      ],
+      "result": {
+        "name": "ownerList",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/Owner" }
+            }
+          }
+        }
+      },
+      "tags": [{ "name": "owners" }]
+    },
+    {
+      "name": "getOwner",
+      "summary": "Get an owner by ID",
+      "params": [
+        {
+          "name": "id",
+          "required": true,
+          "schema": { "type": "string" },
+          "description": "The owner ID"
+        }
+      ],
+      "result": {
+        "name": "owner",
+        "schema": { "$ref": "#/components/schemas/Owner" }
+      },
+      "tags": [{ "name": "owners" }]
+    },
+    {
+      "name": "createOwner",
+      "summary": "Create a new owner",
+      "params": [
+        {
+          "name": "name",
+          "required": true,
+          "schema": { "type": "string" },
+          "description": "Owner name"
+        },
+        {
+          "name": "email",
+          "required": true,
+          "schema": { "type": "string" },
+          "description": "Owner email"
+        },
+        {
+          "name": "phone",
+          "required": false,
+          "schema": { "type": "string" },
+          "description": "Owner phone number"
+        }
+      ],
+      "result": {
+        "name": "owner",
+        "schema": { "$ref": "#/components/schemas/Owner" }
+      },
+      "tags": [{ "name": "owners" }]
+    }
+  ],
+  "components": {
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "required": ["id", "name", "species", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "species": { "$ref": "#/components/schemas/Species" },
+          "breed": { "type": "string" },
+          "age": { "type": "integer" },
+          "status": { "$ref": "#/components/schemas/PetStatus" },
+          "ownerId": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Owner": {
+        "type": "object",
+        "required": ["id", "name", "email"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "phone": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Species": {
+        "type": "string",
+        "enum": ["dog", "cat", "bird", "fish", "reptile"]
+      },
+      "PetStatus": {
+        "type": "string",
+        "enum": ["available", "adopted", "pending"]
+      }
+    }
+  }
+}

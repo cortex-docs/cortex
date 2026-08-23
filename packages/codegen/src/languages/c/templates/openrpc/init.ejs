@@ -1,0 +1,6 @@
+<% const _clientPrefix = 'jsonrpc_' + (it.utils?.toSnakeCase?.(it.clientClass) ?? it.clientClass.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')); -%>
+#include "openrpc_client.h"
+#include "openrpc_types.h"
+
+<%= _clientPrefix %>_t client;
+<%= _clientPrefix %>_init(&client, "<%= it.serverUrl ?? it.baseUrl ?? 'http://localhost:3000/rpc' %>");
