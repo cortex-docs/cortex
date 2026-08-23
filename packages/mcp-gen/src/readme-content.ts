@@ -57,23 +57,23 @@ export function generateSetupSection(data: ReadmeData): string {
   const lines: string[] = [
     `## Client Setup Guide`,
     '',
-    'Connect your MCP server to every major AI client.',
+    'Connect your MCP server to an MCP-compatible AI client.',
     '',
 
-    '### 1. What you\'re connecting',
+    "### 1. What you're connecting",
     '',
     '| | |',
     '|---|---|',
     `| **Transport** | \`${transport}\` |`,
     `| **Package** | \`${pkg}\` |`,
     `| **Command** | \`${npxCmd}\` |`,
-    '| **Runtime** | `Node.js 18+` |',
+    '| **Runtime** | `Node.js 20+` |',
     '| **Auth** | `none` |',
     '',
 
     '### 2. Prerequisites',
     '',
-    '- Node.js 18+ and npm on PATH',
+    '- Node.js 20+ and npm on PATH',
     '- No build step needed — `npx` downloads and runs the package automatically',
     '',
 
@@ -233,12 +233,18 @@ export function generateSetupSection(data: ReadmeData): string {
 
 function sourceLabel(source: string): string {
   switch (source) {
-    case 'rest': return 'REST';
-    case 'websocket': return 'WS';
-    case 'graphql': return 'GQL';
-    case 'grpc': return 'gRPC';
-    case 'docs': return 'DOCS';
-    default: return source;
+    case 'rest':
+      return 'REST';
+    case 'websocket':
+      return 'WS';
+    case 'graphql':
+      return 'GQL';
+    case 'openrpc':
+      return 'OpenRPC';
+    case 'docs':
+      return 'DOCS';
+    default:
+      return source;
   }
 }
 
@@ -271,7 +277,9 @@ export function generateToolsSection(data: ReadmeData): string {
       lines.push('| Name | Type | Required |');
       lines.push('|------|------|----------|');
       for (const p of tool.parameters) {
-        lines.push(`| \`${p.name}\` | \`${p.type}\` | ${p.required ? '**required**' : 'optional'} |`);
+        lines.push(
+          `| \`${p.name}\` | \`${p.type}\` | ${p.required ? '**required**' : 'optional'} |`,
+        );
       }
       lines.push('');
     }
@@ -294,7 +302,7 @@ export function generateReadme(data: ReadmeData): string {
   const sections: string[] = [
     `# ${data.serverName}`,
     '',
-    `MCP server generated from **${data.specTitle}** by [Cortex](https://github.com/cortex).`,
+    `MCP server generated from **${data.specTitle}** by [Cortex Docs](https://github.com/cortex-docs/cortex).`,
     '',
     generateSetupSection(data),
     '',

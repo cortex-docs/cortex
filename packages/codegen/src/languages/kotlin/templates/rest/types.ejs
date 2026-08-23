@@ -4,6 +4,13 @@ package <%= pkg %>
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
+@Serializable
+data class FileUpload(
+    val filename: String,
+    val data: ByteArray,
+    val contentType: String = "application/octet-stream",
+)
+
 <% for (const schema of it.schemas) { -%>
 <% if (schema.isEnum) { -%>
 @Serializable

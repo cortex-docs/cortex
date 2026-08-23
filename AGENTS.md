@@ -1,0 +1,3 @@
+- please check first if dev is running in watch mode, if yes do not start another process
+- For all browser testing, use the `mcp__playwright__*` tools directly. Do not use the in-app Browser plugin or a shell/CLI Playwright process unless the user explicitly asks for a different browser surface.
+- If the Playwright MCP tools are not initially visible, discover the deferred `mcp__playwright__*` tools before concluding that browser testing is unavailable.

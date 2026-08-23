@@ -9,6 +9,7 @@ require "json"
 require "ostruct"
 <% if (hasSubscriptions) { -%>
 require "socket"
+require "thread"
 require "uri"
 require "websocket"
 <% } -%>
@@ -35,15 +36,19 @@ class <%= it.clientClass %>
 
   attr_reader :endpoint
 
-  def initialize(endpoint: "<%= it.endpoint %>", ws_endpoint: nil, bearer_token: nil, headers: {})
+  def initialize(endpoint: "<%= it.endpoint %>", ws_endpoint: nil, bearer_token: nil, headers: {}, timeout: 15,
+                 reconnect: true, reconnect_interval: 3, max_reconnect_attempts: 10)
     @endpoint = endpoint
 <% if (hasSubscriptions) { -%>
     @ws_endpoint = ws_endpoint || endpoint.sub(/\Ahttp/, "ws")
+    @reconnect = reconnect
+    @reconnect_interval = reconnect_interval
+    @max_reconnect_attempts = max_reconnect_attempts
 <% } -%>
     @headers = { "Content-Type" => "application/json" }.merge(headers)
     @headers["Authorization"] = "Bearer #{bearer_token}" if bearer_token
     @connection = Faraday.new(url: endpoint) do |f|
-      f.options.timeout = 30
+      f.options.timeout = timeout
     end
   end
 <% if (hasQueries) { %>
@@ -64,59 +69,26 @@ class <%= it.clientClass %>
 <% } -%>
 <% if (hasSubscriptions) { %>
   def subscribe_once(timeout: 10, &block)
-    builder = create_subscription_builder
-    block.call(builder)
-    doc, variables = builder._build_document("subscription")
-
-    uri = URI(@ws_endpoint)
-    socket = TCPSocket.new(uri.host, uri.port || 80)
-
-    hs = WebSocket::Handshake::Client.new(url: @ws_endpoint, protocols: ["graphql-transport-ws"])
-    socket.write(hs.to_s)
-    while (line = socket.gets)
-      hs << line
-      break if hs.finished?
-    end
-    raise GqlError.new([{ "message" => "WebSocket handshake failed" }]) unless hs.valid?
-
-    version = hs.version
-    _ws_send(socket, version, { type: "connection_init" })
-
-    incoming = WebSocket::Frame::Incoming::Client.new(version: version)
+    result = Queue.new
+    unsubscribe = subscribe(
+      block,
+      ->(data) { result << [:data, data] },
+      ->(error) { result << [:error, error] }
+    )
     deadline = Time.now + timeout
 
     begin
       loop do
-        remaining = deadline - Time.now
-        raise GqlError.new([{ "message" => "subscribe_once timed out" }]) if remaining <= 0
-
-        ready = IO.select([socket], nil, nil, [remaining, 1].min)
-        next unless ready
-
-        data = socket.readpartial(8192)
-        incoming << data
-
-        while (frame = incoming.next)
-          msg = JSON.parse(frame.data)
-          case msg["type"]
-          when "connection_ack"
-            _ws_send(socket, version, {
-              type: "subscribe", id: "1",
-              payload: { query: doc, variables: variables }
-            })
-          when "next"
-            result = msg.dig("payload", "data")
-            _ws_send(socket, version, { type: "complete", id: "1" })
-            return _structify(result)
-          when "error"
-            raise GqlError.new(msg["payload"] || [{ "message" => "subscription error" }])
-          when "complete"
-            raise GqlError.new([{ "message" => "subscription completed without data" }])
-          end
+        unless result.empty?
+          type, value = result.pop
+          raise value if type == :error
+          return value
         end
+        raise GqlError.new([{ "message" => "subscribe_once timed out" }]) if Time.now >= deadline
+        sleep(0.01)
       end
     ensure
-      socket.close rescue nil
+      unsubscribe.call
     end
   end
 
@@ -129,32 +101,39 @@ class <%= it.clientClass %>
     client = self
 
     thread = Thread.new do
-      uri = URI(@ws_endpoint)
-      socket = TCPSocket.new(uri.host, uri.port || 80)
-      hs = WebSocket::Handshake::Client.new(url: @ws_endpoint, protocols: ["graphql-transport-ws"])
-      socket.write(hs.to_s)
-      while (line = socket.gets)
-        hs << line
-        break if hs.finished?
-      end
-      next unless hs.valid?
-
-      version = hs.version
-      client.send(:_ws_send, socket, version, { type: "connection_init" })
-
-      incoming = WebSocket::Frame::Incoming::Client.new(version: version)
-
+      attempts = 0
       until stopped
-        ready = IO.select([socket], nil, nil, 0.5)
-        next unless ready
-
+        socket = nil
         begin
+          uri = URI(@ws_endpoint)
+          socket = TCPSocket.new(uri.host, uri.port || 80)
+          hs = WebSocket::Handshake::Client.new(url: @ws_endpoint, protocols: ["graphql-transport-ws"])
+          socket.write(hs.to_s)
+          while (line = socket.gets)
+            hs << line
+            break if hs.finished?
+          end
+          raise IOError, "WebSocket handshake failed" unless hs.valid?
+          version = hs.version
+          client.send(:_ws_send, socket, version, { type: "connection_init" })
+          incoming = WebSocket::Frame::Incoming::Client.new(version: version)
+          attempts = 0
+
+          until stopped
+            ready = IO.select([socket], nil, nil, 0.5)
+            next unless ready
           data = socket.readpartial(8192)
           incoming << data
 
           while (frame = incoming.next)
             break if stopped
-            msg = JSON.parse(frame.data)
+            begin
+              msg = JSON.parse(frame.data)
+            rescue JSON::ParserError
+              # Close frames expose their reason as non-JSON data in this client.
+              # Enter the reconnect path so the same subscription is restored.
+              raise EOFError, "WebSocket closed"
+            end
             case msg["type"]
             when "connection_ack"
               client.send(:_ws_send, socket, version, {
@@ -165,16 +144,24 @@ class <%= it.clientClass %>
               on_data.call(client.send(:_structify, msg.dig("payload", "data"))) unless stopped
             when "error"
               on_error&.call(GqlError.new(msg["payload"] || [])) unless stopped
+              stopped = true
             when "complete"
-              break
+              stopped = true
             end
           end
-        rescue EOFError, IOError
+        end
+        rescue EOFError, IOError, SystemCallError => e
+          unless stopped || !@reconnect || attempts >= @max_reconnect_attempts
+            attempts += 1
+            sleep(@reconnect_interval)
+            next
+          end
+          on_error&.call(e) unless stopped
           break
+        ensure
+          socket&.close rescue nil
         end
       end
-
-      socket.close rescue nil
     end
 
     -> {

@@ -1,0 +1,56 @@
+services:
+  npm-registry:
+    image: verdaccio/verdaccio:6
+    volumes:
+      - ./registries/verdaccio.yml:/verdaccio/conf/config.yaml:ro
+
+  pypi-registry:
+    image: pypiserver/pypiserver:latest
+    command: run -P . -a .
+
+  maven-registry:
+    image: dzikoysk/reposilite:3.5.19
+    environment:
+      REPOSILITE_OPTS: --token cortex:cortex-local-maven-token
+
+  gem-registry:
+    build:
+      context: ./registries
+      dockerfile: Gemstash.Dockerfile
+
+  cargo-registry:
+    image: node:22-slim
+    working_dir: /registry
+    command: node mock-cargo-registry.js
+    volumes:
+      - ./mock-cargo-registry.js:/registry/mock-cargo-registry.js:ro
+
+  conan-registry:
+    build:
+      context: ./registries
+      dockerfile: Conan.Dockerfile
+
+  publish-tests:
+    build:
+      context: ../..
+      dockerfile: e2e/publish/Dockerfile
+    depends_on:
+      - npm-registry
+      - pypi-registry
+      - maven-registry
+      - gem-registry
+      - cargo-registry
+      - conan-registry
+    environment:
+      MOCK_PORT: 4010
+      GEM_HOST_API_KEY: cortex-local-gem-token
+      MAVEN_USERNAME: cortex
+      MAVEN_TOKEN: cortex-local-maven-token
+      CARGO_REGISTRY_TOKEN: cortex-local-cargo-token
+      CONAN_LOGIN_USERNAME: demo
+      CONAN_PASSWORD: demo
+    volumes:
+      - publish-shared:/shared
+
+volumes:
+  publish-shared:

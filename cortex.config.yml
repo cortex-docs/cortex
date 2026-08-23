@@ -22,5 +22,5 @@ output:
   base_dir: /tmp/cortex-c-test
 
 mcp:
-  package_name: "@test-project/mcp"
-  github_repository: "github.com/test-project/mcp"
+  package_name: '@test-project/mcp'
+  github_repository: 'github.com/test-project/mcp'

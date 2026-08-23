@@ -1,7 +1,34 @@
 {
   "name": "@cortex/core",
   "version": "0.1.0",
-  "description": "Core OpenAPI parsing, config loading, and shared types for Cortex",
+  "description": "Core specification parsing, configuration, and shared types for Cortex Docs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cortex-docs/cortex.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/cortex-docs/cortex#readme",
+  "bugs": {
+    "url": "https://github.com/cortex-docs/cortex/issues"
+  },
+  "keywords": [
+    "cortex-docs",
+    "openapi",
+    "sdk",
+    "code-generation"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -11,21 +38,23 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc",
+    "prepack": "npm run build",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^10.1.1",
     "graphql": "^16.14.0",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.1",
     "openapi-types": "^12.1.3",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.10"
   }
 }

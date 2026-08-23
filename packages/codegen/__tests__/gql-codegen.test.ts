@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import * as path from 'node:path';
 import { GraphQLParser } from '@cortex/core';
-import { GqlTemplateEngine, createGqlPluginForLanguage } from '../src/languages/gql-template-plugin';
+import {
+  GqlTemplateEngine,
+  createGqlPluginForLanguage,
+} from '../src/languages/gql-template-plugin';
 
 const GQL_FIXTURE = path.join(__dirname, '../../core/__fixtures__/petstore.graphql');
 
@@ -18,7 +21,19 @@ function getFile(files: Array<{ path: string; content: string }>, name: string) 
 }
 
 describe('GraphQL Codegen — All Languages', () => {
-  const languages = ['typescript', 'python', 'go', 'java', 'kotlin', 'ruby', 'php', 'csharp', 'rust', 'cpp'];
+  const languages = [
+    'typescript',
+    'python',
+    'go',
+    'java',
+    'kotlin',
+    'ruby',
+    'php',
+    'csharp',
+    'rust',
+    'cpp',
+    'c',
+  ];
 
   for (const language of languages) {
     describe(language, () => {
@@ -35,17 +50,18 @@ describe('GraphQL Codegen — All Languages', () => {
       it('generates types for all schema entities', async () => {
         const files = await generateForLanguage(language);
         const types = getFile(files, 'gql-types')!;
-        expect(types.content).toContain('Pet');
-        expect(types.content).toContain('Owner');
-        expect(types.content).toContain('PetConnection');
-        expect(types.content).toContain('OwnerConnection');
+        const expected =
+          language === 'c'
+            ? ['gql_pet_t', 'gql_owner_t', 'gql_pet_connection_t', 'gql_owner_connection_t']
+            : ['Pet', 'Owner', 'PetConnection', 'OwnerConnection'];
+        for (const type of expected) expect(types.content).toContain(type);
       });
 
       it('generates all enums', async () => {
         const files = await generateForLanguage(language);
         const types = getFile(files, 'gql-types')!;
-        expect(types.content).toContain('Species');
-        expect(types.content).toContain('PetStatus');
+        expect(types.content).toContain(language === 'c' ? 'gql_species_t' : 'Species');
+        expect(types.content).toContain(language === 'c' ? 'gql_pet_status_t' : 'PetStatus');
         expect(types.content).toContain('DOG');
         expect(types.content).toContain('CAT');
         expect(types.content).toContain('AVAILABLE');
@@ -54,12 +70,21 @@ describe('GraphQL Codegen — All Languages', () => {
       it('generates all input types', async () => {
         const files = await generateForLanguage(language);
         const types = getFile(files, 'gql-types')!;
-        expect(types.content).toContain('CreatePetInput');
-        expect(types.content).toContain('UpdatePetInput');
-        expect(types.content).toContain('CreateOwnerInput');
+        const expected =
+          language === 'c'
+            ? ['gql_create_pet_input_t', 'gql_update_pet_input_t', 'gql_create_owner_input_t']
+            : ['CreatePetInput', 'UpdatePetInput', 'CreateOwnerInput'];
+        for (const type of expected) expect(types.content).toContain(type);
       });
 
-      if (language !== 'typescript' && language !== 'rust' && language !== 'python' && language !== 'go' && language !== 'cpp') {
+      if (
+        language !== 'typescript' &&
+        language !== 'rust' &&
+        language !== 'python' &&
+        language !== 'go' &&
+        language !== 'cpp' &&
+        language !== 'c'
+      ) {
         it('generates operation result types', async () => {
           const files = await generateForLanguage(language);
           const types = getFile(files, 'gql-types')!;
@@ -92,6 +117,32 @@ describe('GraphQL Codegen — All Languages', () => {
         const client = getFile(files, 'gql-client')!;
         expect(client.content.toLowerCase()).toContain('query');
         expect(client.content.toLowerCase()).toContain('mutat');
+      });
+
+      it('uses a configurable 15-second HTTP timeout', async () => {
+        const files = await generateForLanguage(language);
+        const client = getFile(files, 'gql-client')!;
+        const timeoutTokens: Record<string, string> = {
+          typescript: '15_000',
+          python: 'timeout: float = 15.0',
+          go: '15 * time.Second',
+          java: 'Duration.ofSeconds(15)',
+          kotlin: 'Duration.ofSeconds(15)',
+          ruby: 'timeout: 15',
+          php: '$timeout = 15.0',
+          csharp: 'TimeSpan.FromSeconds(15)',
+          rust: 'Duration::from_secs(15)',
+          cpp: 'timeout = 15',
+          c: 'opts->timeout_seconds : 15',
+        };
+        expect(client.content).toContain(timeoutTokens[language]);
+      });
+
+      it('generates configurable subscription reconnection', async () => {
+        const files = await generateForLanguage(language);
+        const client = getFile(files, 'gql-client')!.content.toLowerCase();
+        expect(client).toContain('subscribe');
+        expect(client).toContain('reconnect');
       });
 
       if (language === 'typescript') {
@@ -185,6 +236,19 @@ describe('GraphQL Codegen — All Languages', () => {
         });
       }
 
+      if (language === 'c') {
+        it('generates unified result structs and subscription functions', async () => {
+          const files = await generateForLanguage(language);
+          const types = getFile(files, 'gql-types')!;
+          const client = getFile(files, 'gql-client')!;
+          expect(types.content).toContain('gql_query_result_t');
+          expect(types.content).toContain('gql_mutation_result_t');
+          expect(types.content).toContain('gql_subscription_result_t');
+          expect(client.content).toContain('gql_subscribe(');
+          expect(client.content).toContain('gql_subscribe_once(');
+        });
+      }
+
       if (language === 'python') {
         it('generates query builder file with typed selectors and builders', async () => {
           const files = await generateForLanguage(language);
@@ -226,8 +290,8 @@ describe('GraphQL Codegen — TypeScript Specifics', () => {
     const files = await generateForLanguage('typescript');
     const types = getFile(files, 'gql-types')!;
     expect(types.content).toContain('export type Scalars = {');
-    expect(types.content).toContain("ID: { input: string; output: string };");
-    expect(types.content).toContain("Int: { input: number; output: number };");
+    expect(types.content).toContain('ID: { input: string; output: string };');
+    expect(types.content).toContain('Int: { input: number; output: number };');
   });
 
   it('generates types with __typename discriminator', async () => {

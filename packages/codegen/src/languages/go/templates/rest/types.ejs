@@ -1,6 +1,13 @@
 <% const parts = it.config.languageConfig.package_name.split('/'); %>
 <% const pkgName = parts[parts.length - 1].replace(/-/g, ''); %>
 package <%= pkgName %>
+
+// FileUpload is a file part sent by a multipart/form-data request.
+type FileUpload struct {
+	Filename    string
+	Data        []byte
+	ContentType string
+}
 <% for (const schema of it.schemas) { %>
 
 <% if (schema.isEnum) { %>

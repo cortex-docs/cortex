@@ -38,6 +38,19 @@ async function apiRequest(
   return { content: [{ type: 'text', text }] };
 }
 
+async function postJson(url: string, body: unknown) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    return { content: [{ type: 'text' as const, text: `Error ${response.status}: ${text}` }] };
+  }
+  return { content: [{ type: 'text' as const, text }] };
+}
+
 <% for (const tool of it.tools) { %>
 <% if (tool.source === 'websocket' && tool.name.startsWith('ws_describe_')) { %>
 export async function handle_<%= tool.name %>(
@@ -60,8 +73,40 @@ export async function handle_<%= tool.name %>(
   baseUrl: string,
 ) {
   return {
-    content: [{ type: 'text' as const, text: `WebSocket: ${JSON.stringify(params, null, 2)}` }],
+    content: [{ type: 'text' as const, text: JSON.stringify({
+      channel: '<%= it.esc(tool.channel?.name) %>',
+      payload: params,
+    }, null, 2) }],
   };
+}
+
+<% } else if (tool.source === 'graphql' && tool.graphqlOperation) { %>
+export async function handle_<%= tool.name %>(
+  params: Record<string, unknown>,
+  baseUrl: string,
+) {
+  const variables = Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'selection'));
+  const definitions = '<%= tool.graphqlOperation.args.map(arg => '$' + arg.name + ': ' + arg.typeRaw).join(', ') %>';
+  const argumentsText = '<%= tool.graphqlOperation.args.map(arg => arg.name + ': $' + arg.name).join(', ') %>';
+  const selection = typeof params.selection === 'string' && params.selection.trim()
+    ? ` { ${params.selection.trim()} }`
+    : '';
+  const operation = '<%= tool.operationType === 'mutation' ? 'mutation' : tool.operationType === 'subscription' ? 'subscription' : 'query' %>';
+  const query = `${operation}${definitions ? ` CortexOperation(${definitions})` : ''} { <%= tool.graphqlOperation.name %>${argumentsText ? `(${argumentsText})` : ''}${selection} }`;
+  return postJson('<%= it.esc(it.graphqlEndpoint) %>', { query, variables });
+}
+
+<% } else if (tool.source === 'openrpc' && tool.openRpcMethod) { %>
+export async function handle_<%= tool.name %>(
+  params: Record<string, unknown>,
+  baseUrl: string,
+) {
+  return postJson('<%= it.esc(it.openRpcUrl) %>', {
+    jsonrpc: '2.0',
+    id: Date.now(),
+    method: '<%= it.esc(tool.openRpcMethod.name) %>',
+    params,
+  });
 }
 
 <% } else if (tool.operation) { %>

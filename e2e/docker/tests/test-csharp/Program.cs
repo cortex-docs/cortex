@@ -1,8 +1,9 @@
 using System.Text.Json;
-using TestProject;
-using TestProject.Models;
-using Gql = TestProject.Gql;
-using Grpc = TestProject.Grpc;
+using System.Text;
+using TestProject.Sdk;
+using TestProject.Sdk.Models;
+using Gql = TestProject.Sdk.Gql;
+using Grpc = TestProject.Sdk.Grpc;
 using Xunit;
 
 namespace TestCsharp;
@@ -16,17 +17,16 @@ public class SdkIntegrationTests : IAsyncLifetime
     private static readonly string WsUrl =
         Environment.GetEnvironmentVariable("MOCK_WS_URL") ?? "ws://localhost:4010/ws";
 
-    private TestProjectClient _rest = null!;
-    private GqlClient _gql = null!;
-    private Grpc.PetServiceClient _petGrpc = null!;
-    private Grpc.OwnerServiceClient _ownerGrpc = null!;
+    private RestApiV1 _rest = null!;
+    private Graphql _gql = null!;
+    private Grpc.Grpc _grpc = null!;
 
     public Task InitializeAsync()
     {
-        _rest = new TestProjectClient(baseUrl: BaseUrl);
-        _gql = new GqlClient(endpoint: GqlUrl, wsEndpoint: GqlWsUrl);
-        _petGrpc = new Grpc.PetServiceClient(address: BaseUrl);
-        _ownerGrpc = new Grpc.OwnerServiceClient(address: BaseUrl);
+        _rest = new RestApiV1(baseUrl: BaseUrl);
+        _gql = new Graphql(endpoint: GqlUrl, wsEndpoint: GqlWsUrl,
+            reconnectInterval: TimeSpan.FromMilliseconds(50), maxReconnectAttempts: 5);
+        _grpc = new Grpc.Grpc(address: BaseUrl);
         return Task.CompletedTask;
     }
 
@@ -34,8 +34,7 @@ public class SdkIntegrationTests : IAsyncLifetime
     {
         _rest.Dispose();
         _gql.Dispose();
-        _petGrpc.Dispose();
-        _ownerGrpc.Dispose();
+        _grpc.Dispose();
         return Task.CompletedTask;
     }
 
@@ -61,8 +60,29 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task RestPetsCreate()
     {
-        var r = await _rest.Pets.CreateAsync(new CreatePetRequest { Name = "CsPet", Species = "bird" });
+        var r = await _rest.Pets.CreateAsync(new CreatePetRequest {
+            Name = "CsPet",
+            Species = "bird",
+            ProfilePic = new FileUpload {
+                FileName = "profile.png", Data = Encoding.UTF8.GetBytes("pet-avatar"), ContentType = "image/png"
+            },
+            Attachments = new List<FileUpload> {
+                new() { FileName = "record.pdf", Data = Encoding.UTF8.GetBytes("pdf-file"), ContentType = "application/pdf" },
+                new() { FileName = "notes.txt", Data = Encoding.UTF8.GetBytes("notes"), ContentType = "text/plain" }
+            },
+        });
         Assert.Equal("CsPet", r.Name);
+        Assert.Equal("profile.png", r.ProfilePicFilename);
+        Assert.Equal(10, r.ProfilePicSize);
+        Assert.Equal("image/png", r.ProfilePicContentType);
+        Assert.Equal(2, r.AttachmentCount);
+        Assert.Equal(new[] { "application/pdf", "text/plain" }, r.AttachmentContentTypes);
+
+        var raw = await _rest.Uploads.UploadFileAsync(new FileUpload {
+            FileName = "raw.pdf", Data = Encoding.UTF8.GetBytes("raw-pdf"), ContentType = "application/pdf"
+        });
+        Assert.Equal(7, raw.Size);
+        Assert.Equal("application/pdf", raw.ContentType);
     }
 
     [Fact]
@@ -77,6 +97,38 @@ public class SdkIntegrationTests : IAsyncLifetime
         var r = await _rest.Owners.ListAsync();
         Assert.True(r.Data.Count >= 1);
         Assert.NotNull(r.Data[0].Email);
+    }
+
+    [Fact]
+    public async Task RestChunkedResponseStream()
+    {
+        var chunks = new List<byte[]>();
+        await foreach (var chunk in _rest.RequestStreamAsync(HttpMethod.Get, "/pets/stream"))
+            chunks.Add(chunk.ToArray());
+        var body = Encoding.UTF8.GetString(chunks.SelectMany(chunk => chunk).ToArray());
+        Assert.Contains("Rex", body);
+        Assert.Contains("Whiskers", body);
+        Assert.True(body.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length >= 2);
+    }
+
+    [Fact]
+    public async Task RestTimeoutOverride()
+    {
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in _rest.RequestStreamAsync(
+                HttpMethod.Get,
+                "/transport/slow?delay=250",
+                timeout: TimeSpan.FromMilliseconds(40))) { }
+        });
+
+        var body = new List<byte>();
+        await foreach (var chunk in _rest.RequestStreamAsync(
+            HttpMethod.Get,
+            "/transport/slow?delay=100",
+            timeout: TimeSpan.FromMilliseconds(500)))
+            body.AddRange(chunk.ToArray());
+        Assert.Contains("\"delayed\":100", Encoding.UTF8.GetString(body.ToArray()));
     }
 
     // ════════════════════════════════════════════════════════════
@@ -230,7 +282,8 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task WsConnectAndReceivePresence()
     {
-        var ws = new WsClient(url: WsUrl, reconnect: false);
+        var ws = new WebsocketApi(url: WsUrl, reconnect: true,
+            reconnectInterval: TimeSpan.FromMilliseconds(50), maxReconnectAttempts: 5);
         var tcs = new TaskCompletionSource<JsonElement>();
         using var cts = new CancellationTokenSource(5000);
         cts.Token.Register(() => tcs.TrySetException(new TimeoutException("timeout")));
@@ -253,14 +306,14 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public void WsClientHasChannelMethods()
     {
-        var ws = new WsClient(url: WsUrl, reconnect: false);
+        var ws = new WebsocketApi(url: WsUrl, reconnect: false);
 
-        Assert.NotNull(typeof(WsClient).GetMethod("ConnectAsync"));
-        Assert.NotNull(typeof(WsClient).GetMethod("DisconnectAsync"));
-        Assert.NotNull(typeof(WsClient).GetMethod("SendAsync"));
-        Assert.NotNull(typeof(WsClient).GetMethod("Subscribe"));
-        Assert.NotNull(typeof(WsClient).GetMethod("OnChatPresence"));
-        Assert.NotNull(typeof(WsClient).GetMethod("SendChatMessagesAsync"));
+        Assert.NotNull(typeof(WebsocketApi).GetMethod("ConnectAsync"));
+        Assert.NotNull(typeof(WebsocketApi).GetMethod("DisconnectAsync"));
+        Assert.NotNull(typeof(WebsocketApi).GetMethod("SendAsync"));
+        Assert.NotNull(typeof(WebsocketApi).GetMethod("Subscribe"));
+        Assert.NotNull(typeof(WebsocketApi).GetMethod("OnChatPresence"));
+        Assert.NotNull(typeof(WebsocketApi).GetMethod("SendChatMessagesAsync"));
 
         ws.Dispose();
     }
@@ -272,7 +325,7 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GrpcPetServiceListPets()
     {
-        var r = await _petGrpc.ListPetsAsync(new Grpc.ListPetsRequest());
+        var r = await _grpc.ListPetsAsync(new Grpc.ListPetsRequest());
         Assert.NotNull(r.Data);
         Assert.True(r.Data.Count >= 2);
         Assert.NotNull(r.Data[0].Name);
@@ -281,7 +334,7 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GrpcPetServiceGetPet()
     {
-        var r = await _petGrpc.GetPetAsync(new Grpc.GetPetRequest { Id = "pet-1" });
+        var r = await _grpc.GetPetAsync(new Grpc.GetPetRequest { Id = "pet-1" });
         Assert.Equal("Rex", r.Name);
         Assert.Equal("pet-1", r.Id);
     }
@@ -289,7 +342,7 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GrpcPetServiceCreatePet()
     {
-        var r = await _petGrpc.CreatePetAsync(new Grpc.CreatePetRequest
+        var r = await _grpc.CreatePetAsync(new Grpc.CreatePetRequest
         {
             Name = "GrpcCsPet",
             Species = Grpc.Species.SPECIES_DOG
@@ -301,14 +354,14 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GrpcPetServiceDeletePet()
     {
-        var r = await _petGrpc.DeletePetAsync(new Grpc.DeletePetRequest { Id = "pet-1" });
+        var r = await _grpc.DeletePetAsync(new Grpc.DeletePetRequest { Id = "pet-1" });
         Assert.NotNull(r);
     }
 
     [Fact]
     public async Task GrpcPetServiceWatchPets()
     {
-        var pets = await _petGrpc.WatchPetsAsync(new Grpc.WatchPetsRequest());
+        var pets = await _grpc.WatchPetsAsync(new Grpc.WatchPetsRequest());
         Assert.True(pets.Count >= 2);
         Assert.NotNull(pets[0].Name);
     }
@@ -316,7 +369,7 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GrpcOwnerServiceListOwners()
     {
-        var r = await _ownerGrpc.ListOwnersAsync(new Grpc.ListOwnersRequest());
+        var r = await _grpc.ListOwnersAsync(new Grpc.ListOwnersRequest());
         Assert.NotNull(r.Data);
         Assert.True(r.Data.Count >= 1);
     }
@@ -324,7 +377,7 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GrpcOwnerServiceGetOwner()
     {
-        var r = await _ownerGrpc.GetOwnerAsync(new Grpc.GetOwnerRequest { Id = "owner-1" });
+        var r = await _grpc.GetOwnerAsync(new Grpc.GetOwnerRequest { Id = "owner-1" });
         Assert.Equal("Alice", r.Name);
         Assert.Equal("alice@example.com", r.Email);
     }
@@ -332,7 +385,7 @@ public class SdkIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task GrpcOwnerServiceCreateOwner()
     {
-        var r = await _ownerGrpc.CreateOwnerAsync(new Grpc.CreateOwnerRequest
+        var r = await _grpc.CreateOwnerAsync(new Grpc.CreateOwnerRequest
         {
             Name = "GrpcOwner",
             Email = "grpc@test.com"

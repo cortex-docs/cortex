@@ -1,6 +1,6 @@
 <?php
 
-namespace <%= it.packageName.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('\\') %>;
+namespace <%= it.naming.className(it.packageName.replace(/[\/.]+/g, '-')) %>;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;

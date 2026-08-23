@@ -15,6 +15,9 @@ class <%= it.clientClass %>
     private string $endpoint;
 <% if (hasSubscriptions) { -%>
     private string $wsEndpoint;
+    private bool $reconnect;
+    private float $reconnectInterval;
+    private int $maxReconnectAttempts;
 <% } -%>
     private HttpClient $httpClient;
     private array $headers;
@@ -25,7 +28,12 @@ class <%= it.clientClass %>
         ?string $wsEndpoint = null,
 <% } -%>
         ?string $bearerToken = null,
-        float $timeout = 30.0,
+        float $timeout = 15.0,
+<% if (hasSubscriptions) { -%>
+        bool $reconnect = true,
+        float $reconnectInterval = 3.0,
+        int $maxReconnectAttempts = 10,
+<% } -%>
     ) {
         $this->endpoint = $endpoint;
         $this->headers = ['Content-Type' => 'application/json'];
@@ -41,6 +49,9 @@ class <%= it.clientClass %>
 <% if (hasSubscriptions) { -%>
 
         $this->wsEndpoint = $wsEndpoint ?? preg_replace('/^http/', 'ws', $endpoint);
+        $this->reconnect = $reconnect;
+        $this->reconnectInterval = $reconnectInterval;
+        $this->maxReconnectAttempts = $maxReconnectAttempts;
 <% } -%>
     }
 
@@ -251,29 +262,41 @@ class <%= it.clientClass %>
         $fn($builder);
         [$query, $variables] = $builder->buildDocument('subscription');
 
-        $socket = $this->wsConnect($timeout);
-        try {
-            $this->wsInitSubscription($socket, $query, $variables);
+        $deadline = microtime(true) + $timeout;
+        $attempts = 0;
+        while (true) {
+            $socket = null;
+            try {
+                $remaining = max(0.001, $deadline - microtime(true));
+                $socket = $this->wsConnect($remaining);
+                $this->wsInitSubscription($socket, $query, $variables);
 
-            while (true) {
-                $raw = $this->wsReadFrame($socket);
-                if ($raw === null) {
-                    throw new GqlException('subscription: connection closed unexpectedly');
+                while (true) {
+                    $raw = $this->wsReadFrame($socket);
+                    if ($raw === null) {
+                        throw new GqlException('subscription: connection closed unexpectedly');
+                    }
+                    $msg = json_decode($raw, true);
+                    $type = $msg['type'] ?? '';
+                    if ($type === 'next') {
+                        return $this->wrapResult($msg['payload']['data'] ?? []);
+                    } elseif ($type === 'error') {
+                        $errors = $msg['payload'] ?? [];
+                        $messages = array_map(fn($e) => $e['message'] ?? (string) $e, $errors);
+                        throw new GqlException(implode('; ', $messages), $errors);
+                    } elseif ($type === 'complete') {
+                        throw new GqlException('subscription completed without data');
+                    }
                 }
-                $msg = json_decode($raw, true);
-                $type = $msg['type'] ?? '';
-                if ($type === 'next') {
-                    return $this->wrapResult($msg['payload']['data'] ?? []);
-                } elseif ($type === 'error') {
-                    $errors = $msg['payload'] ?? [];
-                    $messages = array_map(fn($e) => $e['message'] ?? (string) $e, $errors);
-                    throw new GqlException(implode('; ', $messages), $errors);
-                } elseif ($type === 'complete') {
-                    throw new GqlException('subscription completed without data');
+            } catch (GqlException $error) {
+                if (!$this->reconnect || $attempts >= $this->maxReconnectAttempts || microtime(true) >= $deadline) {
+                    throw $error;
                 }
+                $attempts++;
+                usleep((int) ($this->reconnectInterval * 1000000));
+            } finally {
+                if (is_resource($socket)) @fclose($socket);
             }
-        } finally {
-            @fclose($socket);
         }
     }
 

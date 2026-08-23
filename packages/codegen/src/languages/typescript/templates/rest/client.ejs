@@ -1,7 +1,7 @@
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; %>
 <% const clientClass = it.clientClass; %>
 <% for (const r of it.resources) { %>
-import { <%= r.className %> } from './resources/<%= it.naming.fileName(r.name) %>';
+import { <%= r.className %> } from './resources/<%= it.naming.fileName(r.name) %>.js';
 <% } %>
 
 export interface ClientOptions {
@@ -9,7 +9,22 @@ export interface ClientOptions {
   apiKey?: string;
   bearerToken?: string;
   headers?: Record<string, string>;
+  /** Request timeout in milliseconds. Defaults to 15 seconds. */
   timeout?: number;
+}
+
+export interface RequestOptions {
+  query?: Record<string, string | number | boolean | undefined>;
+  body?: unknown;
+  /** Encodes body properties as multipart/form-data. */
+  multipart?: boolean;
+  /** Sends a FileUpload as the complete request body. */
+  rawFile?: boolean;
+  rawContentType?: string;
+  headers?: Record<string, string>;
+  /** Overrides the client timeout for this request. */
+  timeout?: number;
+  signal?: AbortSignal;
 }
 
 export class <%= clientClass %> {
@@ -23,7 +38,7 @@ export class <%= clientClass %> {
 
   constructor(options: ClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? '<%= baseUrl %>';
-    this.timeout = options.timeout ?? 30000;
+    this.timeout = options.timeout ?? 15_000;
     this.headers = {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -44,46 +59,149 @@ export class <%= clientClass %> {
   async request<T>(
     method: string,
     path: string,
-    options: {
-      query?: Record<string, string | number | boolean | undefined>;
-      body?: unknown;
-      headers?: Record<string, string>;
-    } = {},
+    options: RequestOptions = {},
   ): Promise<T> {
-    const url = new URL(path, this.baseUrl);
-
-    if (options.query) {
-      for (const [key, value] of Object.entries(options.query)) {
-        if (value !== undefined) {
-          url.searchParams.set(key, String(value));
-        }
-      }
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    const { response, cleanup } = await this.fetchResponse(method, path, options);
 
     try {
-      const response = await fetch(url.toString(), {
-        method,
-        headers: { ...this.headers, ...options.headers },
-        body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new ApiError(response.status, response.statusText, errorBody);
-      }
-
       if (response.status === 204) {
         return undefined as T;
       }
 
       return (await response.json()) as T;
     } finally {
-      clearTimeout(timeoutId);
+      cleanup();
     }
+  }
+
+  /**
+   * Streams a response body as chunks without buffering it in memory.
+   * Fetch transparently removes HTTP chunk framing; yielded values are payload bytes.
+   */
+  async *requestStream(
+    method: string,
+    path: string,
+    options: RequestOptions = {},
+  ): AsyncGenerator<Uint8Array, void, undefined> {
+    const { response, cleanup } = await this.fetchResponse(method, path, options);
+
+    try {
+      if (!response.body) return;
+      const reader = response.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } finally {
+      cleanup();
+    }
+  }
+
+  private async fetchResponse(
+    method: string,
+    path: string,
+    options: RequestOptions,
+  ): Promise<{ response: Response; cleanup: () => void }> {
+    const url = new URL(path, this.baseUrl);
+    if (options.query) {
+      for (const [key, value] of Object.entries(options.query)) {
+        if (value !== undefined) url.searchParams.set(key, String(value));
+      }
+    }
+
+    const controller = new AbortController();
+    const abortFromSignal = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener('abort', abortFromSignal, { once: true });
+    if (options.signal?.aborted) abortFromSignal();
+
+    const timeout = options.timeout ?? this.timeout;
+    const timeoutId = timeout > 0
+      ? setTimeout(() => controller.abort(new RequestTimeoutError(timeout)), timeout)
+      : undefined;
+    const cleanup = () => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      options.signal?.removeEventListener('abort', abortFromSignal);
+    };
+
+    try {
+      const headers = { ...this.headers, ...options.headers };
+      let body: BodyInit | undefined;
+      if (options.body !== undefined && options.rawFile) {
+        const file = options.body;
+        if (!isFileUpload(file)) throw new TypeError('raw file body must be a FileUpload');
+        headers['Content-Type'] = file.contentType || options.rawContentType || 'application/octet-stream';
+        body = file.data;
+      } else if (options.body !== undefined && options.multipart) {
+        const form = new FormData();
+        for (const [name, value] of Object.entries(options.body as Record<string, unknown>)) {
+          if (value === undefined || value === null) continue;
+          if (isFileUpload(value)) {
+            const blob = value.contentType && value.data.type !== value.contentType
+              ? new Blob([value.data], { type: value.contentType })
+              : value.data;
+            form.append(name, blob, value.fileName);
+          } else if (Array.isArray(value)) {
+            for (const item of value) {
+              if (isFileUpload(item)) {
+                const blob = item.contentType && item.data.type !== item.contentType
+                  ? new Blob([item.data], { type: item.contentType })
+                  : item.data;
+                form.append(name, blob, item.fileName);
+              } else {
+                form.append(name, formValue(item));
+              }
+            }
+          } else {
+            form.append(name, formValue(value));
+          }
+        }
+        delete headers['Content-Type'];
+        delete headers['content-type'];
+        body = form;
+      } else if (options.body !== undefined) {
+        body = JSON.stringify(options.body);
+      }
+
+      const response = await fetch(url.toString(), {
+        method,
+        headers,
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new ApiError(response.status, response.statusText, errorBody);
+      }
+      return { response, cleanup };
+    } catch (error) {
+      cleanup();
+      if (controller.signal.reason instanceof RequestTimeoutError) {
+        throw controller.signal.reason;
+      }
+      throw error;
+    }
+  }
+}
+
+function isFileUpload(value: unknown): value is { data: Blob; fileName: string; contentType?: string } {
+  return !!value && typeof value === 'object'
+    && (value as { data?: unknown }).data instanceof Blob
+    && typeof (value as { fileName?: unknown }).fileName === 'string';
+}
+
+function formValue(value: unknown): string {
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+export class RequestTimeoutError extends Error {
+  constructor(public readonly timeout: number) {
+    super(`HTTP request timed out after ${timeout}ms`);
+    this.name = 'RequestTimeoutError';
   }
 }
 

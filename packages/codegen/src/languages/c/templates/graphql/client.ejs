@@ -13,6 +13,7 @@
 #include "gql-query-builder.h"
 <% if (hasSubscriptions) { -%>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -20,8 +21,12 @@
 
 typedef struct {
   char* endpoint;
+  long timeout_seconds;
 <% if (hasSubscriptions) { -%>
   char* ws_endpoint;
+  int reconnect;
+  int reconnect_interval_ms;
+  int max_reconnect_attempts;
 <% } -%>
 } gql_client_options_t;
 
@@ -44,14 +49,19 @@ static size_t gql_write_cb(void* contents, size_t size, size_t nmemb, void* user
 
 typedef struct {
   char* endpoint;
+  long timeout_seconds;
 <% if (hasSubscriptions) { -%>
   char* ws_endpoint;
+  int reconnect;
+  int reconnect_interval_ms;
+  int max_reconnect_attempts;
 <% } -%>
 } gql_client_t;
 
 static inline void gql_client_init(gql_client_t* c, const gql_client_options_t* opts) {
   memset(c, 0, sizeof(*c));
   c->endpoint = strdup(opts->endpoint);
+  c->timeout_seconds = opts->timeout_seconds > 0 ? opts->timeout_seconds : 15;
 <% if (hasSubscriptions) { -%>
   if (opts->ws_endpoint && opts->ws_endpoint[0]) {
     c->ws_endpoint = strdup(opts->ws_endpoint);
@@ -69,6 +79,9 @@ static inline void gql_client_init(gql_client_t* c, const gql_client_options_t* 
       c->ws_endpoint = tmp;
     }
   }
+  c->reconnect = opts->reconnect >= 0;
+  c->reconnect_interval_ms = opts->reconnect_interval_ms > 0 ? opts->reconnect_interval_ms : 3000;
+  c->max_reconnect_attempts = opts->max_reconnect_attempts > 0 ? opts->max_reconnect_attempts : 10;
 <% } -%>
 }
 
@@ -102,7 +115,7 @@ static inline cJSON* gql_execute(gql_client_t* client, const char* query, const 
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, gql_write_cb);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, client->timeout_seconds);
 
   CURLcode res = curl_easy_perform(curl);
   curl_slist_free_all(headers);
@@ -155,8 +168,10 @@ static inline gql_mutation_result_t gql_mutate(gql_client_t* client, gql_mutatio
 <% if (hasSubscriptions) { %>
 
 typedef struct {
-  volatile int cancelled;
+  _Atomic int* cancelled;
+  _Atomic int* socket_fd;
   pthread_t thread;
+  int thread_started;
 } gql_subscription_handle_t;
 
 typedef struct {
@@ -164,7 +179,11 @@ typedef struct {
   char query[8192];
   cJSON* variables;
   void (*on_data)(const cJSON*);
-  volatile int* cancelled;
+  _Atomic int* cancelled;
+  _Atomic int* socket_fd;
+  int reconnect;
+  int reconnect_interval_ms;
+  int max_reconnect_attempts;
 } gql_sub_ctx_t;
 
 static inline void gql_ws_send(int sock, const char* data) {
@@ -190,13 +209,14 @@ static inline void gql_ws_send(int sock, const char* data) {
   memcpy(buf, frame, hdr_len);
   memcpy(buf + hdr_len, mask, 4);
   for (size_t i = 0; i < len; i++) buf[hdr_len + 4 + i] = data[i] ^ mask[i % 4];
-  send(sock, buf, hdr_len + 4 + len, 0);
+  send(sock, buf, hdr_len + 4 + len, MSG_NOSIGNAL);
   free(buf);
 }
 
 static inline char* gql_ws_recv(int sock) {
   unsigned char header[2];
   if (recv(sock, header, 2, MSG_WAITALL) != 2) return NULL;
+  unsigned char opcode = header[0] & 0x0F;
   uint64_t len = header[1] & 0x7F;
   int masked = header[1] & 0x80;
   if (len == 126) {
@@ -219,6 +239,7 @@ static inline char* gql_ws_recv(int sock) {
     received += r;
   }
   if (masked) for (size_t i = 0; i < len; ++i) data[i] ^= mask[i % 4];
+  if (opcode == 0x8) { free(data); return NULL; }
   data[len] = '\0';
   return data;
 }
@@ -242,19 +263,27 @@ static void* gql_sub_thread(void* arg) {
   char* colon = strchr(host, ':');
   if (colon) { *colon = '\0'; port = atoi(colon + 1); }
 
-  struct addrinfo hints = {0}, *res;
-  hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
-  char port_str[16];
-  snprintf(port_str, sizeof(port_str), "%d", port);
-  if (getaddrinfo(host, port_str, &hints, &res) != 0) goto done;
+  int attempts = 0;
+  while (!atomic_load(ctx->cancelled)) {
+    int connection_lost = 0;
+    struct addrinfo hints = {0}, *res;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+    if (getaddrinfo(host, port_str, &hints, &res) != 0) {
+      connection_lost = 1;
+    }
 
-  int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (sock < 0) { freeaddrinfo(res); goto done; }
-  if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) { close(sock); freeaddrinfo(res); goto done; }
-  freeaddrinfo(res);
+    int sock = -1;
+    if (!connection_lost) {
+      sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+      atomic_store(ctx->socket_fd, sock);
+      if (sock < 0 || connect(sock, res->ai_addr, res->ai_addrlen) < 0) connection_lost = 1;
+      freeaddrinfo(res);
+    }
 
-  {
+    if (!connection_lost) {
     char handshake[1024];
     snprintf(handshake, sizeof(handshake),
       "GET %s HTTP/1.1\r\n"
@@ -265,16 +294,16 @@ static void* gql_sub_thread(void* arg) {
       "Sec-WebSocket-Version: 13\r\n"
       "Sec-WebSocket-Protocol: graphql-transport-ws\r\n"
       "\r\n", path, host, port);
-    send(sock, handshake, strlen(handshake), 0);
+    send(sock, handshake, strlen(handshake), MSG_NOSIGNAL);
 
     char buf[4096];
-    recv(sock, buf, sizeof(buf) - 1, 0);
+    if (recv(sock, buf, sizeof(buf) - 1, 0) <= 0) connection_lost = 1;
 
-    gql_ws_send(sock, "{\"type\":\"connection_init\"}");
+    if (!connection_lost) gql_ws_send(sock, "{\"type\":\"connection_init\"}");
 
-    while (1) {
+    while (!connection_lost) {
       char* msg = gql_ws_recv(sock);
-      if (!msg) { close(sock); goto done; }
+      if (!msg) { connection_lost = 1; break; }
       cJSON* parsed = cJSON_Parse(msg);
       free(msg);
       if (!parsed) continue;
@@ -286,6 +315,7 @@ static void* gql_sub_thread(void* arg) {
       cJSON_Delete(parsed);
     }
 
+    if (!connection_lost) {
     cJSON* sub_msg = cJSON_CreateObject();
     cJSON_AddStringToObject(sub_msg, "id", "1");
     cJSON_AddStringToObject(sub_msg, "type", "subscribe");
@@ -297,10 +327,11 @@ static void* gql_sub_thread(void* arg) {
     gql_ws_send(sock, sub_str);
     free(sub_str);
     cJSON_Delete(sub_msg);
+    }
 
-    while (!*(ctx->cancelled)) {
+    while (!connection_lost && !atomic_load(ctx->cancelled)) {
       char* msg = gql_ws_recv(sock);
-      if (!msg) break;
+      if (!msg) { connection_lost = 1; break; }
       cJSON* parsed = cJSON_Parse(msg);
       free(msg);
       if (!parsed) continue;
@@ -312,17 +343,25 @@ static void* gql_sub_thread(void* arg) {
           if (d && ctx->on_data) ctx->on_data(d);
         } else if (strcmp(type->valuestring, "complete") == 0) {
           cJSON_Delete(parsed);
+          connection_lost = 0;
+          atomic_store(ctx->cancelled, 1);
           break;
         }
       }
       cJSON_Delete(parsed);
     }
 
-    gql_ws_send(sock, "{\"id\":\"1\",\"type\":\"complete\"}");
-    close(sock);
+    if (!connection_lost && sock >= 0) gql_ws_send(sock, "{\"id\":\"1\",\"type\":\"complete\"}");
+    }
+    if (sock >= 0) close(sock);
+    atomic_store(ctx->socket_fd, -1);
+
+    if (atomic_load(ctx->cancelled) || !connection_lost) break;
+    if (!ctx->reconnect || attempts >= ctx->max_reconnect_attempts) break;
+    attempts++;
+    usleep((useconds_t)ctx->reconnect_interval_ms * 1000);
   }
 
-done:
   if (ctx->variables) cJSON_Delete(ctx->variables);
   free(ctx);
   return NULL;
@@ -336,6 +375,10 @@ static inline gql_subscription_handle_t gql_subscribe(gql_client_t* client,
 {
   gql_subscription_handle_t handle;
   memset(&handle, 0, sizeof(handle));
+  handle.cancelled = (_Atomic int*)calloc(1, sizeof(_Atomic int));
+  handle.socket_fd = (_Atomic int*)malloc(sizeof(_Atomic int));
+  atomic_init(handle.cancelled, 0);
+  atomic_init(handle.socket_fd, -1);
 
   gql_document_t doc = gql_builder_build(builder);
 
@@ -344,17 +387,37 @@ static inline gql_subscription_handle_t gql_subscribe(gql_client_t* client,
   strncpy(ctx->query, doc.query, sizeof(ctx->query) - 1);
   ctx->variables = doc.variables ? cJSON_Duplicate(doc.variables, 1) : NULL;
   ctx->on_data = on_data;
-  ctx->cancelled = &handle.cancelled;
+  ctx->cancelled = handle.cancelled;
+  ctx->socket_fd = handle.socket_fd;
+  ctx->reconnect = client->reconnect;
+  ctx->reconnect_interval_ms = client->reconnect_interval_ms;
+  ctx->max_reconnect_attempts = client->max_reconnect_attempts;
 
   gql_document_free(&doc);
 
-  pthread_create(&handle.thread, NULL, gql_sub_thread, ctx);
+  handle.thread_started = pthread_create(&handle.thread, NULL, gql_sub_thread, ctx) == 0;
+  if (!handle.thread_started) {
+    if (ctx->variables) cJSON_Delete(ctx->variables);
+    free(ctx);
+  }
   return handle;
 }
 
 static inline void gql_subscription_unsubscribe(gql_subscription_handle_t* h) {
-  h->cancelled = 1;
-  pthread_detach(h->thread);
+  if (!h) return;
+  if (h->cancelled) atomic_store(h->cancelled, 1);
+  if (h->socket_fd) {
+    int fd = atomic_load(h->socket_fd);
+    if (fd >= 0) shutdown(fd, SHUT_RDWR);
+  }
+  if (h->thread_started) {
+    pthread_join(h->thread, NULL);
+    h->thread_started = 0;
+  }
+  free(h->cancelled);
+  free(h->socket_fd);
+  h->cancelled = NULL;
+  h->socket_fd = NULL;
 }
 
 typedef struct {

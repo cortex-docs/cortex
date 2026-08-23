@@ -24,20 +24,60 @@ function run(cmd, opts = {}) {
 }
 
 function tryRun(name, cmd, opts) {
+  const startedAt = Date.now();
   try {
     log(`Running ${name}...`);
     const output = run(cmd, opts);
     if (output) console.log(output);
-    pass(name);
+    pass(`${name} (${((Date.now() - startedAt) / 1000).toFixed(2)}s)`);
   } catch (e) {
     const out = (e.stdout?.toString() || '') + (e.stderr?.toString() || '');
-    // Show last 30 lines of output for debugging
+    // Keep enough context to show the actual failure when compilers emit warnings afterward.
     const lines = out.split('\n').filter(Boolean);
-    const tail = lines.slice(-30).join('\n');
+    const tail = lines.slice(-120).join('\n');
     if (tail) console.log(`\n--- ${name} ERROR OUTPUT ---\n${tail}\n--- END ---\n`);
     const errorLine = lines.find((l) => l.includes('✗')) || lines.pop() || e.message?.substring(0, 150);
     fail(name, errorLine?.trim());
   }
+}
+
+async function resetTransportFaults() {
+  const response = await fetch(`${MOCK_URL}/transport/reset`, { method: 'POST' });
+  if (!response.ok) throw new Error(`Could not reset transport faults: HTTP ${response.status}`);
+}
+
+async function verifyTransportResilience(language) {
+  const response = await fetch(`${MOCK_URL}/transport/status`);
+  if (!response.ok) {
+    fail(`${language} transport resilience`, `status endpoint returned HTTP ${response.status}`);
+    return;
+  }
+  const stats = await response.json();
+  const required = {
+    wsConnections: 2,
+    wsForcedDisconnects: 1,
+    clientHeartbeats: 1,
+    serverHeartbeatAcks: 1,
+    gqlConnections: 2,
+    gqlForcedDisconnects: 1,
+    slowRequests: 2,
+    chunkStreams: 1,
+    grpcStreams: 1,
+  };
+  const missing = Object.entries(required)
+    .filter(([key, minimum]) => (stats[key] || 0) < minimum)
+    .map(([key, minimum]) => `${key}=${stats[key] || 0} (need ${minimum})`);
+  if (missing.length > 0) {
+    fail(`${language} transport resilience`, missing.join(', '));
+  } else {
+    pass(`${language} transport resilience`);
+  }
+}
+
+async function runLanguage(language, name, cmd, opts) {
+  await resetTransportFaults();
+  tryRun(name, cmd, { timeout: 90000, ...opts });
+  await verifyTransportResilience(language);
 }
 
 async function waitForServer(url, maxAttempts = 30) {
@@ -64,25 +104,59 @@ async function main() {
   log(`Languages: ${langLabel}\n`);
 
   // Step 1: Generate unified SDKs for all languages
-  log('Generating SDKs with cortex init...');
+  log('Creating the E2E Cortex project...');
   fs.mkdirSync('/tmp/cortex-e2e-sdks', { recursive: true });
-  run(`node /cortex/packages/cli/dist/main.js init test-project \
-    --open-api ${SPEC_DIR}/petstore.yaml \
-    --async-api ${SPEC_DIR}/chat-asyncapi.yaml \
-    --graphql ${SPEC_DIR}/petstore.graphql \
-    --grpc ${SPEC_DIR}/petstore.proto \
-    --no-mcp`, { cwd: '/tmp/cortex-e2e-sdks' });
-  log('SDKs generated for all languages');
+  run('node /cortex/packages/cli/dist/main.js init test-project', { cwd: '/tmp/cortex-e2e-sdks' });
+  fs.copyFileSync(
+    path.join(SPEC_DIR, 'petstore.proto'),
+    '/tmp/cortex-e2e-sdks/specs/petstore.proto',
+  );
 
   // Read generated config to find output directories per language
   const yaml = require('js-yaml');
   const generatedConfig = yaml.load(fs.readFileSync('/tmp/cortex-e2e-sdks/cortex.config.yml', 'utf-8'));
+  const sharedLanguages = generatedConfig.sources?.[0]?.languages;
+  if (!sharedLanguages) throw new Error('Generated E2E config has no language definitions');
+  generatedConfig.sources.push({
+    title: 'gRPC',
+    type: 'grpc-spec',
+    spec: './specs/petstore.proto',
+    languages: sharedLanguages,
+  });
+  const asyncApiSource = (generatedConfig.sources || []).find((source) => source.type === 'asyncapi-spec');
+  if (!asyncApiSource) throw new Error('Generated E2E config has no AsyncAPI source');
+  asyncApiSource.websocket = {
+    heartbeat: {
+      format: 'json',
+      interval_ms: 100,
+      timeout_ms: 300,
+      client: {
+        message: { type: 'cortex-client-heartbeat' },
+        response: { type: 'cortex-server-heartbeat-ack' },
+      },
+      server: {
+        message: { type: 'cortex-server-heartbeat' },
+        response: { type: 'cortex-client-heartbeat-ack' },
+      },
+    },
+  };
+  fs.writeFileSync(
+    '/tmp/cortex-e2e-sdks/cortex.config.yml',
+    yaml.dump(generatedConfig, { lineWidth: 120, noRefs: true }),
+  );
+  const generationLanguage = selectedLanguages.length === 1 && ALL_LANGUAGES.includes(selectedLanguages[0])
+    ? selectedLanguages[0]
+    : null;
+  const languageOption = generationLanguage ? ` --language ${generationLanguage}` : '';
+  run(`node /cortex/packages/cli/dist/main.js generate --no-mcp${languageOption}`, { cwd: '/tmp/cortex-e2e-sdks' });
+  log('SDKs generated with gRPC and the E2E heartbeat protocol');
+
   const langOutputDirs = {};
   for (const source of generatedConfig.sources || []) {
     for (const langCfg of source.languages || []) {
       if (!langOutputDirs[langCfg.language]) {
         const sanitized = langCfg.package_name.replace(/^@/, '').replace(/\//g, '-');
-        langOutputDirs[langCfg.language] = path.join(GEN_DIR, '..', sanitized);
+        langOutputDirs[langCfg.language] = path.join(GEN_DIR, langCfg.language, sanitized);
       }
     }
   }
@@ -139,48 +213,49 @@ async function main() {
   log('SDKs copied to test directories');
 
   const tsPkg = path.join(TESTS_DIR, 'test-typescript/generated/typescript');
-  if (fs.existsSync(tsPkg)) {
+  if (shouldTest('typescript') && fs.existsSync(tsPkg)) {
     const pkg = JSON.parse(fs.readFileSync(path.join(tsPkg, 'package.json'), 'utf-8'));
     pkg.dependencies = { ...pkg.dependencies, 'graphql-ws': '^5.16.0', ws: '^8.18.0' };
     fs.writeFileSync(path.join(tsPkg, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
     run('npm install --ignore-scripts', { cwd: tsPkg });
   }
-  log('TypeScript SDK deps installed');
+  if (shouldTest('typescript')) log('TypeScript SDK deps installed');
 
   // Install Python SDK deps from generated manifest
-  const pythonDir = path.join(GEN_DIR, 'python');
+  const pythonDir = path.join(TESTS_DIR, 'test-python/generated/python');
   const pySetup = path.join(pythonDir, 'setup.py');
-  if (fs.existsSync(pySetup)) {
+  if (shouldTest('python') && fs.existsSync(pySetup)) {
     const content = fs.readFileSync(pySetup, 'utf-8');
     const reqSection = content.match(/install_requires=\[([\s\S]*?)\]/);
     const deps = reqSection
       ? [...new Set([...reqSection[1].matchAll(/"([a-zA-Z0-9_-]+)/g)].map((m) => m[1]))].join(' ')
       : 'httpx pydantic';
     try { run(`pip3 install --break-system-packages ${deps} pytest`); } catch {}
-  } else {
+  } else if (shouldTest('python')) {
     try { run('pip3 install --break-system-packages httpx pydantic pytest'); } catch {}
   }
-  log('Python SDK deps installed');
+  if (shouldTest('python')) log('Python SDK deps installed');
 
   // Install Ruby SDK deps from generated gemspec
-  const rubyDir = path.join(GEN_DIR, 'ruby');
-  if (fs.existsSync(rubyDir)) {
+  const rubyDir = path.join(TESTS_DIR, 'test-ruby/generated/ruby');
+  if (shouldTest('ruby') && fs.existsSync(rubyDir)) {
     const gemspec = fs.readdirSync(rubyDir).find((f) => f.endsWith('.gemspec'));
     if (gemspec) {
       try { run('gem install faraday faraday-multipart websocket-client-simple websocket --no-document'); } catch {}
     }
   }
-  log('Ruby SDK deps installed');
+  if (shouldTest('ruby')) log('Ruby SDK deps installed');
 
   // Install PHP SDK deps (Guzzle) + download PHPUnit
-  const phpDir = path.join(GEN_DIR, 'php');
-  if (fs.existsSync(path.join(phpDir, 'composer.json'))) {
+  const phpDir = path.join(TESTS_DIR, 'test-php/generated/php');
+  if (shouldTest('php') && fs.existsSync(path.join(phpDir, 'composer.json'))) {
     try { run('composer install --no-interaction --no-progress', { cwd: phpDir }); } catch {}
   }
-  if (!fs.existsSync('/tmp/phpunit.phar')) {
+  if (shouldTest('php') && !fs.existsSync('/tmp/phpunit.phar')) {
     try { run('wget -q https://phar.phpunit.de/phpunit-11.phar -O /tmp/phpunit.phar && chmod +x /tmp/phpunit.phar'); } catch {}
   }
-  log('PHP SDK deps installed\n');
+  if (shouldTest('php')) log('PHP SDK deps installed');
+  log('');
 
   // Step 2: Start mock server (REST + WS + GraphQL + gRPC-over-HTTP)
   log('Starting mock server...');
@@ -193,47 +268,47 @@ async function main() {
   try {
     // --- TypeScript (REST + GraphQL + WebSocket + gRPC) ---
     if (shouldTest('typescript'))
-      tryRun('TypeScript (REST + GraphQL + WS + gRPC)', `npx vitest run ${path.join(TESTS_DIR, 'test-typescript/test-typescript.test.ts')} --reporter=verbose --test-timeout 30000 --hook-timeout 30000`);
+      await runLanguage('TypeScript', 'TypeScript (REST + GraphQL + WS + gRPC)', `npx vitest run ${path.join(TESTS_DIR, 'test-typescript/test-typescript.test.ts')} --reporter=verbose --test-timeout 30000 --hook-timeout 30000`);
 
     // --- Python (REST + GraphQL + WebSocket + gRPC) ---
     if (shouldTest('python'))
-      tryRun('Python (REST + GraphQL + WS + gRPC)', `python3 -m pytest ${path.join(TESTS_DIR, 'test-python/test_python.py')} -v`);
+      await runLanguage('Python', 'Python (REST + GraphQL + WS + gRPC)', `python3 -m pytest ${path.join(TESTS_DIR, 'test-python/test_python.py')} -v`);
 
     // --- Go (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('go') && fs.existsSync(path.join(TESTS_DIR, 'test-go/sdk_test.go')))
-      tryRun('Go (REST + GraphQL + WS + gRPC)', `cd ${path.join(TESTS_DIR, 'test-go')} && CGO_ENABLED=0 go test -v -count=1`);
+      await runLanguage('Go', 'Go (REST + GraphQL + WS + gRPC)', `cd ${path.join(TESTS_DIR, 'test-go')} && CGO_ENABLED=0 go test -v -count=1`);
 
     // --- Java (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('java') && fs.existsSync(path.join(TESTS_DIR, 'test-java/test-java.sh')))
-      tryRun('Java (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-java/test-java.sh')}`);
+      await runLanguage('Java', 'Java (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-java/test-java.sh')}`);
 
     // --- Kotlin (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('kotlin') && fs.existsSync(path.join(TESTS_DIR, 'test-kotlin/test-kotlin.sh')))
-      tryRun('Kotlin (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-kotlin/test-kotlin.sh')}`, { timeout: 300000 });
+      await runLanguage('Kotlin', 'Kotlin (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-kotlin/test-kotlin.sh')}`);
 
     // --- Ruby (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('ruby') && fs.existsSync(path.join(TESTS_DIR, 'test-ruby/test-ruby.rb')))
-      tryRun('Ruby (REST + GraphQL + WS + gRPC)', `ruby ${path.join(TESTS_DIR, 'test-ruby/test-ruby.rb')}`);
+      await runLanguage('Ruby', 'Ruby (REST + GraphQL + WS + gRPC)', `ruby ${path.join(TESTS_DIR, 'test-ruby/test-ruby.rb')}`);
 
     // --- PHP (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('php') && fs.existsSync(path.join(TESTS_DIR, 'test-php/TestPhp.php')))
-      tryRun('PHP (REST + GraphQL + WS + gRPC)', `php /tmp/phpunit.phar --testdox ${path.join(TESTS_DIR, 'test-php/TestPhp.php')}`);
+      await runLanguage('PHP', 'PHP (REST + GraphQL + WS + gRPC)', `php /tmp/phpunit.phar --fail-on-skipped --testdox ${path.join(TESTS_DIR, 'test-php/TestPhp.php')}`);
 
     // --- C# (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('csharp') && fs.existsSync(path.join(TESTS_DIR, 'test-csharp/test-csharp.sh')))
-      tryRun('C# (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-csharp/test-csharp.sh')}`, { timeout: 300000 });
+      await runLanguage('C#', 'C# (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-csharp/test-csharp.sh')}`);
 
     // --- Rust (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('rust') && fs.existsSync(path.join(TESTS_DIR, 'test-rust/test-rust.sh')))
-      tryRun('Rust (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-rust/test-rust.sh')}`, { timeout: 300000 });
+      await runLanguage('Rust', 'Rust (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-rust/test-rust.sh')}`);
 
     // --- C++ (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('cpp') && fs.existsSync(path.join(TESTS_DIR, 'test-cpp/test-cpp.sh')))
-      tryRun('C++ (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-cpp/test-cpp.sh')}`, { timeout: 300000 });
+      await runLanguage('C++', 'C++ (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-cpp/test-cpp.sh')}`);
 
     // --- C (REST + GraphQL + WS + gRPC) ---
     if (shouldTest('c') && fs.existsSync(path.join(TESTS_DIR, 'test-c/test-c.sh')))
-      tryRun('C (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-c/test-c.sh')}`, { timeout: 300000 });
+      await runLanguage('C', 'C (REST + GraphQL + WS + gRPC)', `bash ${path.join(TESTS_DIR, 'test-c/test-c.sh')}`);
 
     // --- MCP Server (always runs unless explicitly filtered) ---
     if (!testLangsEnv || shouldTest('mcp'))

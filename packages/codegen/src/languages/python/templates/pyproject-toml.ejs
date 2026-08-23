@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta:__legacy__"
 
 [project]
 name = "<%= it.packageName %>"
@@ -15,3 +15,12 @@ dependencies = [
 <% } %><% if (it.hasGrpc) { %>    "grpcio>=1.68.0",
     "protobuf>=5.0",
 <% } %>]
+<% if (it.repositoryUrl) { %>
+[project.urls]
+Repository = "<%= it.repositoryUrl %>"
+Issues = "<%= it.repositoryUrl %>/issues"
+<% } %>
+
+[tool.setuptools]
+packages = ["<%= it.packageName.replace(/[-.]/g, '_') %>", "<%= it.packageName.replace(/[-.]/g, '_') %>.resources"]
+package-dir = {"<%= it.packageName.replace(/[-.]/g, '_') %>" = "src", "<%= it.packageName.replace(/[-.]/g, '_') %>.resources" = "src/resources"}

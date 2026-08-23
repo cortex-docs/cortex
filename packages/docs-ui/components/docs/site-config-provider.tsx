@@ -31,6 +31,9 @@ export interface SiteConfig {
   primaryColor?: string;
   theme?: 'light' | 'dark' | 'system';
   home?: HomeConfig;
+  hasSources?: boolean;
+  hasDocs?: boolean;
+  hasMcp?: boolean;
 }
 
 const SiteConfigContext = createContext<SiteConfig>({
@@ -46,11 +49,7 @@ export function SiteConfigProvider({
   config: SiteConfig;
   children: React.ReactNode;
 }) {
-  return (
-    <SiteConfigContext.Provider value={config}>
-      {children}
-    </SiteConfigContext.Provider>
-  );
+  return <SiteConfigContext.Provider value={config}>{children}</SiteConfigContext.Provider>;
 }
 
 export function useSiteConfig(): SiteConfig {

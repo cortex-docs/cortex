@@ -49,10 +49,10 @@ function getFixturesDir(): string {
 }
 
 const FIXTURE_FILES: Record<string, string> = {
-  'petstore.yaml': 'petstore.yaml',
-  'chat-asyncapi.yaml': 'chat-asyncapi.yaml',
-  'petstore.graphql': 'petstore.graphql',
-  'petstore.proto': 'petstore.proto',
+  'specs/petstore.yaml': 'petstore.yaml',
+  'specs/chat-asyncapi.yaml': 'chat-asyncapi.yaml',
+  'specs/petstore.graphql': 'petstore.graphql',
+  'specs/petstore-openrpc.json': 'petstore-openrpc.json',
 };
 
 const PETSTORE_TEMPLATE = `openapi: "3.1.0"
@@ -95,7 +95,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: "#/components/schemas/CreatePetRequest"
       responses:
@@ -139,6 +139,25 @@ paths:
       responses:
         "204":
           description: Pet deleted
+  /uploads/raw:
+    post:
+      operationId: uploadFile
+      summary: Upload one raw file
+      tags: [uploads]
+      requestBody:
+        required: true
+        content:
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: The uploaded file metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
 components:
   schemas:
     Pet:
@@ -153,13 +172,41 @@ components:
           type: string
         status:
           type: string
+        profile_pic_filename:
+          type: string
+        profile_pic_size:
+          type: integer
+        profile_pic_content_type:
+          type: string
+        attachment_count:
+          type: integer
+        attachment_content_types:
+          type: array
+          items:
+            type: string
     CreatePetRequest:
       type: object
-      required: [name]
+      required: [name, species]
       properties:
         name:
           type: string
         species:
+          type: string
+        profilePic:
+          type: string
+          format: binary
+        attachments:
+          type: array
+          items:
+            type: string
+            format: binary
+    UploadResult:
+      type: object
+      required: [size, content_type]
+      properties:
+        size:
+          type: integer
+        content_type:
           type: string
   securitySchemes:
     bearerAuth:
@@ -305,41 +352,141 @@ type Subscription {
 }
 `;
 
-const GRPC_TEMPLATE = `syntax = "proto3";
-
-package petstore.v1;
-
-service PetService {
-  rpc ListPets(ListPetsRequest) returns (ListPetsResponse);
-  rpc GetPet(GetPetRequest) returns (Pet);
-  rpc CreatePet(CreatePetRequest) returns (Pet);
-  rpc DeletePet(DeletePetRequest) returns (DeletePetResponse);
-  rpc WatchPets(WatchPetsRequest) returns (stream Pet);
-}
-
-service OwnerService {
-  rpc ListOwners(ListOwnersRequest) returns (ListOwnersResponse);
-  rpc GetOwner(GetOwnerRequest) returns (Owner);
-  rpc CreateOwner(CreateOwnerRequest) returns (Owner);
-}
-
-enum Species { SPECIES_UNSPECIFIED = 0; SPECIES_DOG = 1; SPECIES_CAT = 2; SPECIES_BIRD = 3; }
-enum PetStatus { PET_STATUS_UNSPECIFIED = 0; PET_STATUS_AVAILABLE = 1; PET_STATUS_ADOPTED = 2; }
-
-message Pet { string id = 1; string name = 2; Species species = 3; optional string breed = 4; optional int32 age = 5; PetStatus status = 6; optional string owner_id = 7; string created_at = 8; string updated_at = 9; }
-message Owner { string id = 1; string name = 2; string email = 3; optional string phone = 4; string created_at = 5; }
-message ListPetsRequest { optional int32 limit = 1; optional string cursor = 2; }
-message ListPetsResponse { repeated Pet data = 1; optional string next_cursor = 2; }
-message GetPetRequest { string id = 1; }
-message CreatePetRequest { string name = 1; Species species = 2; optional string breed = 3; optional int32 age = 4; }
-message DeletePetRequest { string id = 1; }
-message DeletePetResponse {}
-message WatchPetsRequest { optional Species species_filter = 1; }
-message ListOwnersRequest { optional int32 limit = 1; }
-message ListOwnersResponse { repeated Owner data = 1; }
-message GetOwnerRequest { string id = 1; }
-message CreateOwnerRequest { string name = 1; string email = 2; optional string phone = 3; }
-`;
+const OPENRPC_TEMPLATE = JSON.stringify(
+  {
+    openrpc: '1.3.2',
+    info: {
+      title: 'Petstore OpenRPC API',
+      version: '1.0.0',
+      description: 'A sample JSON-RPC API for managing pets.',
+    },
+    servers: [{ url: 'https://api.example.com/rpc' }],
+    methods: [
+      {
+        name: 'listPets',
+        summary: 'List all pets',
+        params: [
+          {
+            name: 'limit',
+            required: false,
+            schema: { type: 'integer' },
+            description: 'Maximum number of pets to return',
+          },
+          {
+            name: 'cursor',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Pagination cursor',
+          },
+        ],
+        result: {
+          name: 'petList',
+          schema: {
+            type: 'object',
+            properties: {
+              data: { type: 'array', items: { $ref: '#/components/schemas/Pet' } },
+              nextCursor: { type: 'string' },
+            },
+          },
+        },
+        tags: [{ name: 'pets' }],
+      },
+      {
+        name: 'getPet',
+        summary: 'Get a pet by ID',
+        params: [
+          { name: 'id', required: true, schema: { type: 'string' }, description: 'The pet ID' },
+        ],
+        result: { name: 'pet', schema: { $ref: '#/components/schemas/Pet' } },
+        tags: [{ name: 'pets' }],
+      },
+      {
+        name: 'createPet',
+        summary: 'Create a new pet',
+        params: [
+          { name: 'name', required: true, schema: { type: 'string' } },
+          { name: 'species', required: true, schema: { $ref: '#/components/schemas/Species' } },
+          { name: 'breed', required: false, schema: { type: 'string' } },
+          { name: 'age', required: false, schema: { type: 'integer' } },
+        ],
+        result: { name: 'pet', schema: { $ref: '#/components/schemas/Pet' } },
+        tags: [{ name: 'pets' }],
+      },
+      {
+        name: 'deletePet',
+        summary: 'Delete a pet',
+        params: [{ name: 'id', required: true, schema: { type: 'string' } }],
+        result: { name: 'success', schema: { type: 'boolean' } },
+        tags: [{ name: 'pets' }],
+      },
+      {
+        name: 'listOwners',
+        summary: 'List all owners',
+        params: [{ name: 'limit', required: false, schema: { type: 'integer' } }],
+        result: {
+          name: 'ownerList',
+          schema: {
+            type: 'object',
+            properties: { data: { type: 'array', items: { $ref: '#/components/schemas/Owner' } } },
+          },
+        },
+        tags: [{ name: 'owners' }],
+      },
+      {
+        name: 'getOwner',
+        summary: 'Get an owner by ID',
+        params: [{ name: 'id', required: true, schema: { type: 'string' } }],
+        result: { name: 'owner', schema: { $ref: '#/components/schemas/Owner' } },
+        tags: [{ name: 'owners' }],
+      },
+      {
+        name: 'createOwner',
+        summary: 'Create a new owner',
+        params: [
+          { name: 'name', required: true, schema: { type: 'string' } },
+          { name: 'email', required: true, schema: { type: 'string' } },
+          { name: 'phone', required: false, schema: { type: 'string' } },
+        ],
+        result: { name: 'owner', schema: { $ref: '#/components/schemas/Owner' } },
+        tags: [{ name: 'owners' }],
+      },
+    ],
+    components: {
+      schemas: {
+        Pet: {
+          type: 'object',
+          required: ['id', 'name', 'species', 'status'],
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            species: { $ref: '#/components/schemas/Species' },
+            breed: { type: 'string' },
+            age: { type: 'integer' },
+            status: { $ref: '#/components/schemas/PetStatus' },
+            ownerId: { type: 'string' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        Owner: {
+          type: 'object',
+          required: ['id', 'name', 'email'],
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string' },
+            email: { type: 'string' },
+            phone: { type: 'string' },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        Species: { type: 'string', enum: ['dog', 'cat', 'bird', 'fish', 'reptile'] },
+        PetStatus: { type: 'string', enum: ['available', 'adopted', 'pending'] },
+      },
+    },
+  },
+  null,
+  2,
+);
 
 const API_REFERENCE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -361,26 +508,27 @@ const MCP_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fi
   <line x1="6" y1="18" x2="6.01" y2="18"/>
 </svg>`;
 
-const DEFAULT_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+const DEFAULT_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M10,3.5 Q12,2 14,3.5 L19,7 Q21,8 19,9 L14,12.5 Q12,14 10,12.5 L5,9 Q3,8 5,7 Z" stroke-width="1.8" fill="#ffffff" fill-opacity="0.1"/>
+  <path d="M4,12 L10,16 Q12,17.2 14,16 L20,12" stroke-width="1.8"/>
+  <path d="M4,16 L10,20 Q12,21.2 14,20 L20,16" stroke-width="1.8" stroke-opacity="0.5"/>
 </svg>`;
 
 function buildLogo(name: string, textColor: string): string {
   const escaped = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const textWidth = escaped.length * 8.5;
-  const iconSize = 24;
-  const gap = 6;
-  const totalWidth = iconSize + gap + textWidth;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${iconSize}" viewBox="0 0 ${totalWidth} ${iconSize}">
-  <g stroke="${textColor}" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-    <polyline points="7.5 4.21 12 6.81 16.5 4.21"/>
-    <polyline points="7.5 19.79 7.5 14.6 3 12"/>
-    <polyline points="21 12 16.5 14.6 16.5 19.79"/>
-    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-    <line x1="12" y1="22.08" x2="12" y2="12"/>
+  const iconWidth = 22;
+  const gap = 4;
+  const height = 21;
+  const totalWidth = Math.ceil(iconWidth + gap + textWidth);
+  const fillOpacity = textColor === '#ffffff' ? '0.1' : '0.08';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} ${height}">
+  <g stroke="${textColor}" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9,2.5 Q11,1 13,2.5 L18,5 Q20,6 18,7 L13,9.5 Q11,11 9,9.5 L4,7 Q2,6 4,5 Z" stroke-width="1.5" fill="${textColor}" fill-opacity="${fillOpacity}"/>
+    <path d="M3,10 L9,13.5 Q11,14.8 13,13.5 L19,10" stroke-width="1.5"/>
+    <path d="M3,13.5 L9,17 Q11,18.3 13,17 L19,13.5" stroke-width="1.5" stroke-opacity="0.5"/>
   </g>
-  <text x="${iconSize + gap}" y="17" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600" fill="${textColor}">${escaped}</text>
+  <text x="${iconWidth + gap}" y="15" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="600" fill="${textColor}">${escaped}</text>
 </svg>`;
 }
 
@@ -474,7 +622,7 @@ export class InitCommand extends CommandRunner {
       title: `${projectName} Docs`,
       logo_dark: './assets/logo_dark.svg',
       logo_light: './assets/logo_light.svg',
-      logoHeight: 28,
+      logoHeight: 24,
       showLogoDocsLabel: true,
       favicon: './assets/favicon.svg',
       theme: 'system',
@@ -482,23 +630,29 @@ export class InitCommand extends CommandRunner {
         {
           title: 'REST API V1',
           type: 'openapi-spec',
-          spec: './petstore.yaml',
+          spec: './specs/petstore.yaml',
           intro: './docs/REST_INTRO.md',
           languages: langConfigs,
         },
         {
           title: 'WebSocket API',
           type: 'asyncapi-spec',
-          spec: './chat-asyncapi.yaml',
+          spec: './specs/chat-asyncapi.yaml',
           languages: langConfigs,
         },
         {
           title: 'GraphQL',
           type: 'graphql-spec',
-          spec: './petstore.graphql',
+          spec: './specs/petstore.graphql',
+          endpoint: 'http://localhost:4000/graphql',
           languages: langConfigs,
         },
-        { title: 'gRPC', type: 'grpc-spec', spec: './petstore.proto', languages: langConfigs },
+        {
+          title: 'OpenRPC',
+          type: 'openrpc-spec',
+          spec: './specs/petstore-openrpc.json',
+          languages: langConfigs,
+        },
       ],
       output: { base_dir: './generated' },
       languages: [],
@@ -511,6 +665,42 @@ export class InitCommand extends CommandRunner {
       mcp: {
         package_name: `@${clean}/mcp`,
         github_repository: `github.com/${clean}/${clean}-mcp`,
+      },
+      publish: {
+        mcp: { url: 'https://registry.npmjs.org', token_env: 'NPM_TOKEN', access: 'public' },
+        registries: {
+          typescript: {
+            url: 'https://registry.npmjs.org',
+            token_env: 'NPM_TOKEN',
+            access: 'public',
+          },
+          python: { url: 'https://upload.pypi.org/legacy/', token_env: 'PYPI_TOKEN' },
+          go: {
+            url: `https://github.com/${clean}/go-sdk.git`,
+            token_env: 'GIT_TOKEN',
+            username_env: 'GIT_USERNAME',
+          },
+          java: { token_env: 'MAVEN_TOKEN', username_env: 'MAVEN_USERNAME' },
+          kotlin: { token_env: 'MAVEN_TOKEN', username_env: 'MAVEN_USERNAME' },
+          ruby: { url: 'https://rubygems.org', token_env: 'GEM_HOST_API_KEY' },
+          php: {
+            url: `https://github.com/${clean}/php-sdk.git`,
+            token_env: 'GIT_TOKEN',
+            username_env: 'GIT_USERNAME',
+          },
+          csharp: { url: 'https://api.nuget.org/v3/index.json', token_env: 'NUGET_API_KEY' },
+          rust: { token_env: 'CARGO_REGISTRY_TOKEN' },
+          cpp: {
+            name: 'company-conan',
+            token_env: 'CONAN_PASSWORD',
+            username_env: 'CONAN_LOGIN_USERNAME',
+          },
+          c: {
+            name: 'company-conan',
+            token_env: 'CONAN_PASSWORD',
+            username_env: 'CONAN_LOGIN_USERNAME',
+          },
+        },
       },
     };
 
@@ -565,10 +755,14 @@ export class InitCommand extends CommandRunner {
       sources: config.sources,
       output: config.output,
       mcp: config.mcp,
+      publish: config.publish,
     };
     const configContent = `# Cortex Configuration\n\n${yaml.dump(serializable, { lineWidth: 120, noRefs: true }).replace(/^theme: system$/m, 'theme: system # system, light, dark')}`;
     fs.writeFileSync(configPath, configContent, 'utf-8');
     this.logger.success('Created cortex.config.yml');
+
+    const specsDir = path.join(process.cwd(), 'specs');
+    fs.mkdirSync(specsDir, { recursive: true });
 
     const fixturesDir = getFixturesDir();
     for (const [target, source] of Object.entries(FIXTURE_FILES)) {
@@ -579,10 +773,10 @@ export class InitCommand extends CommandRunner {
           fs.copyFileSync(fixturePath, filePath);
         } else {
           const fallback: Record<string, string> = {
-            'petstore.yaml': PETSTORE_TEMPLATE,
-            'chat-asyncapi.yaml': ASYNCAPI_TEMPLATE,
-            'petstore.graphql': GRAPHQL_TEMPLATE,
-            'petstore.proto': GRPC_TEMPLATE,
+            'specs/petstore.yaml': PETSTORE_TEMPLATE,
+            'specs/chat-asyncapi.yaml': ASYNCAPI_TEMPLATE,
+            'specs/petstore.graphql': GRAPHQL_TEMPLATE,
+            'specs/petstore-openrpc.json': OPENRPC_TEMPLATE,
           };
           fs.writeFileSync(filePath, fallback[target] ?? '', 'utf-8');
         }
@@ -591,7 +785,7 @@ export class InitCommand extends CommandRunner {
     }
 
     let baseUrl = 'https://api.example.com';
-    const petstorePath = path.join(process.cwd(), 'petstore.yaml');
+    const petstorePath = path.join(process.cwd(), 'specs', 'petstore.yaml');
     if (fs.existsSync(petstorePath)) {
       const specContent = fs.readFileSync(petstorePath, 'utf-8');
       const urlMatch = specContent.match(/url:\s*(https?:\/\/[^\s]+)/);
@@ -611,9 +805,17 @@ export class InitCommand extends CommandRunner {
 
     const assetsDir = path.join(process.cwd(), 'assets');
     fs.mkdirSync(assetsDir, { recursive: true });
-    fs.writeFileSync(path.join(assetsDir, 'logo_dark.svg'), buildLogo(projectName, '#ffffff'), 'utf-8');
+    fs.writeFileSync(
+      path.join(assetsDir, 'logo_dark.svg'),
+      buildLogo(projectName, '#ffffff'),
+      'utf-8',
+    );
     this.logger.success('Created assets/logo_dark.svg');
-    fs.writeFileSync(path.join(assetsDir, 'logo_light.svg'), buildLogo(projectName, '#0a0a0a'), 'utf-8');
+    fs.writeFileSync(
+      path.join(assetsDir, 'logo_light.svg'),
+      buildLogo(projectName, '#0a0a0a'),
+      'utf-8',
+    );
     this.logger.success('Created assets/logo_light.svg');
     fs.writeFileSync(path.join(assetsDir, 'favicon.svg'), DEFAULT_FAVICON, 'utf-8');
     this.logger.success('Created assets/favicon.svg');
@@ -638,7 +840,7 @@ export class InitCommand extends CommandRunner {
     this.logger.list([
       'cortex generate                   — generate SDKs and MCP server from the sample petstore spec',
       'cortex docs serve                 — preview API documentation',
-      'Edit cortex.config.yml to add your own API specs — see docs at https://cortex.dev/docs/configuration',
+      'Edit cortex.config.yml to add your own API specs — see docs at https://docs.cortexdocs.dev/configuration',
     ]);
   }
 }

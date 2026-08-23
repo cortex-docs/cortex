@@ -1,0 +1,27 @@
+from conan import ConanFile
+from conan.tools.files import copy
+import os
+
+
+class CortexCSdk(ConanFile):
+    name = "<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase() %>-c"
+    version = "<%= it.version %>"
+    package_type = "header-library"
+    license = "MIT"
+    description = "C SDK for <%= it.title %>"
+<% if (it.repositoryUrl) { %>    homepage = "<%= it.repositoryUrl %>"
+    url = "<%= it.repositoryUrl %>"
+<% } %>    
+    exports_sources = "src/*", "src/**/*", ".cortex-package.json"
+    no_copy_source = True
+
+    def requirements(self):
+        self.requires("cjson/1.7.18")
+
+    def package(self):
+        copy(self, "*.h", src=os.path.join(self.source_folder, "src"), dst=os.path.join(self.package_folder, "include"))
+        copy(self, ".cortex-package.json", src=self.source_folder, dst=self.package_folder)
+
+    def package_info(self):
+        self.cpp_info.includedirs = ["include"]
+        self.cpp_info.system_libs = ["curl", "pthread"]

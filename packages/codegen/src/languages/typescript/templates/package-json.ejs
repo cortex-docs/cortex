@@ -6,9 +6,19 @@
   main: './dist/index.js',
   types: './dist/index.d.ts',
   exports: { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
-  scripts: { build: 'tsc', clean: 'rm -rf dist' },
+  files: ['dist', 'README.md', '.cortex-package.json'],
+  scripts: { build: 'tsc', clean: 'rm -rf dist', prepublishOnly: 'npm run build' },
   devDependencies: { typescript: '^5.8.0' },
   engines: { node: '>=18.0.0' },
 };
-if (it.hasGrpc) { pkg.dependencies = { '@grpc/grpc-js': '^1.12.0', '@grpc/proto-loader': '^0.7.0' }; }
+pkg.dependencies = {};
+if (it.repositoryUrl) {
+  pkg.repository = { type: 'git', url: `git+${it.gitRepositoryUrl}` };
+  pkg.homepage = it.repositoryUrl;
+  pkg.bugs = { url: it.repositoryUrl + '/issues' };
+}
+if (it.hasGrpc) { Object.assign(pkg.dependencies, { '@grpc/grpc-js': '^1.12.0', '@grpc/proto-loader': '^0.7.0' }); }
+if (it.hasGql) { pkg.dependencies['graphql-ws'] = '^6.0.0'; }
+if (it.hasWs || it.hasGql) { pkg.dependencies['ws'] = '^8.18.0'; }
+if (Object.keys(pkg.dependencies).length === 0) delete pkg.dependencies;
 %><%= JSON.stringify(pkg, null, 2) %>

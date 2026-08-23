@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: 'docs-ui.spec.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -18,9 +19,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run --workspace=@cortex/docs-ui dev',
+    command: 'cross-env PORT=3100 npm run --workspace=@cortex/docs-ui dev',
     url: 'http://localhost:3100',
     reuseExistingServer: !process.env.CI,
-    timeout: 30000,
+    timeout: 120000,
   },
 });

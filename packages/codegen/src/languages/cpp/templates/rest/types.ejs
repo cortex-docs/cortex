@@ -9,6 +9,12 @@
 
 namespace sdk {
 
+struct FileUpload {
+  std::string filename;
+  std::string data;
+  std::string content_type = "application/octet-stream";
+};
+
 <% for (const schema of it.schemas) { %>
 <% if (schema.isEnum) { %>
 enum class <%= schema.className %> {
@@ -37,7 +43,9 @@ struct <%= schema.className %> {
 inline void to_json(nlohmann::json& j, const <%= schema.className %>& v) {
   j = nlohmann::json{};
 <% for (const prop of schema.properties) { %>
-<% if (prop.required) { %>
+<% if (prop.isFile || prop.isFileArray) { %>
+  /* Multipart file fields are not read from JSON responses. */
+<% } else if (prop.required) { %>
   j["<%= prop.originalName %>"] = v.<%= prop.name %>;
 <% } else { %>
   if (v.<%= prop.name %>.has_value()) j["<%= prop.originalName %>"] = v.<%= prop.name %>.value();
@@ -47,7 +55,9 @@ inline void to_json(nlohmann::json& j, const <%= schema.className %>& v) {
 
 inline void from_json(const nlohmann::json& j, <%= schema.className %>& v) {
 <% for (const prop of schema.properties) { %>
-<% if (prop.required) { %>
+<% if (prop.isFile || prop.isFileArray) { %>
+  /* Multipart file fields are not read from JSON responses. */
+<% } else if (prop.required) { %>
   if (j.contains("<%= prop.originalName %>")) j.at("<%= prop.originalName %>").get_to(v.<%= prop.name %>);
 <% } else { %>
   if (j.contains("<%= prop.originalName %>") && !j["<%= prop.originalName %>"].is_null()) v.<%= prop.name %> = j["<%= prop.originalName %>"].get<<%= prop.type %>>();

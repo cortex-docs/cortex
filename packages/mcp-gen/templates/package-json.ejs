@@ -1,10 +1,20 @@
-<%= JSON.stringify({
-  name: it.serverName,
-  version: '0.1.0',
+<% const pkg = {
+  name: it.packageName,
+  version: it.version,
   description: `MCP server for ${it.specTitle}`,
-  main: './dist/main.js',
-  bin: { [it.serverName]: './dist/main.js' },
-  scripts: { build: 'tsc', start: 'node dist/main.js', dev: 'tsx src/main.ts' },
+  main: './dist/server.js',
+  types: './dist/server.d.ts',
+  exports: { '.': { types: './dist/server.d.ts', require: './dist/server.js', default: './dist/server.js' } },
+  bin: { [it.serverName]: 'dist/main.js' },
+  engines: { node: '>=20.0.0' },
+  files: ['dist', 'specs', 'README.md', '.cortex-package.json'],
+  scripts: { build: 'tsc', prepublishOnly: 'npm run build', start: 'node dist/main.js', dev: 'tsx src/main.ts' },
   dependencies: { '@modelcontextprotocol/sdk': '^1.12.0', zod: '^3.25.0' },
   devDependencies: { '@types/node': '^22.0.0', tsx: '^4.19.0', typescript: '^5.8.0' },
-}, null, 2) %>
+};
+if (it.repositoryUrl) {
+  pkg.repository = { type: 'git', url: `git+${it.gitRepositoryUrl}` };
+  pkg.homepage = it.repositoryUrl;
+  pkg.bugs = { url: it.repositoryUrl + '/issues' };
+}
+%><%= JSON.stringify(pkg, null, 2) %>

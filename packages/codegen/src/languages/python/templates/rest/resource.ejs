@@ -21,6 +21,18 @@ def _dump_body(body: Any) -> Any:
     return body
 
 
+def _dump_multipart_body(body: Any) -> dict[str, Any]:
+    if isinstance(body, BaseModel):
+        return {
+            field.alias or name: getattr(body, name)
+            for name, field in type(body).model_fields.items()
+            if getattr(body, name) is not None
+        }
+    if isinstance(body, Mapping):
+        return dict(body)
+    raise TypeError("multipart body must be a Pydantic model or mapping")
+
+
 class <%= r.className %>:
     def __init__(self, client: <%= clientClass %>) -> None:
         self._client = client
@@ -33,7 +45,7 @@ class <%= r.className %>:
 <% if (op.summary) { %>
         """<%= op.summary %>"""
 <% } %>
-        data = self._client.request("<%= op.method %>", f"<%= pathExpr %>"<% if (queryDict || op.hasBody) { %>, <% if (queryDict) { %>query=<%= queryDict %><% } %><% if (op.hasBody) { %><% if (queryDict) { %>, <% } %>body=_dump_body(<% if (isSdkType(op.bodyType)) { %>Types.<%= op.bodyType %>.model_validate(body)<% } else { %>body<% } %>)<% } %><% } %>)
+        data = self._client.request("<%= op.method %>", f"<%= pathExpr %>"<% if (queryDict || op.hasBody) { %>, <% if (queryDict) { %>query=<%= queryDict %><% } %><% if (op.hasBody) { %><% if (queryDict) { %>, <% } %>body=<% if (op.isRawBinary) { %><% if (isSdkType(op.bodyType)) { %>Types.<%= op.bodyType %>.model_validate(body)<% } else { %>body<% } %><% } else { %><%= op.isMultipart ? '_dump_multipart_body' : '_dump_body' %>(<% if (isSdkType(op.bodyType)) { %>Types.<%= op.bodyType %>.model_validate(body)<% } else { %>body<% } %>)<% } %><% if (op.isMultipart) { %>, multipart=True<% } %><% if (op.isRawBinary) { %>, raw_file=True, raw_content_type="<%= op.contentType %>"<% } %><% } %><% } %>)
 <% if (op.responseType === 'None') { -%>
         return None
 <% } else if (isSdkType(op.responseType)) { -%>

@@ -1,4 +1,6 @@
-The following third-party packages are used in this project:
+This file records a repository-level attribution notice. It is not a complete dependency inventory.
+
+The package manifests and `package-lock.json` contain the complete dependency inventory. Each installed package contains its own license notice.
 
 ================================================================================
 @scalar/api-reference-react
@@ -9,14 +11,4 @@ Copyright (c) Scalar
 Used in @cortex/docs-ui for rendering OpenAPI specification references.
 ================================================================================
 
-================================================================================
-@asyncapi/generator + @asyncapi/nodejs-ws-template
-https://github.com/asyncapi/generator
-License: Apache-2.0
-Copyright (c) AsyncAPI Initiative
-
-Used in @cortex/codegen for generating WebSocket server code from AsyncAPI specs.
-================================================================================
-
-Full license texts for all dependencies are available in their respective
-node_modules/<package>/LICENSE files.
+License texts for installed dependencies are available in their respective `node_modules/<package>/LICENSE` files.

@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <time.h>
 #include "cjson/cJSON.h"
 #include "ws-types.h"
 
@@ -25,6 +26,13 @@ typedef struct {
   char* url;
   int reconnect;
   int reconnect_interval_ms;
+  int max_reconnect_attempts;
+  int heartbeat_interval_ms;
+  int heartbeat_timeout_ms;
+  const char* heartbeat_message;
+  const char* heartbeat_response;
+  const char* server_heartbeat;
+  const char* server_response;
 } ws_client_options_t;
 
 typedef struct {
@@ -33,13 +41,44 @@ typedef struct {
   char path[512];
   int sock;
   volatile int connected;
+  int reconnect_enabled;
   volatile int should_reconnect;
+  volatile int running;
   int reconnect_interval_ms;
+  int max_reconnect_attempts;
+  int heartbeat_interval_ms;
+  int heartbeat_timeout_ms;
+  const char* heartbeat_message;
+  const char* heartbeat_response;
+  const char* server_heartbeat;
+  const char* server_response;
+  volatile int64_t last_activity_ms;
   ws_handler_entry_t handlers[WS_MAX_HANDLERS];
   int handler_count;
   pthread_mutex_t mtx;
+  pthread_mutex_t send_mtx;
   pthread_t reader_thread;
+  pthread_t heartbeat_thread;
+  int reader_started;
+  int heartbeat_started;
 } ws_client_t;
+
+static inline int64_t ws_now_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static inline int ws_heartbeat_matches(const char* actual, const char* expected) {
+  if (!actual || !expected) return 0;
+  if (strcmp(actual, expected) == 0) return 1;
+  cJSON* left = cJSON_Parse(actual);
+  cJSON* right = cJSON_Parse(expected);
+  int equal = left && right && cJSON_Compare(left, right, 1);
+  if (left) cJSON_Delete(left);
+  if (right) cJSON_Delete(right);
+  return equal;
+}
 
 static inline void ws_frame_send(int sock, const char* data) {
   size_t len = strlen(data);
@@ -64,13 +103,14 @@ static inline void ws_frame_send(int sock, const char* data) {
   memcpy(buf, frame, hdr_len);
   memcpy(buf + hdr_len, mask, 4);
   for (size_t i = 0; i < len; i++) buf[hdr_len + 4 + i] = data[i] ^ mask[i % 4];
-  send(sock, buf, hdr_len + 4 + len, 0);
+  send(sock, buf, hdr_len + 4 + len, MSG_NOSIGNAL);
   free(buf);
 }
 
 static inline char* ws_frame_recv(int sock) {
   unsigned char header[2];
   if (recv(sock, header, 2, MSG_WAITALL) != 2) return NULL;
+  unsigned char opcode = header[0] & 0x0F;
   uint64_t len = header[1] & 0x7F;
   int masked = header[1] & 0x80;
   if (len == 126) {
@@ -93,37 +133,89 @@ static inline char* ws_frame_recv(int sock) {
     received += r;
   }
   if (masked) for (size_t i = 0; i < len; ++i) data[i] ^= mask[i % 4];
+  if (opcode == 0x8) { free(data); return NULL; }
   data[len] = '\0';
   return data;
 }
 
+static inline int ws_client_connect_socket(ws_client_t* ws);
+
 static void* ws_reader_loop(void* arg) {
   ws_client_t* ws = (ws_client_t*)arg;
-  while (ws->connected) {
-    char* msg = ws_frame_recv(ws->sock);
-    if (!msg) { ws->connected = 0; break; }
-    cJSON* data = cJSON_Parse(msg);
-    free(msg);
-    if (!data) continue;
-
-    char channel[128] = "";
-    cJSON* ch = cJSON_GetObjectItem(data, "channel");
-    if (!ch) ch = cJSON_GetObjectItem(data, "type");
-    if (!ch) ch = cJSON_GetObjectItem(data, "event");
-    if (ch && cJSON_IsString(ch)) strncpy(channel, ch->valuestring, sizeof(channel) - 1);
-
-    cJSON* payload = cJSON_GetObjectItem(data, "payload");
-    if (!payload) payload = cJSON_GetObjectItem(data, "data");
-    if (!payload) payload = data;
-
-    pthread_mutex_lock(&ws->mtx);
-    for (int i = 0; i < ws->handler_count; i++) {
-      if (strcmp(ws->handlers[i].channel, channel) == 0) {
-        ws->handlers[i].handler(payload);
+  int reconnect_attempts = 0;
+  while (ws->running) {
+    while (ws->connected && ws->running) {
+      char* msg = ws_frame_recv(ws->sock);
+      if (!msg) { ws->connected = 0; break; }
+      if (ws_heartbeat_matches(msg, ws->server_heartbeat)) {
+        ws->last_activity_ms = ws_now_ms();
+        if (ws->server_response) {
+          pthread_mutex_lock(&ws->send_mtx);
+          ws_frame_send(ws->sock, ws->server_response);
+          pthread_mutex_unlock(&ws->send_mtx);
+        }
+        free(msg);
+        continue;
       }
+      if (!ws->heartbeat_response || ws_heartbeat_matches(msg, ws->heartbeat_response)) {
+        ws->last_activity_ms = ws_now_ms();
+        if (ws->heartbeat_response) { free(msg); continue; }
+      }
+      cJSON* data = cJSON_Parse(msg);
+      free(msg);
+      if (!data) continue;
+
+      char channel[128] = "";
+      cJSON* ch = cJSON_GetObjectItem(data, "channel");
+      if (!ch) ch = cJSON_GetObjectItem(data, "type");
+      if (!ch) ch = cJSON_GetObjectItem(data, "event");
+      if (ch && cJSON_IsString(ch)) strncpy(channel, ch->valuestring, sizeof(channel) - 1);
+      cJSON* payload = cJSON_GetObjectItem(data, "payload");
+      if (!payload) payload = cJSON_GetObjectItem(data, "data");
+      if (!payload) payload = data;
+
+      pthread_mutex_lock(&ws->mtx);
+      for (int i = 0; i < ws->handler_count; i++) {
+        if (strcmp(ws->handlers[i].channel, channel) == 0) ws->handlers[i].handler(payload);
+      }
+      pthread_mutex_unlock(&ws->mtx);
+      cJSON_Delete(data);
     }
-    pthread_mutex_unlock(&ws->mtx);
-    cJSON_Delete(data);
+
+    if (!ws->running || !ws->should_reconnect) break;
+    if (ws->sock >= 0) { close(ws->sock); ws->sock = -1; }
+    int reconnected = 0;
+    while (ws->running && reconnect_attempts < ws->max_reconnect_attempts) {
+      reconnect_attempts++;
+      usleep((useconds_t)ws->reconnect_interval_ms * 1000);
+      if (!ws->running) break;
+      if (ws_client_connect_socket(ws) == 0) { reconnected = 1; reconnect_attempts = 0; break; }
+    }
+    if (!reconnected) break;
+  }
+  return NULL;
+}
+
+static void* ws_heartbeat_loop(void* arg) {
+  ws_client_t* ws = (ws_client_t*)arg;
+  while (ws->running) {
+    if (ws->heartbeat_interval_ms <= 0 || !ws->heartbeat_message) break;
+    int waited = 0;
+    while (ws->running && waited < ws->heartbeat_interval_ms) {
+      int slice = ws->heartbeat_interval_ms - waited;
+      if (slice > 100) slice = 100;
+      usleep((useconds_t)slice * 1000);
+      waited += slice;
+    }
+    if (!ws->running || !ws->connected) continue;
+    int64_t elapsed = ws_now_ms() - ws->last_activity_ms;
+    if (ws->heartbeat_timeout_ms > 0 && elapsed > ws->heartbeat_interval_ms + ws->heartbeat_timeout_ms) {
+      shutdown(ws->sock, SHUT_RDWR);
+      continue;
+    }
+    pthread_mutex_lock(&ws->send_mtx);
+    ws_frame_send(ws->sock, ws->heartbeat_message);
+    pthread_mutex_unlock(&ws->send_mtx);
   }
   return NULL;
 }
@@ -131,9 +223,20 @@ static void* ws_reader_loop(void* arg) {
 static inline void ws_client_init(ws_client_t* ws, const ws_client_options_t* opts) {
   memset(ws, 0, sizeof(*ws));
   ws->sock = -1;
+  ws->reconnect_enabled = opts->reconnect;
   ws->should_reconnect = opts->reconnect;
+  ws->running = 0;
   ws->reconnect_interval_ms = opts->reconnect_interval_ms > 0 ? opts->reconnect_interval_ms : 3000;
+  ws->max_reconnect_attempts = opts->max_reconnect_attempts > 0 ? opts->max_reconnect_attempts : 10;
+  ws->heartbeat_interval_ms = opts->heartbeat_interval_ms < 0 ? 0
+    : (opts->heartbeat_interval_ms > 0 ? opts->heartbeat_interval_ms : <%= it.heartbeat.intervalMs %>);
+  ws->heartbeat_timeout_ms = opts->heartbeat_timeout_ms > 0 ? opts->heartbeat_timeout_ms : <%= it.heartbeat.timeoutMs %>;
+  ws->heartbeat_message = opts->heartbeat_message ? opts->heartbeat_message : <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>NULL<% } %>;
+  ws->heartbeat_response = opts->heartbeat_response ? opts->heartbeat_response : <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>NULL<% } %>;
+  ws->server_heartbeat = opts->server_heartbeat ? opts->server_heartbeat : <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>NULL<% } %>;
+  ws->server_response = opts->server_response ? opts->server_response : <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>NULL<% } %>;
   pthread_mutex_init(&ws->mtx, NULL);
+  pthread_mutex_init(&ws->send_mtx, NULL);
 
   char* url = (char*)(opts->url ? opts->url : "ws://localhost:8080");
   if (strncmp(url, "ws://", 5) == 0) url += 5;
@@ -169,7 +272,7 @@ static inline void ws_client_init(ws_client_t* ws, const ws_client_options_t* op
   }
 }
 
-static inline int ws_client_connect(ws_client_t* ws) {
+static inline int ws_client_connect_socket(ws_client_t* ws) {
   struct addrinfo hints = {0}, *res;
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
@@ -193,23 +296,39 @@ static inline int ws_client_connect(ws_client_t* ws) {
     "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
     "Sec-WebSocket-Version: 13\r\n"
     "\r\n", ws->path, ws->host, ws->port);
-  send(ws->sock, handshake, strlen(handshake), 0);
+  send(ws->sock, handshake, strlen(handshake), MSG_NOSIGNAL);
 
   char buf[4096];
   int n = recv(ws->sock, buf, sizeof(buf) - 1, 0);
   if (n <= 0) { close(ws->sock); ws->sock = -1; return -1; }
 
   ws->connected = 1;
+  ws->last_activity_ms = ws_now_ms();
+  return 0;
+}
+
+static inline int ws_client_connect(ws_client_t* ws) {
+  ws->should_reconnect = ws->reconnect_enabled;
+  ws->running = 1;
+  if (ws_client_connect_socket(ws) != 0) { ws->running = 0; return -1; }
   pthread_create(&ws->reader_thread, NULL, ws_reader_loop, ws);
+  ws->reader_started = 1;
+  if (ws->heartbeat_interval_ms > 0 && ws->heartbeat_message) {
+    pthread_create(&ws->heartbeat_thread, NULL, ws_heartbeat_loop, ws);
+    ws->heartbeat_started = 1;
+  }
   return 0;
 }
 
 static inline void ws_client_disconnect(ws_client_t* ws) {
   ws->should_reconnect = 0;
+  ws->running = 0;
   ws->connected = 0;
-  if (ws->sock >= 0) { close(ws->sock); ws->sock = -1; }
-  pthread_join(ws->reader_thread, NULL);
+  if (ws->sock >= 0) { shutdown(ws->sock, SHUT_RDWR); close(ws->sock); ws->sock = -1; }
+  if (ws->reader_started) pthread_join(ws->reader_thread, NULL);
+  if (ws->heartbeat_started) pthread_join(ws->heartbeat_thread, NULL);
   pthread_mutex_destroy(&ws->mtx);
+  pthread_mutex_destroy(&ws->send_mtx);
 }
 
 static inline void ws_client_send(ws_client_t* ws, const char* channel, const cJSON* payload) {
@@ -218,7 +337,9 @@ static inline void ws_client_send(ws_client_t* ws, const char* channel, const cJ
   cJSON_AddStringToObject(msg, "channel", channel);
   cJSON_AddItemToObject(msg, "payload", cJSON_Duplicate(payload, 1));
   char* str = cJSON_PrintUnformatted(msg);
+  pthread_mutex_lock(&ws->send_mtx);
   ws_frame_send(ws->sock, str);
+  pthread_mutex_unlock(&ws->send_mtx);
   free(str);
   cJSON_Delete(msg);
 }

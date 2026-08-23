@@ -2,10 +2,13 @@
 package <%= pkgName %>
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -18,23 +21,57 @@ type <%= it.clientClass %> struct {
 	conn              *websocket.Conn
 	handlers          map[string][]wsMessageHandler
 	mu                sync.RWMutex
+	writeMu           sync.Mutex
 	reconnect         bool
 	reconnectInterval time.Duration
 	maxAttempts       int
 	attempts          int
+	heartbeatInterval time.Duration
+	heartbeatTimeout  time.Duration
+	heartbeatMessage  []byte
+	heartbeatResponse []byte
+	serverHeartbeat   []byte
+	serverResponse    []byte
+	lastActivity      int64
+	manualClose       bool
 }
 
-func New<%= it.clientClass %>(serverURL string) *<%= it.clientClass %> {
+type <%= it.clientClass %>Option func(*<%= it.clientClass %>)
+
+func WithWsReconnect(enabled bool) <%= it.clientClass %>Option { return func(c *<%= it.clientClass %>) { c.reconnect = enabled } }
+func WithWsReconnectInterval(interval time.Duration) <%= it.clientClass %>Option { return func(c *<%= it.clientClass %>) { c.reconnectInterval = interval } }
+func WithWsMaxReconnectAttempts(attempts int) <%= it.clientClass %>Option { return func(c *<%= it.clientClass %>) { c.maxAttempts = attempts } }
+func WithWsHeartbeat(interval, timeout time.Duration) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.heartbeatInterval = interval; c.heartbeatTimeout = timeout }
+}
+func WithWsHeartbeatMessages(clientMessage, expectedResponse, serverMessage, clientResponse []byte) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) {
+		c.heartbeatMessage = clientMessage
+		c.heartbeatResponse = expectedResponse
+		c.serverHeartbeat = serverMessage
+		c.serverResponse = clientResponse
+	}
+}
+
+func New<%= it.clientClass %>(serverURL string, opts ...<%= it.clientClass %>Option) *<%= it.clientClass %> {
 	if serverURL == "" {
 		serverURL = "<%= it.serverUrl %>"
 	}
-	return &<%= it.clientClass %>{
+	client := &<%= it.clientClass %>{
 		url:               serverURL,
 		handlers:          make(map[string][]wsMessageHandler),
 		reconnect:         true,
 		reconnectInterval: 3 * time.Second,
 		maxAttempts:       10,
+		heartbeatInterval: <%= it.heartbeat.intervalMs %> * time.Millisecond,
+		heartbeatTimeout:  <%= it.heartbeat.timeoutMs %> * time.Millisecond,
+		heartbeatMessage:  []byte(<% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>""<% } %>),
+		heartbeatResponse: []byte(<% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>""<% } %>),
+		serverHeartbeat:   []byte(<% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>""<% } %>),
+		serverResponse:    []byte(<% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>""<% } %>),
 	}
+	for _, opt := range opts { opt(client) }
+	return client
 }
 
 func (c *<%= it.clientClass %>) Connect() error {
@@ -44,21 +81,50 @@ func (c *<%= it.clientClass %>) Connect() error {
 		return fmt.Errorf("ws connect: %w", err)
 	}
 	c.conn = conn
+	c.manualClose = false
 	c.attempts = 0
+	atomic.StoreInt64(&c.lastActivity, time.Now().UnixNano())
+	if c.heartbeatInterval > 0 && len(c.heartbeatMessage) > 0 {
+		go c.heartbeat(conn)
+	}
 	go c.listen()
 	return nil
 }
 
 func (c *<%= it.clientClass %>) Disconnect() {
-	c.reconnect = false
+	c.manualClose = true
 	if c.conn != nil {
 		c.conn.Close()
+	}
+}
+
+func (c *<%= it.clientClass %>) heartbeat(conn *websocket.Conn) {
+	ticker := time.NewTicker(c.heartbeatInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if c.manualClose || c.conn != conn { return }
+		if c.heartbeatTimeout > 0 {
+			lastActivity := time.Unix(0, atomic.LoadInt64(&c.lastActivity))
+			if time.Since(lastActivity) > c.heartbeatInterval+c.heartbeatTimeout {
+				_ = conn.Close()
+				return
+			}
+		}
+		c.writeMu.Lock()
+		err := conn.WriteMessage(websocket.TextMessage, c.heartbeatMessage)
+		c.writeMu.Unlock()
+		if err != nil {
+			_ = conn.Close()
+			return
+		}
 	}
 }
 
 func (c *<%= it.clientClass %>) Send(channel string, payload interface{}) error {
 	msg := map[string]interface{}{"channel": channel, "payload": payload}
 	data, _ := json.Marshal(msg)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return c.conn.WriteMessage(websocket.TextMessage, data)
 }
 
@@ -83,12 +149,21 @@ func (c *<%= it.clientClass %>) listen() {
 	for {
 		_, raw, err := c.conn.ReadMessage()
 		if err != nil {
-			if c.reconnect && c.attempts < c.maxAttempts {
-				c.attempts++
-				time.Sleep(c.reconnectInterval)
-				c.Connect()
-			}
+			if c.reconnect && !c.manualClose { go c.reconnectLoop() }
 			return
+		}
+		if heartbeatMatches(raw, c.serverHeartbeat) {
+			atomic.StoreInt64(&c.lastActivity, time.Now().UnixNano())
+			if len(c.serverResponse) > 0 {
+				c.writeMu.Lock()
+				_ = c.conn.WriteMessage(websocket.TextMessage, c.serverResponse)
+				c.writeMu.Unlock()
+			}
+			continue
+		}
+		if len(c.heartbeatResponse) == 0 || heartbeatMatches(raw, c.heartbeatResponse) {
+			atomic.StoreInt64(&c.lastActivity, time.Now().UnixNano())
+			if len(c.heartbeatResponse) > 0 { continue }
 		}
 		var data map[string]interface{}
 		if json.Unmarshal(raw, &data) != nil {
@@ -106,6 +181,24 @@ func (c *<%= it.clientClass %>) listen() {
 			h(payload)
 		}
 		c.mu.RUnlock()
+	}
+}
+
+func heartbeatMatches(raw, expected []byte) bool {
+	if len(expected) == 0 { return false }
+	if bytes.Equal(raw, expected) { return true }
+	var left interface{}
+	var right interface{}
+	if json.Unmarshal(raw, &left) != nil || json.Unmarshal(expected, &right) != nil { return false }
+	return reflect.DeepEqual(left, right)
+}
+
+func (c *<%= it.clientClass %>) reconnectLoop() {
+	for c.reconnect && !c.manualClose && c.attempts < c.maxAttempts {
+		c.attempts++
+		time.Sleep(c.reconnectInterval)
+		if c.manualClose { return }
+		if err := c.Connect(); err == nil { return }
 	}
 }
 

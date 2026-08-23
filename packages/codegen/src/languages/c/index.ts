@@ -15,13 +15,14 @@ export class CPlugin extends TemplateBasedPlugin {
       integer: 'int64_t',
       number: 'double',
       boolean: 'int',
-      array: (item) => `cJSON*`,
+      array: (item) => (item === 'sdk_file_upload_t' ? 'sdk_file_upload_list_t' : 'cJSON*'),
       object: 'cJSON*',
-      map: (value) => `cJSON*`,
+      map: () => `cJSON*`,
       any: 'cJSON*',
       void: 'void',
       datetime: 'char*',
-      nullable: (type) => type.endsWith('*') ? type : `${type}`,
+      file: 'sdk_file_upload_t',
+      nullable: (type) => (type.endsWith('*') ? type : `${type}`),
     },
     naming: {
       className: toPascalCase,
@@ -33,6 +34,7 @@ export class CPlugin extends TemplateBasedPlugin {
     },
     packageTemplates: [
       { template: 'makefile', path: 'Makefile' },
+      { template: 'conanfile', path: 'conanfile.py' },
     ],
     packageFiles: () => [],
   };

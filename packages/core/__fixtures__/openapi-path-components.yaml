@@ -1,0 +1,66 @@
+openapi: 3.1.0
+info:
+  title: Component API
+  version: 1.0.0
+paths:
+  /pets/{petId}:
+    parameters:
+      - $ref: '#/components/parameters/PetId'
+      - $ref: '#/components/parameters/Tenant'
+    post:
+      operationId: updatePet
+      parameters:
+        - name: tenant
+          in: header
+          required: true
+          description: Operation tenant
+          schema:
+            type: string
+      requestBody:
+        $ref: '#/components/requestBodies/PetInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/PetResponse'
+components:
+  parameters:
+    PetId:
+      name: petId
+      in: path
+      required: true
+      schema:
+        type: string
+    Tenant:
+      name: tenant
+      in: header
+      required: false
+      description: Path tenant
+      schema:
+        type: string
+  requestBodies:
+    PetInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PetInput'
+  responses:
+    PetResponse:
+      description: Updated pet
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Pet'
+  schemas:
+    PetInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    Pet:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string

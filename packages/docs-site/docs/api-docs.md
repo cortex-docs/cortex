@@ -1,53 +1,68 @@
-
 # Documentation
 
-Cortex generates interactive documentation covering your entire API surface — REST endpoints, WebSocket channels, and MCP tools — all in one unified viewer.
+Cortex Docs creates one documentation site from your configured API sources and Markdown pages.
 
-## Serve Locally
+The site can show these sections:
+
+- An interactive OpenAPI reference
+- AsyncAPI channels and messages
+- GraphQL operations and types
+- gRPC services and messages
+- OpenRPC methods
+- Generated SDK installation and usage
+- Generated MCP tools and client setup
+- Project Markdown pages
+
+## Preview the site
+
+Run this command in the directory that contains `cortex.config.yml`:
 
 ```bash
 cortex docs serve
 ```
 
-This starts a local server on `http://localhost:3100` with three sections:
+The default address is `http://localhost:3012`. Use `--port` to select another port.
 
-- **API Reference** — Interactive REST endpoint documentation with request builder and client library examples
-- **WebSockets** — AsyncAPI channel viewer with subscribe/publish indicators and message schemas
-- **MCP** — Complete tool listing for AI agents, showing parameters, types, and a ready-to-paste config snippet
+The development server watches the configuration, specifications, Markdown files, and custom templates. It regenerates SDK output after a relevant change.
 
-## Build Static Docs
+## Create a production build
 
 ```bash
-cortex docs build --output ./docs
+cortex docs build --output .cortex/docs
 ```
 
-Produces a static HTML site you can deploy to any hosting provider.
+This command creates a self-contained Node.js server. The result is not a static HTML export.
 
-## Configuration
+Start the result with this command:
+
+```bash
+NODE_ENV=production cortex docs start --output .cortex/docs --port 3000
+```
+
+Deploy the output directory to a service that can run Node.js. Keep the configuration file and all referenced local files available at their original paths.
+
+## Configure site identity
+
+Site settings are top-level fields in `cortex.config.yml`:
 
 ```yaml
-docs:
-  title: my-project Documentation
-  logo: ./assets/logo.svg
-  favicon: ./assets/favicon.ico
-  theme: system    # "light", "dark", or "system"
-  output_dir: ./docs
+project: my-api
+title: My API Docs
+logo_dark: ./assets/logo-dark.svg
+logo_light: ./assets/logo-light.svg
+favicon: ./assets/favicon.svg
+theme: system
+primaryColor: '#2563eb'
 ```
 
-## Features
+SVG files are sanitized before Cortex Docs renders them. Scripts, event handlers, and external references are removed.
 
-### Theme Support
+See [Configuration](/docs/configuration) for home-page cards and Markdown navigation.
 
-Documentation automatically adapts to the user's system preference (light or dark). A manual toggle is available in the header.
+## Try API requests
 
-### Navigation
+The OpenAPI reference includes a request builder. File inputs are available for `multipart/form-data` and raw binary request bodies.
 
-The header provides tabs to switch between REST, WebSockets, and MCP documentation. Each section is self-contained with its own navigation and filtering.
+The browser sends multipart boundaries. Do not set a multipart boundary in your specification or custom request code.
 
-### MCP Integration View
-
-The MCP tab shows all tools that would be available to AI agents, including both REST and WebSocket tools. It includes a usage snippet for connecting the MCP server to Claude Code, Cursor, or any MCP client.
-
-### Try It
-
-The REST reference includes a built-in request builder that lets users test API calls directly from the documentation.
+Only enable interactive requests for API origins that allow requests from the documentation site's origin.

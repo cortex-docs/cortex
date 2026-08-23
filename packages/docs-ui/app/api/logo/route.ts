@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
+import { sanitizeSvg } from '@/lib/sanitize-svg';
 
 const CONTENT_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -17,14 +18,18 @@ export async function GET() {
   }
 
   try {
-    const content = fs.readFileSync(logoPath);
     const ext = path.extname(logoPath).toLowerCase();
     const contentType = CONTENT_TYPES[ext] || 'application/octet-stream';
+    const rawContent = fs.readFileSync(logoPath);
+    const content = ext === '.svg' ? sanitizeSvg(rawContent.toString('utf-8')) : rawContent;
+    if (!content) throw new Error('The SVG logo is not valid.');
 
     return new NextResponse(content, {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'no-cache',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   } catch {

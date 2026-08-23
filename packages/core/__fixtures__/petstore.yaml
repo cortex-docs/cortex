@@ -63,7 +63,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/CreatePetRequest'
       responses:
@@ -79,6 +79,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /pets/stream:
+    get:
+      operationId: streamPets
+      summary: Stream all pets (chunked)
+      description: Returns pets as newline-delimited JSON with chunked transfer encoding. Each pet is sent as a separate chunk with a delay, useful for testing streaming responses.
+      tags:
+        - pets
+      x-cortex-resource: pets
+      x-cortex-method-name: stream
+      responses:
+        '200':
+          description: A stream of pets (application/x-ndjson)
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/Pet'
 
   /pets/{petId}:
     get:
@@ -240,6 +257,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /uploads/raw:
+    post:
+      operationId: uploadFile
+      summary: Upload one raw file
+      tags:
+        - uploads
+      x-cortex-resource: uploads
+      requestBody:
+        required: true
+        content:
+          application/pdf:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '201':
+          description: The uploaded file metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResult'
+
 components:
   schemas:
     Pet:
@@ -287,6 +326,23 @@ components:
         updated_at:
           type: string
           format: date-time
+        profile_pic_filename:
+          type: string
+          description: Original filename of the uploaded profile picture
+        profile_pic_size:
+          type: integer
+          description: Size of the uploaded profile picture in bytes
+        profile_pic_content_type:
+          type: string
+          description: Media type of the uploaded profile picture
+        attachment_count:
+          type: integer
+          description: Number of uploaded attachment files
+        attachment_content_types:
+          type: array
+          items:
+            type: string
+          description: Media types of the uploaded attachment files
 
     CreatePetRequest:
       type: object
@@ -308,6 +364,16 @@ components:
           type: string
         age:
           type: integer
+        profilePic:
+          type: string
+          format: binary
+          description: Optional profile picture for the pet
+        attachments:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Optional files that belong to the pet record
 
     UpdatePetRequest:
       type: object
@@ -374,6 +440,17 @@ components:
         details:
           type: object
           additionalProperties: true
+
+    UploadResult:
+      type: object
+      required:
+        - size
+        - content_type
+      properties:
+        size:
+          type: integer
+        content_type:
+          type: string
 
   securitySchemes:
     bearerAuth:

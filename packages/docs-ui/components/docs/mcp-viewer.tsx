@@ -59,7 +59,8 @@ export function McpViewer() {
     );
   }
 
-  const filteredTools = filter === 'all' ? data.tools : data.tools.filter((t) => t.source === filter);
+  const filteredTools =
+    filter === 'all' ? data.tools : data.tools.filter((t) => t.source === filter);
   const restCount = data.tools.filter((t) => t.source === 'rest').length;
   const wsCount = data.tools.filter((t) => t.source === 'websocket').length;
 
@@ -81,7 +82,7 @@ export function McpViewer() {
       <div className="mb-6 rounded-lg border p-4">
         <h2 className="text-sm font-semibold uppercase text-muted-foreground mb-3">Usage</h2>
         <pre className="overflow-x-auto rounded bg-muted p-3 text-sm font-mono">
-{`// Claude Code, Cursor, or any MCP client
+          {`// Claude Code, Cursor, or any MCP client
 {
   "mcpServers": {
     "${data.serverName}": {
@@ -106,7 +107,11 @@ export function McpViewer() {
                 : 'bg-muted text-muted-foreground hover:bg-accent',
             )}
           >
-            {f === 'all' ? `All (${data.tools.length})` : f === 'rest' ? `REST (${restCount})` : `WebSocket (${wsCount})`}
+            {f === 'all'
+              ? `All (${data.tools.length})`
+              : f === 'rest'
+                ? `REST (${restCount})`
+                : `WebSocket (${wsCount})`}
           </button>
         ))}
       </div>
@@ -127,25 +132,37 @@ export function McpViewer() {
                 {tool.source === 'rest' ? 'REST' : 'WS'}
               </span>
               {tool.method && (
-                <span className={cn(
-                  'rounded px-1.5 py-0.5 text-xs font-bold',
-                  tool.method === 'GET' ? 'text-blue-600 dark:text-blue-400' :
-                  tool.method === 'POST' ? 'text-green-600 dark:text-green-400' :
-                  tool.method === 'PUT' ? 'text-orange-600 dark:text-orange-400' :
-                  tool.method === 'DELETE' ? 'text-red-600 dark:text-red-400' :
-                  'text-muted-foreground',
-                )}>
+                <span
+                  className={cn(
+                    'rounded px-1.5 py-0.5 text-xs font-bold',
+                    tool.method === 'GET'
+                      ? 'text-blue-600 dark:text-blue-400'
+                      : tool.method === 'POST'
+                        ? 'text-green-600 dark:text-green-400'
+                        : tool.method === 'PUT'
+                          ? 'text-orange-600 dark:text-orange-400'
+                          : tool.method === 'DELETE'
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-muted-foreground',
+                  )}
+                >
                   {tool.method}
                 </span>
               )}
-              {tool.path && <code className="text-xs text-muted-foreground font-mono">{tool.path}</code>}
-              {tool.channel && <code className="text-xs text-muted-foreground font-mono">{tool.channel}</code>}
+              {tool.path && (
+                <code className="text-xs text-muted-foreground font-mono">{tool.path}</code>
+              )}
+              {tool.channel && (
+                <code className="text-xs text-muted-foreground font-mono">{tool.channel}</code>
+              )}
             </div>
             <div className="px-4 py-3">
               <p className="text-sm text-muted-foreground">{tool.description}</p>
               {tool.parameters.length > 0 && (
                 <div className="mt-3">
-                  <span className="text-xs font-semibold uppercase text-muted-foreground">Parameters</span>
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">
+                    Parameters
+                  </span>
                   <div className="mt-1.5 space-y-1">
                     {tool.parameters.map((param) => (
                       <div key={param.name} className="flex items-baseline gap-2 text-sm">
@@ -155,7 +172,9 @@ export function McpViewer() {
                           <span className="text-xs text-red-500 dark:text-red-400">required</span>
                         )}
                         {param.description && (
-                          <span className="text-xs text-muted-foreground">— {param.description}</span>
+                          <span className="text-xs text-muted-foreground">
+                            — {param.description}
+                          </span>
                         )}
                       </div>
                     ))}

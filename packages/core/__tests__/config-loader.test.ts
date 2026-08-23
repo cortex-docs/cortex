@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { ConfigLoader } from '../src/config/loader';
+import {
+  getAllLanguageTemplateDirs,
+  gitRepositoryUrl,
+  normalizeRepositoryUrl,
+  resolveGeneratorTemplateRoot,
+  resolveLanguageTemplateDir,
+} from '../src/config/utils';
 
 describe('ConfigLoader', () => {
   const loader = new ConfigLoader();
@@ -28,13 +38,14 @@ describe('ConfigLoader', () => {
       expect(config.output.base_dir).toBe('./generated');
     });
 
-    it('rejects config with no sources', () => {
-      expect(() =>
-        loader.validate({
-          project: 'acme',
-          sources: [],
-        }),
-      ).toThrow('Invalid cortex config');
+    it('allows a documentation-only config with no API sources', () => {
+      const config = loader.validate({
+        project: 'acme',
+        sources: [],
+      });
+
+      expect(config.sources).toEqual([]);
+      expect(config.languages).toEqual([]);
     });
 
     it('rejects config with unsupported language', () => {
@@ -68,6 +79,166 @@ describe('ConfigLoader', () => {
 
       expect(config.output.base_dir).toBe('./generated');
       expect(config.theme).toBe('system');
+    });
+
+    it('validates and resolves a custom generator template root', () => {
+      const config = loader.validate({
+        project: 'acme',
+        generators: { templates: './cortex-templates' },
+        sources: [],
+      });
+
+      expect(config.generators).toEqual({ templates: './cortex-templates' });
+      expect(resolveGeneratorTemplateRoot(config, '/workspace/acme/cortex.config.yml')).toBe(
+        path.resolve('/workspace/acme/cortex-templates'),
+      );
+    });
+
+    it('rejects an empty custom generator template root', () => {
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          generators: { templates: '' },
+          sources: [],
+        }),
+      ).toThrow('Invalid cortex config');
+    });
+
+    it('validates and resolves a source-language template directory', () => {
+      const config = loader.validate({
+        project: 'acme',
+        sources: [
+          {
+            title: 'REST API V1',
+            type: 'openapi-spec',
+            spec: './openapi.yaml',
+            languages: [
+              {
+                language: 'typescript',
+                package_name: '@acme/sdk',
+                template: './cortex-templates/custom-typescript',
+              },
+            ],
+          },
+        ],
+      });
+
+      const language = config.sources[0].languages[0];
+      const expected = path.resolve('/workspace/acme/cortex-templates/custom-typescript');
+      expect(language.template).toBe('./cortex-templates/custom-typescript');
+      expect(config.languages[0].template).toBe('./cortex-templates/custom-typescript');
+      expect(resolveLanguageTemplateDir(language, '/workspace/acme/cortex.config.yml')).toBe(
+        expected,
+      );
+      expect(getAllLanguageTemplateDirs(config, '/workspace/acme/cortex.config.yml')).toEqual([
+        expected,
+      ]);
+    });
+
+    it('rejects an empty source-language template directory', () => {
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [
+            {
+              title: 'REST API V1',
+              type: 'openapi-spec',
+              spec: './openapi.yaml',
+              languages: [{ language: 'typescript', package_name: '@acme/sdk', template: '' }],
+            },
+          ],
+        }),
+      ).toThrow('Invalid cortex config');
+    });
+
+    it('validates publish registries and applies package-level overrides', () => {
+      const config = loader.validate({
+        project: 'acme',
+        publish: {
+          mcp: {
+            url: 'http://localhost:4873',
+            token_env: 'MCP_NPM_TOKEN',
+            access: 'public',
+          },
+          registries: {
+            typescript: {
+              url: 'http://localhost:4873',
+              token_env: 'NPM_TOKEN',
+              access: 'restricted',
+            },
+          },
+        },
+        sources: [
+          {
+            title: 'REST',
+            type: 'openapi-spec',
+            spec: './openapi.yaml',
+            languages: [
+              { language: 'typescript', package_name: '@acme/public' },
+              {
+                language: 'python',
+                package_name: 'acme-private',
+                publish: { url: 'http://localhost:8080', auth: false },
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(config.publish?.mcp?.token_env).toBe('MCP_NPM_TOKEN');
+      expect(config.languages[0].publish?.token_env).toBe('NPM_TOKEN');
+      expect(config.languages[1].publish).toEqual({ url: 'http://localhost:8080', auth: false });
+    });
+
+    it('validates GitHub and GitHub-only publish configuration', () => {
+      const config = loader.validate({
+        project: 'acme',
+        sources: [
+          {
+            title: 'REST',
+            type: 'openapi-spec',
+            spec: './openapi.yaml',
+            languages: [
+              {
+                language: 'typescript',
+                package_name: '@acme/sdk',
+                github_repository: 'github.com/acme/sdk',
+                publish: {
+                  enabled: false,
+                  github: { token_env: 'SDK_GITHUB_TOKEN', branch: 'generated/main' },
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(config.languages[0].publish).toMatchObject({
+        enabled: false,
+        github: { token_env: 'SDK_GITHUB_TOKEN', branch: 'generated/main' },
+      });
+    });
+
+    it('rejects inline or invalid credential environment names', () => {
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [
+            {
+              title: 'REST',
+              type: 'openapi-spec',
+              spec: './openapi.yaml',
+              languages: [
+                {
+                  language: 'typescript',
+                  package_name: '@acme/sdk',
+                  publish: { token_env: 'not valid' },
+                },
+              ],
+            },
+          ],
+        }),
+      ).toThrow('Invalid cortex config');
     });
 
     it('validates docs sections', () => {
@@ -144,6 +315,7 @@ describe('ConfigLoader', () => {
             title: 'GQL',
             type: 'graphql-spec',
             spec: './schema.graphql',
+            endpoint: 'http://localhost:4000/graphql',
             languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
           },
           {
@@ -156,6 +328,132 @@ describe('ConfigLoader', () => {
       });
 
       expect(config.sources).toHaveLength(4);
+      expect(config.sources[2].endpoint).toBe('http://localhost:4000/graphql');
+    });
+
+    it('rejects unknown fields and protocol-specific fields in the wrong source', () => {
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          unexpected: true,
+          sources: [],
+        }),
+      ).toThrow('Unrecognized key');
+
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [
+            {
+              title: 'REST',
+              type: 'openapi-spec',
+              spec: './openapi.yaml',
+              endpoint: 'https://api.example.com/graphql',
+              languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
+            },
+          ],
+        }),
+      ).toThrow('An endpoint is only valid for a graphql-spec source');
+
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [],
+          publish: { registries: { unknown: { url: 'https://registry.example.com' } } },
+        }),
+      ).toThrow('Unrecognized key');
+    });
+
+    it('validates project-specific WebSocket heartbeat flows', () => {
+      const config = loader.validate({
+        project: 'acme',
+        sources: [
+          {
+            title: 'Realtime API',
+            type: 'asyncapi-spec',
+            spec: './asyncapi.yaml',
+            websocket: {
+              heartbeat: {
+                format: 'json',
+                interval_ms: 12_000,
+                timeout_ms: 4_000,
+                client: {
+                  message: { action: 'client-heartbeat' },
+                  response: { action: 'server-alive' },
+                },
+                server: {
+                  message: { action: 'server-heartbeat' },
+                  response: { action: 'client-alive' },
+                },
+              },
+            },
+            languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
+          },
+        ],
+      });
+
+      expect(config.sources[0].websocket?.heartbeat).toMatchObject({
+        enabled: true,
+        format: 'json',
+        interval_ms: 12_000,
+        timeout_ms: 4_000,
+      });
+    });
+
+    it('rejects incomplete or misplaced WebSocket heartbeat options', () => {
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [
+            {
+              title: 'REST',
+              type: 'openapi-spec',
+              spec: './openapi.yaml',
+              websocket: { heartbeat: { client: { message: 'ping' } } },
+              languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
+            },
+          ],
+        }),
+      ).toThrow('WebSocket options are only valid for asyncapi-spec sources');
+
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [
+            {
+              title: 'Realtime',
+              type: 'asyncapi-spec',
+              spec: './asyncapi.yaml',
+              websocket: {
+                heartbeat: {
+                  server: { message: { action: 'ping' } },
+                },
+              },
+              languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
+            },
+          ],
+        }),
+      ).toThrow('A server heartbeat requires the client response');
+
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [
+            {
+              title: 'Realtime',
+              type: 'asyncapi-spec',
+              spec: './asyncapi.yaml',
+              websocket: {
+                heartbeat: {
+                  format: 'text',
+                  client: { message: { type: 'ping' } },
+                },
+              },
+              languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
+            },
+          ],
+        }),
+      ).toThrow('Text heartbeat messages must be non-empty strings');
     });
 
     it('includes github_repository in effective languages', () => {
@@ -200,5 +498,82 @@ describe('ConfigLoader', () => {
       expect(config.logo).toBe('./logo.png');
       expect(config.theme).toBe('light');
     });
+  });
+
+  it('resolves project paths relative to the config file', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-config-'));
+    const projectDir = path.join(workspace, 'project');
+    fs.mkdirSync(projectDir, { recursive: true });
+    const configPath = path.join(projectDir, 'cortex.config.yml');
+    fs.writeFileSync(
+      configPath,
+      [
+        'project: acme',
+        'logo: assets/logo.svg',
+        'logo_dark: assets/logo-dark.svg',
+        'logo_light: https://cdn.example.com/logo.svg',
+        'favicon: assets/favicon.svg',
+        'generators:',
+        '  templates: templates',
+        'output:',
+        '  base_dir: generated',
+        'home:',
+        '  sections:',
+        '    - title: Reference',
+        '      description: Browse the API.',
+        '      badge: API',
+        '      href: /reference',
+        '      icon: assets/reference.svg',
+        'sources:',
+        '  - title: REST',
+        '    type: openapi-spec',
+        '    spec: specs/openapi.yaml',
+        '    intro: docs/rest.md',
+        '    languages:',
+        '      - language: typescript',
+        '        package_name: "@acme/sdk"',
+        '        template: templates/typescript',
+        'docs:',
+        '  - section: Start',
+        '    sources:',
+        '      - title: Quickstart',
+        '        document: docs/quickstart.md',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    try {
+      const config = await loader.load(configPath);
+      expect(config.sources[0].spec).toBe(path.join(projectDir, 'specs/openapi.yaml'));
+      expect(config.sources[0].intro).toBe(path.join(projectDir, 'docs/rest.md'));
+      expect(config.sources[0].languages[0].template).toBe(
+        path.join(projectDir, 'templates/typescript'),
+      );
+      expect(config.languages[0].output_dir).toBe(
+        path.join(projectDir, 'generated/typescript/acme-sdk'),
+      );
+      expect(config.generators?.templates).toBe(path.join(projectDir, 'templates'));
+      expect(config.docs?.[0].sources[0].document).toBe(
+        path.join(projectDir, 'docs/quickstart.md'),
+      );
+      expect(config.home?.sections?.[0].icon).toBe(path.join(projectDir, 'assets/reference.svg'));
+      expect(config.logo).toBe(path.join(projectDir, 'assets/logo.svg'));
+      expect(config.logo_dark).toBe(path.join(projectDir, 'assets/logo-dark.svg'));
+      expect(config.logo_light).toBe('https://cdn.example.com/logo.svg');
+      expect(config.favicon).toBe(path.join(projectDir, 'assets/favicon.svg'));
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('repository URL helpers', () => {
+  it('normalizes GitHub web, shorthand, and SSH URLs', () => {
+    expect(normalizeRepositoryUrl('github.com/acme/sdk.git')).toBe('https://github.com/acme/sdk');
+    expect(normalizeRepositoryUrl('git@github.com:acme/sdk.git')).toBe(
+      'https://github.com/acme/sdk',
+    );
+    expect(gitRepositoryUrl('github.com/acme/sdk')).toBe('https://github.com/acme/sdk.git');
+    expect(gitRepositoryUrl('file:///tmp/sdk.git')).toBe('file:///tmp/sdk.git');
   });
 });

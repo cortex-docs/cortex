@@ -1,4 +1,3 @@
-
 # GraphQL SDK Generation
 
 Cortex generates fully typed GraphQL client SDKs from your GraphQL schema definitions. The generated clients provide type-safe queries, mutations, and subscriptions with complete autocomplete support in your IDE.
@@ -25,13 +24,16 @@ Then add your GraphQL source to `cortex.config.yml`:
 
 ```yaml
 sources:
-  - title: "GraphQL"
+  - title: 'GraphQL'
     type: graphql-spec
     spec: ./specs/schema.graphql
+    endpoint: https://api.example.com/graphql
     languages:
       - language: typescript
-        package_name: "@my-org/typescript-client-sdk"
+        package_name: '@my-org/typescript-client-sdk'
 ```
+
+Set `endpoint` to the URL that generated clients and MCP tools must call. If you omit it, Cortex Docs uses `http://localhost:4000/graphql`.
 
 ### Generate
 
@@ -92,12 +94,9 @@ const updated = await client.graphql.mutate.updateUser({
 });
 
 // Subscription
-client.graphql.subscribe.onUserUpdated(
-  { variables: { userId: 'user-123' } },
-  (event) => {
-    console.log('User updated:', event.data.userUpdated);
-  },
-);
+client.graphql.subscribe.onUserUpdated({ variables: { userId: 'user-123' } }, (event) => {
+  console.log('User updated:', event.data.userUpdated);
+});
 ```
 
 ### Python
@@ -127,6 +126,28 @@ client.graphql.subscribe.on_user_updated(
     callback=on_user_updated,
 )
 ```
+
+## Subscription resilience
+
+Generated subscription clients reconnect after transient WebSocket failures and resubscribe to active operations. Retry count, retry interval, and heartbeat timing are runtime options. The TypeScript client uses these defaults:
+
+```typescript
+const gql = new Gql({
+  endpoint: 'https://api.example.com/graphql',
+  reconnect: true,
+  reconnectInterval: 3_000,
+  maxReconnectAttempts: 10,
+  heartbeatInterval: 30_000,
+  connectionAckTimeout: 10_000,
+  timeout: 15_000,
+});
+```
+
+The HTTP timeout applies to queries and mutations. One-shot subscriptions keep their separate event-wait timeout.
+
+A manual unsubscribe removes the operation before the next connection. Dispose the client to stop all reconnect and keepalive work.
+
+GraphQL keepalive uses the GraphQL WebSocket subprotocol. It does not use the application messages from an AsyncAPI `websocket.heartbeat` block.
 
 ## Schema Requirements
 

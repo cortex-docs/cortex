@@ -1,10 +1,6 @@
 import { DocsHeader } from '@/components/docs/docs-header';
 
-export default function ApiReferenceLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ApiReferenceLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <DocsHeader />

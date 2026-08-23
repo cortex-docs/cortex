@@ -4,15 +4,21 @@
 package <%= pkg %>;
 
 import com.google.gson.Gson;
+import com.google.gson.annotations.SerializedName;
+import <%= pkg %>.models.FileUpload;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.List;
+import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class <%= clientClass %> {
@@ -20,20 +26,26 @@ public class <%= clientClass %> {
     private final HttpClient httpClient;
     private final Map<String, String> headers;
     private final Gson gson;
+    private final Duration requestTimeout;
 
 <% for (const r of it.resources) { -%>
     private final <%= r.className %> <%= it.naming.propertyName(r.name) %>;
 <% } -%>
 
     public <%= clientClass %>() {
-        this("<%= baseUrl %>", null, null);
+        this("<%= baseUrl %>", null, null, Duration.ofSeconds(15));
     }
 
     public <%= clientClass %>(String baseUrl, String bearerToken, String apiKey) {
+        this(baseUrl, bearerToken, apiKey, Duration.ofSeconds(15));
+    }
+
+    public <%= clientClass %>(String baseUrl, String bearerToken, String apiKey, Duration requestTimeout) {
         this.baseUrl = baseUrl;
+        this.requestTimeout = requestTimeout;
         this.httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
-            .connectTimeout(Duration.ofSeconds(30))
+            .connectTimeout(requestTimeout)
             .build();
         this.headers = new HashMap<>();
         this.headers.put("Content-Type", "application/json");
@@ -58,6 +70,15 @@ public class <%= clientClass %> {
 
 <% } -%>
     public String request(String method, String path, Map<String, String> query, Object body) throws ApiException {
+        return request(method, path, query, body, false);
+    }
+
+    public String request(String method, String path, Map<String, String> query, Object body, boolean multipart) throws ApiException {
+        return request(method, path, query, body, multipart, false, null);
+    }
+
+    public String request(String method, String path, Map<String, String> query, Object body,
+                          boolean multipart, boolean rawFile, String rawContentType) throws ApiException {
         StringBuilder urlBuilder = new StringBuilder(baseUrl).append(path);
 
         if (query != null && !query.isEmpty()) {
@@ -68,12 +89,30 @@ public class <%= clientClass %> {
         }
 
         HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
-            .uri(URI.create(urlBuilder.toString()));
+            .uri(URI.create(urlBuilder.toString()))
+            .timeout(requestTimeout);
 
-        headers.forEach(reqBuilder::header);
+        headers.forEach((name, value) -> {
+            if ((!multipart && !rawFile) || !name.equalsIgnoreCase("Content-Type")) reqBuilder.header(name, value);
+        });
 
         if (body != null && !method.equals("GET") && !method.equals("DELETE")) {
-            reqBuilder.method(method, HttpRequest.BodyPublishers.ofString(gson.toJson(body)));
+            if (rawFile) {
+                if (!(body instanceof FileUpload file)) {
+                    throw new IllegalArgumentException("raw file body must be a FileUpload");
+                }
+                String contentType = file.getContentType();
+                if (contentType == null || contentType.isBlank()) contentType = rawContentType;
+                if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
+                reqBuilder.header("Content-Type", contentType);
+                reqBuilder.method(method, HttpRequest.BodyPublishers.ofByteArray(file.getData()));
+            } else if (multipart) {
+                MultipartBody encoded = encodeMultipart(body);
+                reqBuilder.header("Content-Type", encoded.contentType());
+                reqBuilder.method(method, HttpRequest.BodyPublishers.ofByteArray(encoded.data()));
+            } else {
+                reqBuilder.method(method, HttpRequest.BodyPublishers.ofString(gson.toJson(body)));
+            }
         } else {
             reqBuilder.method(method, HttpRequest.BodyPublishers.noBody());
         }
@@ -92,15 +131,92 @@ public class <%= clientClass %> {
         }
     }
 
+    private MultipartBody encodeMultipart(Object body) {
+        String boundary = "cortex-" + UUID.randomUUID();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try {
+            for (Field field : body.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                Object value = field.get(body);
+                if (value == null) continue;
+                SerializedName serializedName = field.getAnnotation(SerializedName.class);
+                String name = serializedName == null ? field.getName() : serializedName.value();
+                if (value instanceof Iterable<?> values && containsOnlyFiles(values)) {
+                    for (Object item : values) writeMultipartPart(output, boundary, name, item);
+                } else {
+                    writeMultipartPart(output, boundary, name, value);
+                }
+            }
+            output.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        } catch (IOException | IllegalAccessException e) {
+            throw new IllegalArgumentException("Could not encode multipart request", e);
+        }
+        return new MultipartBody(output.toByteArray(), "multipart/form-data; boundary=" + boundary);
+    }
+
+    private void writeMultipartPart(ByteArrayOutputStream output, String boundary, String name, Object value)
+        throws IOException {
+        output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        if (value instanceof FileUpload file) {
+            output.write(("Content-Disposition: form-data; name=\"" + name
+                + "\"; filename=\"" + file.getFilename() + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+            String contentType = file.getContentType();
+            if (contentType == null || contentType.isBlank()) contentType = "application/octet-stream";
+            output.write(("Content-Type: " + contentType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            output.write(file.getData());
+        } else {
+            output.write(("Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+            String text = value instanceof CharSequence || value instanceof Number || value instanceof Boolean
+                ? value.toString()
+                : gson.toJson(value);
+            output.write(text.getBytes(StandardCharsets.UTF_8));
+        }
+        output.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private boolean containsOnlyFiles(Iterable<?> values) {
+        boolean found = false;
+        for (Object value : values) {
+            if (!(value instanceof FileUpload)) return false;
+            found = true;
+        }
+        return found;
+    }
+
+    private record MultipartBody(byte[] data, String contentType) {}
+
+    /** Streams a response body without buffering it. The caller must close the stream. */
+    public InputStream requestStream(String method, String path, Map<String, String> query, Object body) throws ApiException {
+        StringBuilder urlBuilder = new StringBuilder(baseUrl).append(path);
+        if (query != null && !query.isEmpty()) {
+            urlBuilder.append("?").append(query.entrySet().stream()
+                .map(e -> e.getKey() + "=" + e.getValue()).collect(Collectors.joining("&")));
+        }
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+            .uri(URI.create(urlBuilder.toString())).timeout(requestTimeout);
+        headers.forEach(builder::header);
+        if (body != null && !method.equals("GET") && !method.equals("DELETE"))
+            builder.method(method, HttpRequest.BodyPublishers.ofString(gson.toJson(body)));
+        else
+            builder.method(method, HttpRequest.BodyPublishers.noBody());
+        try {
+            HttpResponse<InputStream> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() >= 400) {
+                try (InputStream stream = response.body()) {
+                    throw new ApiException(response.statusCode(), new String(stream.readAllBytes()));
+                }
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(0, e.getMessage());
+        } catch (IOException e) {
+            throw new ApiException(0, e.getMessage());
+        }
+    }
+
     public Gson getGson() {
         return gson;
     }
-}
-
-public class PaginatedResponse<T> {
-    private List<T> data;
-    private String nextCursor;
-
-    public List<T> getData() { return data; }
-    public String getNextCursor() { return nextCursor; }
 }

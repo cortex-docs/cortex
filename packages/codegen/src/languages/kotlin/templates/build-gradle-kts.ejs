@@ -1,6 +1,9 @@
+import org.gradle.api.publish.maven.MavenPublication
+
 plugins {
     kotlin("jvm") version "2.1.0"
     kotlin("plugin.serialization") version "2.1.0"
+    `maven-publish`
 }
 
 group = "<%= it.packageName.replace(/-/g, '.').toLowerCase() %>"
@@ -31,4 +34,40 @@ sourceSets {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("sdk") {
+            from(components["java"])
+            artifactId = "<%= it.packageName %>"
+<% if (it.repositoryUrl) { %>            pom {
+                url.set("<%= it.repositoryUrl %>")
+                scm {
+                    url.set("<%= it.repositoryUrl %>")
+                    connection.set("scm:git:<%= it.gitRepositoryUrl %>")
+                    developerConnection.set("scm:git:<%= it.gitRepositoryUrl %>")
+                }
+            }
+<% } %>
+        }
+    }
+    repositories {
+        val publishUrl = providers.gradleProperty("cortexPublishUrl").orNull
+        if (publishUrl != null) {
+            maven {
+                name = "cortex"
+                url = uri(publishUrl)
+                isAllowInsecureProtocol = publishUrl.startsWith("http://")
+                val publishUsername = providers.gradleProperty("cortexPublishUsername").orNull
+                val publishToken = providers.gradleProperty("cortexPublishToken").orNull
+                if (publishUsername != null || publishToken != null) {
+                    credentials {
+                        username = publishUsername ?: "token"
+                        password = publishToken ?: ""
+                    }
+                }
+            }
+        }
+    }
 }

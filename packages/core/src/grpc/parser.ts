@@ -1,12 +1,5 @@
 import * as fs from 'node:fs';
-import type {
-  GrpcSpec,
-  GrpcService,
-  GrpcMethod,
-  GrpcMessage,
-  GrpcField,
-  GrpcEnum,
-} from './types';
+import type { GrpcSpec, GrpcService, GrpcMethod, GrpcMessage, GrpcField, GrpcEnum } from './types';
 
 export class GrpcParser {
   async parse(specPath: string): Promise<GrpcSpec> {
@@ -16,7 +9,7 @@ export class GrpcParser {
 
   private async loadContent(specPath: string): Promise<string> {
     if (specPath.startsWith('http://') || specPath.startsWith('https://')) {
-      const res = await fetch(specPath);
+      const res = await fetch(specPath, { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(`Failed to fetch ${specPath}: ${res.status}`);
       return res.text();
     }
@@ -30,7 +23,11 @@ export class GrpcParser {
     const enums = this.extractEnums(content);
 
     return {
-      title: packageName.split('.').pop()?.replace(/^./, (c) => c.toUpperCase()) ?? 'gRPC API',
+      title:
+        packageName
+          .split('.')
+          .pop()
+          ?.replace(/^./, (c) => c.toUpperCase()) ?? 'gRPC API',
       version: '1.0.0',
       package: packageName,
       services,
@@ -58,7 +55,8 @@ export class GrpcParser {
 
   private extractMethods(body: string): GrpcMethod[] {
     const methods: GrpcMethod[] = [];
-    const regex = /(?:\/\/\s*(.*?)\n\s*)?rpc\s+(\w+)\s*\(\s*(stream\s+)?(\w+)\s*\)\s*returns\s*\(\s*(stream\s+)?(\w+)\s*\)/g;
+    const regex =
+      /(?:\/\/\s*(.*?)\n\s*)?rpc\s+(\w+)\s*\(\s*(stream\s+)?(\w+)\s*\)\s*returns\s*\(\s*(stream\s+)?(\w+)\s*\)/g;
     let match;
 
     while ((match = regex.exec(body)) !== null) {
@@ -93,7 +91,10 @@ export class GrpcParser {
 
   private extractFields(body: string): GrpcField[] {
     const fields: GrpcField[] = [];
-    const lines = body.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//') && !l.startsWith('reserved'));
+    const lines = body
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('//') && !l.startsWith('reserved'));
 
     for (const line of lines) {
       const mapMatch = line.match(/^map<(\w+),\s*(\w+)>\s+(\w+)\s*=\s*(\d+)/);
@@ -133,7 +134,10 @@ export class GrpcParser {
 
     while ((match = regex.exec(content)) !== null) {
       const values: { name: string; number: number }[] = [];
-      const lines = match[3].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//'));
+      const lines = match[3]
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('//'));
 
       for (const line of lines) {
         const vm = line.match(/^(\w+)\s*=\s*(\d+)/);

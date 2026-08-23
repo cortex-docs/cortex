@@ -14,9 +14,19 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 public class <%= it.clientClass %> {
+
+    private static final String CLIENT_HEARTBEAT = <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>""<% } %>;
+    private static final String CLIENT_HEARTBEAT_RESPONSE = <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>""<% } %>;
+    private static final String SERVER_HEARTBEAT = <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>""<% } %>;
+    private static final String SERVER_HEARTBEAT_RESPONSE = <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>""<% } %>;
 
     @FunctionalInterface
     public interface MessageHandler<T> {
@@ -32,28 +42,42 @@ public class <%= it.clientClass %> {
     private final String url;
     private final Gson gson;
     private final HttpClient httpClient;
-    private boolean reconnect;
+    private final boolean reconnect;
+    private volatile boolean manuallyClosed;
     private final int reconnectInterval;
     private final int maxReconnectAttempts;
     private int reconnectAttempts;
+    private final int heartbeatInterval;
+    private final int heartbeatTimeout;
+    private volatile long lastServerActivity;
+    private final ScheduledExecutorService scheduler;
+    private ScheduledFuture<?> heartbeatTask;
+    private final AtomicBoolean reconnectScheduled = new AtomicBoolean(false);
     private final Map<String, Set<MessageHandler<String>>> handlers;
     private final Map<String, Set<WsEventListener>> eventListeners;
     private final StringBuilder messageBuffer;
 
     public <%= it.clientClass %>() {
-        this("<%= it.serverUrl %>", true, 3000, 10);
+        this("<%= it.serverUrl %>", true, 3000, 10, <%= it.heartbeat.intervalMs %>, <%= it.heartbeat.timeoutMs %>);
     }
 
     public <%= it.clientClass %>(String url) {
-        this(url, true, 3000, 10);
+        this(url, true, 3000, 10, <%= it.heartbeat.intervalMs %>, <%= it.heartbeat.timeoutMs %>);
     }
 
     public <%= it.clientClass %>(String url, boolean reconnect, int reconnectInterval, int maxReconnectAttempts) {
+        this(url, reconnect, reconnectInterval, maxReconnectAttempts, <%= it.heartbeat.intervalMs %>, <%= it.heartbeat.timeoutMs %>);
+    }
+
+    public <%= it.clientClass %>(String url, boolean reconnect, int reconnectInterval, int maxReconnectAttempts, int heartbeatInterval, int heartbeatTimeout) {
         this.url = url;
         this.reconnect = reconnect;
         this.reconnectInterval = reconnectInterval;
         this.maxReconnectAttempts = maxReconnectAttempts;
         this.reconnectAttempts = 0;
+        this.heartbeatInterval = heartbeatInterval;
+        this.heartbeatTimeout = heartbeatTimeout;
+        this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.gson = new Gson();
         this.httpClient = HttpClient.newHttpClient();
         this.handlers = new ConcurrentHashMap<>();
@@ -62,6 +86,7 @@ public class <%= it.clientClass %> {
     }
 
     public CompletableFuture<Void> connect() {
+        manuallyClosed = false;
         CompletableFuture<Void> future = new CompletableFuture<>();
 
         httpClient.newWebSocketBuilder()
@@ -71,6 +96,8 @@ public class <%= it.clientClass %> {
                 public void onOpen(WebSocket ws) {
                     reconnectAttempts = 0;
                     webSocket = ws;
+                    lastServerActivity = System.currentTimeMillis();
+                    startHeartbeat(ws);
                     emit("connected", null);
                     ws.request(1);
                     future.complete(null);
@@ -89,34 +116,35 @@ public class <%= it.clientClass %> {
                 }
 
                 @Override
+                public CompletionStage<?> onPong(WebSocket ws, ByteBuffer message) {
+                    lastServerActivity = System.currentTimeMillis();
+                    ws.request(1);
+                    return null;
+                }
+
+                @Override
                 public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason) {
+                    stopHeartbeat();
                     webSocket = null;
                     emit("disconnected", Map.of("code", statusCode, "reason", reason != null ? reason : ""));
-                    if (reconnect && reconnectAttempts < maxReconnectAttempts) {
-                        reconnectAttempts++;
-                        CompletableFuture.runAsync(() -> {
-                            try {
-                                Thread.sleep(reconnectInterval);
-                            } catch (InterruptedException ignored) {
-                                Thread.currentThread().interrupt();
-                            }
-                            connect();
-                        });
-                    }
+                    scheduleReconnect();
                     return null;
                 }
 
                 @Override
                 public void onError(WebSocket ws, Throwable error) {
+                    stopHeartbeat();
                     emit("error", error);
                     if (!future.isDone()) {
                         future.completeExceptionally(error);
                     }
+                    scheduleReconnect();
                 }
             })
             .whenComplete((ws, ex) -> {
                 if (ex != null && !future.isDone()) {
                     future.completeExceptionally(ex);
+                    scheduleReconnect();
                 }
             });
 
@@ -124,11 +152,40 @@ public class <%= it.clientClass %> {
     }
 
     public void disconnect() {
-        this.reconnect = false;
+        manuallyClosed = true;
+        stopHeartbeat();
         if (webSocket != null) {
             webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "");
             webSocket = null;
         }
+    }
+
+    private void startHeartbeat(WebSocket ws) {
+        stopHeartbeat();
+        if (heartbeatInterval <= 0 || CLIENT_HEARTBEAT.isEmpty()) return;
+        heartbeatTask = scheduler.scheduleAtFixedRate(() -> {
+            if (webSocket != ws) return;
+            if (heartbeatTimeout > 0 && System.currentTimeMillis() - lastServerActivity > (long) heartbeatInterval + heartbeatTimeout) {
+                ws.abort();
+                return;
+            }
+            ws.sendText(CLIENT_HEARTBEAT, true);
+        }, heartbeatInterval, heartbeatInterval, TimeUnit.MILLISECONDS);
+    }
+
+    private void stopHeartbeat() {
+        if (heartbeatTask != null) heartbeatTask.cancel(false);
+        heartbeatTask = null;
+    }
+
+    private void scheduleReconnect() {
+        if (!reconnect || manuallyClosed || reconnectAttempts >= maxReconnectAttempts || !reconnectScheduled.compareAndSet(false, true)) return;
+        reconnectAttempts++;
+        scheduler.schedule(() -> {
+            reconnectScheduled.set(false);
+            if (manuallyClosed) return;
+            connect().exceptionally(error -> { scheduleReconnect(); return null; });
+        }, reconnectInterval, TimeUnit.MILLISECONDS);
     }
 
     public CompletableFuture<WebSocket> send(String channel, Object payload) {
@@ -174,6 +231,17 @@ public class <%= it.clientClass %> {
 
     private void handleMessage(String text) {
         try {
+            if (heartbeatMatches(text, SERVER_HEARTBEAT)) {
+                lastServerActivity = System.currentTimeMillis();
+                if (!SERVER_HEARTBEAT_RESPONSE.isEmpty() && webSocket != null) {
+                    webSocket.sendText(SERVER_HEARTBEAT_RESPONSE, true);
+                }
+                return;
+            }
+            if (CLIENT_HEARTBEAT_RESPONSE.isEmpty() || heartbeatMatches(text, CLIENT_HEARTBEAT_RESPONSE)) {
+                lastServerActivity = System.currentTimeMillis();
+                if (!CLIENT_HEARTBEAT_RESPONSE.isEmpty()) return;
+            }
             JsonObject data = JsonParser.parseString(text).getAsJsonObject();
             emit("message", data);
 
@@ -201,6 +269,16 @@ public class <%= it.clientClass %> {
             }
         } catch (Exception e) {
             emit("message", text);
+        }
+    }
+
+    private boolean heartbeatMatches(String actual, String expected) {
+        if (expected.isEmpty()) return false;
+        if (actual.equals(expected)) return true;
+        try {
+            return JsonParser.parseString(actual).equals(JsonParser.parseString(expected));
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

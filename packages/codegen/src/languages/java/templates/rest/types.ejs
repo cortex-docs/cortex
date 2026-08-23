@@ -1,6 +1,7 @@
 <% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
 package <%= pkg %>.models;
 
+import com.google.gson.annotations.SerializedName;
 import java.util.List;
 import java.util.Map;
 
@@ -26,6 +27,7 @@ public enum <%= schema.className %> {
 <% } else { -%>
 public class <%= schema.className %> {
 <% for (const prop of schema.properties) { -%>
+    @SerializedName("<%= prop.originalName %>")
     private <%= prop.type %> <%= prop.name %>;
 <% } -%>
 

@@ -20,6 +20,7 @@ interface DocsResponse {
       title: string;
       slug: string;
       content: string;
+      markdown: string;
     }>;
   }>;
 }
@@ -61,22 +62,28 @@ export async function GET() {
     const { renderMarkdown } = await import('@/lib/markdown');
 
     const response: DocsResponse = {
-      sections: await Promise.all(sections.map(async (section) => ({
-        section: section.section,
-        documents: await Promise.all(section.sources.map(async (doc) => {
-          const docPath = path.resolve(configDir, doc.document);
-          let content = '';
-          if (fs.existsSync(docPath)) {
-            const md = fs.readFileSync(docPath, 'utf-8');
-            content = await renderMarkdown(md);
-          }
-          return {
-            title: doc.title,
-            slug: slugify(doc.title),
-            content,
-          };
+      sections: await Promise.all(
+        sections.map(async (section) => ({
+          section: section.section,
+          documents: await Promise.all(
+            section.sources.map(async (doc) => {
+              const docPath = path.resolve(configDir, doc.document);
+              let content = '';
+              let markdown = '';
+              if (fs.existsSync(docPath)) {
+                markdown = fs.readFileSync(docPath, 'utf-8');
+                content = await renderMarkdown(markdown);
+              }
+              return {
+                title: doc.title,
+                slug: slugify(doc.title),
+                content,
+                markdown,
+              };
+            }),
+          ),
         })),
-      }))),
+      ),
     };
 
     return NextResponse.json(response, {

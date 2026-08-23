@@ -1,9 +1,7 @@
 'use client';
 
-import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useState } from 'react';
 import { useProjectWatch } from '@/lib/use-project-watch';
-import { cn } from '@/lib/utils';
 
 interface AsyncApiViewerProps {
   specUrl: string;
@@ -23,7 +21,6 @@ interface AsyncApiData {
 }
 
 export function AsyncApiViewer({ specUrl }: AsyncApiViewerProps) {
-  const { resolvedTheme } = useTheme();
   const [data, setData] = useState<AsyncApiData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -138,7 +135,9 @@ export function AsyncApiViewer({ specUrl }: AsyncApiViewerProps) {
               )}
               {channel.subscribe && (
                 <div>
-                  <span className="text-xs font-semibold uppercase text-green-600 dark:text-green-400">Subscribe</span>
+                  <span className="text-xs font-semibold uppercase text-green-600 dark:text-green-400">
+                    Subscribe
+                  </span>
                   <p className="text-sm">{channel.subscribe.summary}</p>
                   {channel.subscribe.message?.payload && (
                     <pre className="mt-2 overflow-x-auto rounded bg-muted p-3 text-xs font-mono">
@@ -149,7 +148,9 @@ export function AsyncApiViewer({ specUrl }: AsyncApiViewerProps) {
               )}
               {channel.publish && (
                 <div>
-                  <span className="text-xs font-semibold uppercase text-orange-600 dark:text-orange-400">Publish</span>
+                  <span className="text-xs font-semibold uppercase text-orange-600 dark:text-orange-400">
+                    Publish
+                  </span>
                   <p className="text-sm">{channel.publish.summary}</p>
                   {channel.publish.message?.payload && (
                     <pre className="mt-2 overflow-x-auto rounded bg-muted p-3 text-xs font-mono">

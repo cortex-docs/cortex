@@ -1,10 +1,16 @@
-from setuptools import setup, find_packages
+from setuptools import setup
+
+module_name = "<%= it.packageName.replace(/[-.]/g, '_') %>"
 
 setup(
     name="<%= it.packageName %>",
     version="<%= it.version %>",
     description="Python SDK for <%= it.title %>",
-    packages=find_packages(),
+<% if (it.repositoryUrl) { %>    url="<%= it.repositoryUrl %>",
+    project_urls={"Source": "<%= it.repositoryUrl %>", "Issues": "<%= it.repositoryUrl %>/issues"},
+<% } %>
+    packages=[module_name, f"{module_name}.resources"],
+    package_dir={module_name: "src", f"{module_name}.resources": "src/resources"},
     python_requires=">=3.9",
     install_requires=[
         "httpx>=0.27.0",

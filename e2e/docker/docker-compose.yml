@@ -8,3 +8,9 @@ services:
       - TEST_LANGUAGES=${TEST_LANGUAGES:-}
     volumes:
       - /tmp/cortex-e2e-results:/results
+      - cortex-sdk-gradle-cache:/root/.gradle
+
+volumes:
+  cortex-sdk-gradle-cache:
+    name: cortex-sdk-gradle-cache
+    external: true

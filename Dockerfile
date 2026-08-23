@@ -17,8 +17,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
     tar -C /usr/local -xzf go1.23.4.linux-${ARCH}.tar.gz && rm go1.23.4.linux-${ARCH}.tar.gz
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
-# Java 17 + Gradle
-RUN apt-get install -y openjdk-17-jdk-headless unzip && \
+# Java 17 + Maven + Gradle
+RUN apt-get install -y openjdk-17-jdk-headless maven unzip && \
     wget -q https://services.gradle.org/distributions/gradle-8.10-bin.zip -O /tmp/gradle.zip && \
     unzip -q /tmp/gradle.zip -d /opt && \
     rm /tmp/gradle.zip
@@ -44,6 +44,10 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 # Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Package publishing clients
+RUN pip3 install --break-system-packages build twine conan && \
+    gem install bundler --no-document
 
 # C/C++ build tools (gcc/g++ already from build-essential)
 RUN apt-get update && apt-get install -y cmake libcurl4-openssl-dev

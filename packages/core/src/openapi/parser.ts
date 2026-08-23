@@ -20,7 +20,7 @@ export class OpenAPIParser {
     const api = (await SwaggerParser.bundle(specPath)) as OpenAPIV3_1.Document;
 
     const extensions = extractExtensions(api as unknown as Record<string, unknown>);
-    const operations = this.extractOperations(api, extensions);
+    const operations = this.extractOperations(api);
     const resources = this.groupByResource(operations);
     const schemas = this.extractSchemas(api);
     this.promoteInlineSchemas(operations, schemas);
@@ -82,16 +82,17 @@ export class OpenAPIParser {
     }
   }
 
-  private extractOperations(
-    spec: OpenAPIV3_1.Document,
-    extensions: ReturnType<typeof extractExtensions>,
-  ): Operation[] {
+  private extractOperations(spec: OpenAPIV3_1.Document): Operation[] {
     const operations: Operation[] = [];
 
     if (!spec.paths) return operations;
 
     for (const [path, pathItem] of Object.entries(spec.paths)) {
       if (!pathItem) continue;
+      const pathParameters = this.extractParameters(
+        (pathItem as OpenAPIV3_1.PathItemObject).parameters,
+        spec,
+      );
 
       for (const method of HTTP_METHODS) {
         const op = (pathItem as Record<string, unknown>)[method] as
@@ -104,17 +105,23 @@ export class OpenAPIParser {
 
         const operationId = op.operationId ?? `${method}_${path.replace(/\//g, '_')}`;
 
+        const operationParameters = this.extractParameters(op.parameters, spec);
+        const parameters = new Map(
+          pathParameters.map((parameter) => [`${parameter.in}:${parameter.name}`, parameter]),
+        );
+        for (const parameter of operationParameters) {
+          parameters.set(`${parameter.in}:${parameter.name}`, parameter);
+        }
+
         operations.push({
           operationId,
           method,
           path,
           summary: op.summary,
           description: op.description,
-          parameters: this.extractParameters(op.parameters as OpenAPIV3_1.ParameterObject[]),
-          requestBody: this.extractRequestBody(op.requestBody as OpenAPIV3_1.RequestBodyObject),
-          responses: this.extractResponses(
-            op.responses as Record<string, OpenAPIV3_1.ResponseObject>,
-          ),
+          parameters: Array.from(parameters.values()),
+          requestBody: this.extractRequestBody(op.requestBody, spec),
+          responses: this.extractResponses(op.responses, spec),
           tags: op.tags ?? [],
           resourceName,
           extensions: getOperationExtensions(opRecord),
@@ -125,40 +132,65 @@ export class OpenAPIParser {
     return operations;
   }
 
-  private extractParameters(params?: OpenAPIV3_1.ParameterObject[]): Parameter[] {
+  private extractParameters(
+    params: (OpenAPIV3_1.ParameterObject | OpenAPIV3_1.ReferenceObject)[] | undefined,
+    spec: OpenAPIV3_1.Document,
+  ): Parameter[] {
     if (!params) return [];
 
-    return params.map((p) => ({
-      name: p.name,
-      in: p.in as Parameter['in'],
-      required: p.required ?? false,
-      description: p.description,
-      schema: this.convertSchema(p.schema as OpenAPIV3_1.SchemaObject),
-    }));
+    return params.map((candidate) => {
+      const parameter = this.resolveComponentReference<OpenAPIV3_1.ParameterObject>(
+        candidate,
+        spec,
+      );
+      return {
+        name: parameter.name,
+        in: parameter.in as Parameter['in'],
+        required: parameter.required ?? false,
+        description: parameter.description,
+        schema: this.convertSchema(parameter.schema as OpenAPIV3_1.SchemaObject),
+      };
+    });
   }
 
-  private extractRequestBody(body?: OpenAPIV3_1.RequestBodyObject): RequestBody | undefined {
+  private extractRequestBody(
+    candidate: OpenAPIV3_1.RequestBodyObject | OpenAPIV3_1.ReferenceObject | undefined,
+    spec: OpenAPIV3_1.Document,
+  ): RequestBody | undefined {
+    if (!candidate) return undefined;
+    const body = this.resolveComponentReference<OpenAPIV3_1.RequestBodyObject>(candidate, spec);
     if (!body?.content) return undefined;
 
-    const contentType = Object.keys(body.content)[0];
+    const contentTypes = Object.keys(body.content);
+    const contentType =
+      contentTypes.find((type) => type.toLowerCase() === 'multipart/form-data') ??
+      contentTypes.find((type) => {
+        const schema = body.content[type]?.schema as OpenAPIV3_1.SchemaObject | undefined;
+        return schema?.type === 'string' && schema.format === 'binary';
+      }) ??
+      contentTypes[0];
     if (!contentType) return undefined;
 
     const mediaType = body.content[contentType];
     return {
       required: body.required ?? false,
       contentType,
-      schema: this.convertSchema(mediaType?.schema as OpenAPIV3_1.SchemaObject),
+      schema: this.convertReferencedSchema(mediaType?.schema, spec),
     };
   }
 
-  private extractResponses(responses?: Record<string, OpenAPIV3_1.ResponseObject>): ResponseInfo[] {
+  private extractResponses(
+    responses: OpenAPIV3_1.ResponsesObject | undefined,
+    spec: OpenAPIV3_1.Document,
+  ): ResponseInfo[] {
     if (!responses) return [];
 
-    return Object.entries(responses).map(([statusCode, response]) => {
+    return Object.entries(responses).map(([statusCode, candidate]) => {
+      const response = this.resolveComponentReference<OpenAPIV3_1.ResponseObject>(candidate, spec);
       const contentType = response.content ? Object.keys(response.content)[0] : undefined;
       const schema =
         contentType && response.content?.[contentType]?.schema
-          ? this.convertSchema(response.content[contentType].schema as OpenAPIV3_1.SchemaObject)
+          ? this.convertReferencedSchema(response.content[contentType].schema, spec)
           : undefined;
 
       return {
@@ -168,6 +200,23 @@ export class OpenAPIParser {
         schema,
       };
     });
+  }
+
+  private resolveComponentReference<T>(
+    candidate: T | OpenAPIV3_1.ReferenceObject,
+    spec: OpenAPIV3_1.Document,
+  ): T {
+    const reference = (candidate as OpenAPIV3_1.ReferenceObject).$ref;
+    if (!reference?.startsWith('#/')) return candidate as T;
+    const value = reference
+      .slice(2)
+      .split('/')
+      .reduce<unknown>((current, part) => {
+        if (!current || typeof current !== 'object') return undefined;
+        return (current as Record<string, unknown>)[part.replace(/~1/g, '/').replace(/~0/g, '~')];
+      }, spec);
+    if (!value) throw new Error(`Cannot resolve OpenAPI reference: ${reference}`);
+    return value as T;
   }
 
   private extractSchemas(spec: OpenAPIV3_1.Document): Map<string, SchemaObject> {
@@ -183,6 +232,24 @@ export class OpenAPIParser {
     }
 
     return schemas;
+  }
+
+  private convertReferencedSchema(
+    candidate: OpenAPIV3_1.SchemaObject | OpenAPIV3_1.ReferenceObject | undefined,
+    spec: OpenAPIV3_1.Document,
+  ): SchemaObject {
+    if (!candidate) return { type: 'unknown' };
+    const reference = (candidate as OpenAPIV3_1.ReferenceObject).$ref;
+    if (!reference?.startsWith('#/')) {
+      return this.convertSchema(candidate as OpenAPIV3_1.SchemaObject);
+    }
+
+    const resolved = this.resolveComponentReference<OpenAPIV3_1.SchemaObject>(candidate, spec);
+    return {
+      ...this.convertSchema(resolved),
+      name: reference.split('/').pop(),
+      ref: reference,
+    };
   }
 
   private convertSchema(schema?: OpenAPIV3_1.SchemaObject): SchemaObject {
@@ -253,7 +320,11 @@ export class OpenAPIParser {
       if (op.requestBody?.schema && this.isInlineObject(op.requestBody.schema)) {
         const name = this.uniqueSchemaName(op.operationId, 'Request', schemas);
         schemas.set(name, { name, ...op.requestBody.schema });
-        op.requestBody.schema = { type: 'object', name, ref: `#/components/schemas/${name}` };
+        op.requestBody.schema = {
+          ...op.requestBody.schema,
+          name,
+          ref: `#/components/schemas/${name}`,
+        };
       }
     }
   }
@@ -262,7 +333,11 @@ export class OpenAPIParser {
     return schema.type === 'object' && !!schema.properties && !schema.ref;
   }
 
-  private uniqueSchemaName(operationId: string, suffix: string, schemas: Map<string, SchemaObject>): string {
+  private uniqueSchemaName(
+    operationId: string,
+    suffix: string,
+    schemas: Map<string, SchemaObject>,
+  ): string {
     const base = operationId.charAt(0).toUpperCase() + operationId.slice(1) + suffix;
     if (!schemas.has(base)) return base;
     let i = 2;

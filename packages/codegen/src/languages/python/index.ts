@@ -21,6 +21,7 @@ export class PythonPlugin extends TemplateBasedPlugin {
       any: 'Any',
       void: 'None',
       datetime: 'str',
+      file: 'FileUpload',
       nullable: (type) => `Optional[${type}]`,
     },
     naming: {
@@ -34,7 +35,9 @@ export class PythonPlugin extends TemplateBasedPlugin {
     packageTemplates: [
       { template: 'setup-py', path: 'setup.py' },
       { template: 'pyproject-toml', path: 'pyproject.toml' },
+      { template: 'manifest-in', path: 'MANIFEST.in' },
     ],
+    indexPath: 'src/__init__.py',
     packageFiles: () => [
       {
         path: 'src/exceptions.py',

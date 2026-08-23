@@ -31,11 +31,27 @@ type <%= it.clientClass %> struct {
 	headers    map[string]string
 <% if (hasSubscriptions) { -%>
 	mu         sync.Mutex
+	writeMu    sync.Mutex
 	wsConn     *websocket.Conn
 	nextSubID  int
-	subs       map[string]func(json.RawMessage)
+	subs       map[string]gqlSubscription
+	reconnect  bool
+	reconnectInterval time.Duration
+	maxReconnectAttempts int
+	heartbeatInterval time.Duration
+	heartbeatTimeout time.Duration
+	reconnecting bool
+	disposed bool
 <% } -%>
 }
+<% if (hasSubscriptions) { %>
+
+type gqlSubscription struct {
+	handler func(json.RawMessage)
+	query string
+	variables map[string]interface{}
+}
+<% } %>
 
 // <%= it.clientClass %>Option is a functional option for configuring the <%= it.clientClass %>.
 type <%= it.clientClass %>Option func(*<%= it.clientClass %>)
@@ -48,6 +64,14 @@ func WithEndpoint(endpoint string) <%= it.clientClass %>Option {
 // WithWsEndpoint sets a custom WebSocket endpoint URL for subscriptions.
 func WithWsEndpoint(wsEndpoint string) <%= it.clientClass %>Option {
 	return func(c *<%= it.clientClass %>) { c.wsEndpoint = wsEndpoint }
+}
+
+func WithSubscriptionReconnect(enabled bool, interval time.Duration, maxAttempts int) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.reconnect = enabled; c.reconnectInterval = interval; c.maxReconnectAttempts = maxAttempts }
+}
+
+func WithSubscriptionHeartbeat(interval, timeout time.Duration) <%= it.clientClass %>Option {
+	return func(c *<%= it.clientClass %>) { c.heartbeatInterval = interval; c.heartbeatTimeout = timeout }
 }
 <% } -%>
 
@@ -75,12 +99,17 @@ func WithHTTPClient(httpClient *http.Client) <%= it.clientClass %>Option {
 func New<%= it.clientClass %>(opts ...<%= it.clientClass %>Option) *<%= it.clientClass %> {
 	c := &<%= it.clientClass %>{
 		endpoint:   "<%= it.endpoint %>",
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: 15 * time.Second},
 		headers: map[string]string{
 			"Content-Type": "application/json",
 		},
 <% if (hasSubscriptions) { -%>
-		subs: make(map[string]func(json.RawMessage)),
+		subs: make(map[string]gqlSubscription),
+		reconnect: true,
+		reconnectInterval: 3 * time.Second,
+		maxReconnectAttempts: 10,
+		heartbeatInterval: 30 * time.Second,
+		heartbeatTimeout: 10 * time.Second,
 <% } -%>
 	}
 
@@ -216,6 +245,14 @@ func (c *<%= it.clientClass %>) ensureWsConn() error {
 		return fmt.Errorf("ws connect: %w", err)
 	}
 	c.wsConn = conn
+	c.disposed = false
+	if c.heartbeatInterval > 0 {
+		if c.heartbeatTimeout > 0 {
+			_ = conn.SetReadDeadline(time.Now().Add(c.heartbeatInterval + c.heartbeatTimeout))
+			conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(c.heartbeatInterval + c.heartbeatTimeout)) })
+		}
+		go c.subscriptionHeartbeat(conn)
+	}
 
 	initPayload := map[string]interface{}{}
 	if auth, ok := c.headers["Authorization"]; ok {
@@ -252,6 +289,11 @@ func (c *<%= it.clientClass %>) readWsMessages(conn *websocket.Conn) {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
+			c.mu.Lock()
+			if c.wsConn == conn { c.wsConn = nil }
+			shouldReconnect := c.reconnect && !c.disposed && len(c.subs) > 0
+			c.mu.Unlock()
+			if shouldReconnect { go c.reconnectSubscriptions() }
 			return
 		}
 		var msg struct {
@@ -266,16 +308,57 @@ func (c *<%= it.clientClass %>) readWsMessages(conn *websocket.Conn) {
 		switch msg.Type {
 		case "next":
 			c.mu.Lock()
-			handler, ok := c.subs[msg.ID]
+			subscription, ok := c.subs[msg.ID]
 			c.mu.Unlock()
 			if ok {
-				handler(msg.Payload)
+				subscription.handler(msg.Payload)
 			}
 		case "complete":
 			c.mu.Lock()
 			delete(c.subs, msg.ID)
 			c.mu.Unlock()
 		}
+	}
+}
+
+func (c *<%= it.clientClass %>) subscriptionHeartbeat(conn *websocket.Conn) {
+	ticker := time.NewTicker(c.heartbeatInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		c.mu.Lock()
+		active := c.wsConn == conn && !c.disposed
+		c.mu.Unlock()
+		if !active { return }
+		writeTimeout := c.heartbeatTimeout
+		if writeTimeout <= 0 { writeTimeout = 10 * time.Second }
+		c.writeMu.Lock()
+		err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeTimeout))
+		c.writeMu.Unlock()
+		if err != nil { _ = conn.Close(); return }
+	}
+}
+
+func (c *<%= it.clientClass %>) reconnectSubscriptions() {
+	c.mu.Lock()
+	if c.reconnecting { c.mu.Unlock(); return }
+	c.reconnecting = true
+	c.mu.Unlock()
+	defer func() { c.mu.Lock(); c.reconnecting = false; c.mu.Unlock() }()
+	for attempt := 0; c.reconnect && attempt < c.maxReconnectAttempts; attempt++ {
+		time.Sleep(c.reconnectInterval)
+		c.mu.Lock()
+		if c.disposed { c.mu.Unlock(); return }
+		err := c.ensureWsConn()
+		if err == nil {
+			for id, sub := range c.subs {
+				c.writeMu.Lock()
+				err = c.wsConn.WriteJSON(map[string]interface{}{"type": "subscribe", "id": id, "payload": map[string]interface{}{"query": sub.query, "variables": sub.variables}})
+				c.writeMu.Unlock()
+				if err != nil { break }
+			}
+		}
+		c.mu.Unlock()
+		if err == nil { return }
 	}
 }
 
@@ -289,14 +372,20 @@ func (c *<%= it.clientClass %>) Subscribe(fn func(*SubscriptionBuilder) *Subscri
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := c.ensureWsConn(); err != nil {
-		return nil, err
+	var connectErr error
+	for attempt := 0; ; attempt++ {
+		connectErr = c.ensureWsConn()
+		if connectErr == nil { break }
+		if !c.reconnect || attempt >= c.maxReconnectAttempts {
+			return nil, connectErr
+		}
+		time.Sleep(c.reconnectInterval)
 	}
 
 	id := fmt.Sprintf("%d", c.nextSubID)
 	c.nextSubID++
 
-	c.subs[id] = func(payload json.RawMessage) {
+	c.subs[id] = gqlSubscription{query: query, variables: variables, handler: func(payload json.RawMessage) {
 		var envelope struct {
 			Data SubscriptionResult `json:"data"`
 		}
@@ -304,16 +393,19 @@ func (c *<%= it.clientClass %>) Subscribe(fn func(*SubscriptionBuilder) *Subscri
 			return
 		}
 		handler(&envelope.Data)
-	}
+	}}
 
-	if err := c.wsConn.WriteJSON(map[string]interface{}{
+	c.writeMu.Lock()
+	err := c.wsConn.WriteJSON(map[string]interface{}{
 		"type": "subscribe",
 		"id":   id,
 		"payload": map[string]interface{}{
 			"query":     query,
 			"variables": variables,
 		},
-	}); err != nil {
+	})
+	c.writeMu.Unlock()
+	if err != nil {
 		delete(c.subs, id)
 		return nil, fmt.Errorf("ws subscribe: %w", err)
 	}
@@ -323,10 +415,12 @@ func (c *<%= it.clientClass %>) Subscribe(fn func(*SubscriptionBuilder) *Subscri
 		defer c.mu.Unlock()
 		delete(c.subs, id)
 		if c.wsConn != nil {
+			c.writeMu.Lock()
 			c.wsConn.WriteJSON(map[string]interface{}{
 				"type": "complete",
 				"id":   id,
 			})
+			c.writeMu.Unlock()
 		}
 	}, nil
 }
@@ -368,6 +462,7 @@ func (c *<%= it.clientClass %>) Dispose() {
 		c.wsConn.Close()
 		c.wsConn = nil
 	}
-	c.subs = make(map[string]func(json.RawMessage))
+	c.disposed = true
+	c.subs = make(map[string]gqlSubscription)
 }
 <% } %>

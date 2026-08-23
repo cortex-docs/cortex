@@ -8,19 +8,10 @@ import { cn } from '@/lib/utils';
 import { useProjectWatch } from '@/lib/use-project-watch';
 import { type SearchDocument, searchIndex } from '@/lib/search-index';
 import { useSearchIndex } from './search-provider';
-import {
-  getRecentSearches,
-  addRecentSearch,
-  toSearchDocument,
-} from '@/lib/recent-searches';
+import { getRecentSearches, addRecentSearch, toSearchDocument } from '@/lib/recent-searches';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
   Command,
   CommandInput,
@@ -138,6 +129,9 @@ export function DocsHeader() {
     logoLightSvg,
     logoHeight,
     showLogoDocsLabel,
+    hasSources,
+    hasDocs,
+    hasMcp,
   } = useMemo(
     () => ({
       ...ssrConfig,
@@ -158,6 +152,9 @@ export function DocsHeader() {
           logoLightSvg: data.logoLightSvg ?? ssrConfig.logoLightSvg,
           logoHeight: data.logoHeight ?? ssrConfig.logoHeight,
           showLogoDocsLabel: data.showLogoDocsLabel ?? ssrConfig.showLogoDocsLabel,
+          hasSources: data.hasSources ?? ssrConfig.hasSources,
+          hasDocs: data.hasDocs ?? ssrConfig.hasDocs,
+          hasMcp: data.hasMcp ?? ssrConfig.hasMcp,
         });
       })
       .catch(() => {});
@@ -218,8 +215,7 @@ export function DocsHeader() {
     };
   }, [allDocuments]);
 
-  const isShowingRecent =
-    !searchQuery.trim() && !typeFilter && !methodFilter && !sourceFilter;
+  const isShowingRecent = !searchQuery.trim() && !typeFilter && !methodFilter && !sourceFilter;
 
   const displayItems = useMemo(() => {
     let items: SearchDocument[];
@@ -277,21 +273,24 @@ export function DocsHeader() {
       } else if (id.startsWith('ws-')) {
         opSlug = id.replace('ws-', '');
         sourcePrefix = 'websocket';
-      } else if (id.startsWith('grpc-')) {
-        opSlug = id.replace('grpc-', '');
-        sourcePrefix = 'grpc';
+      } else if (id.startsWith('openrpc-')) {
+        opSlug = id.replace('openrpc-', '');
+        sourcePrefix = 'openrpc';
       }
 
       const sourceSlugs: Record<string, string> = {};
       for (const doc of allDocuments) {
         if (doc.source === 'REST' && !sourceSlugs['rest'])
-          sourceSlugs['rest'] = doc.breadcrumb.split(' › ')[1]?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'rest';
-        if (doc.source === 'GraphQL' && !sourceSlugs['graphql'])
-          sourceSlugs['graphql'] = 'graphql';
+          sourceSlugs['rest'] =
+            doc.breadcrumb
+              .split(' › ')[1]
+              ?.toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '') || 'rest';
+        if (doc.source === 'GraphQL' && !sourceSlugs['graphql']) sourceSlugs['graphql'] = 'graphql';
         if (doc.source === 'WebSocket' && !sourceSlugs['websocket'])
           sourceSlugs['websocket'] = 'websocket';
-        if (doc.source === 'gRPC' && !sourceSlugs['grpc'])
-          sourceSlugs['grpc'] = 'grpc';
+        if (doc.source === 'OpenRPC' && !sourceSlugs['openrpc']) sourceSlugs['openrpc'] = 'openrpc';
       }
 
       const sSlug = sourceSlugs[sourcePrefix] || sourcePrefix;
@@ -311,28 +310,28 @@ export function DocsHeader() {
                 <>
                   {logoDarkSvg && (
                     <span
-                      className="hidden dark:inline-flex w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto"
+                      className="hidden dark:inline-flex w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoDarkSvg }}
                     />
                   )}
                   {logoLightSvg && (
                     <span
-                      className="inline-flex dark:hidden w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto"
+                      className="inline-flex dark:hidden w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoLightSvg }}
                     />
                   )}
                   {!logoLightSvg && logoDarkSvg && (
                     <span
-                      className="inline-flex dark:hidden w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto"
+                      className="inline-flex dark:hidden w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoDarkSvg }}
                     />
                   )}
                   {!logoDarkSvg && logoLightSvg && (
                     <span
-                      className="hidden dark:inline-flex w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto"
+                      className="hidden dark:inline-flex w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoLightSvg }}
                     />
@@ -340,7 +339,7 @@ export function DocsHeader() {
                 </>
               ) : hasCustomLogo && logoSvg ? (
                 <span
-                  className="w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto"
+                  className="w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
                   style={{ height: logoHeight ?? 24 }}
                   dangerouslySetInnerHTML={{ __html: logoSvg }}
                 />
@@ -453,103 +452,111 @@ export function DocsHeader() {
             </svg>
             Home
           </Link>
-          <Link
-            href="/docs"
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
-              pathname?.startsWith('/docs')
-                ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent',
-            )}
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {hasDocs !== false && (
+            <Link
+              href="/docs"
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
+                pathname?.startsWith('/docs')
+                  ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+              )}
             >
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
-            Docs
-          </Link>
-          <Link
-            href="/api-reference"
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
-              pathname?.startsWith('/api-reference')
-                ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent',
-            )}
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              Docs
+            </Link>
+          )}
+          {hasSources && (
+            <Link
+              href="/api-reference"
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
+                pathname?.startsWith('/api-reference')
+                  ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+              )}
             >
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-              <polyline points="10 9 9 9 8 9" />
-            </svg>
-            API Reference
-          </Link>
-          <Link
-            href="/sdks"
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
-              pathname?.startsWith('/sdks')
-                ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent',
-            )}
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              API Reference
+            </Link>
+          )}
+          {hasSources && (
+            <Link
+              href="/sdks"
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
+                pathname?.startsWith('/sdks')
+                  ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+              )}
             >
-              <polyline points="16 18 22 12 16 6" />
-              <polyline points="8 6 2 12 8 18" />
-            </svg>
-            SDKs
-          </Link>
-          <Link
-            href="/mcp"
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
-              pathname?.startsWith('/mcp')
-                ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent',
-            )}
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              SDKs
+            </Link>
+          )}
+          {hasMcp && (
+            <Link
+              href="/mcp"
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
+                pathname?.startsWith('/mcp')
+                  ? 'bg-accent text-accent-foreground font-medium [&>svg]:text-(--primary-text)'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+              )}
             >
-              <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-              <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-              <line x1="6" y1="6" x2="6.01" y2="6" />
-              <line x1="6" y1="18" x2="6.01" y2="18" />
-            </svg>
-            MCP
-          </Link>
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+                <line x1="6" y1="6" x2="6.01" y2="6" />
+                <line x1="6" y1="18" x2="6.01" y2="18" />
+              </svg>
+              MCP
+            </Link>
+          )}
         </nav>
       </header>
 
@@ -642,9 +649,7 @@ export function DocsHeader() {
                       {item.breadcrumb}
                     </div>
                   </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {item.resultType}
-                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{item.resultType}</span>
                 </CommandItem>
               ))}
             </CommandList>

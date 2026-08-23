@@ -1,3 +1,10 @@
+/** A file part sent by a multipart/form-data request. */
+export interface FileUpload {
+  data: Blob;
+  fileName: string;
+  contentType?: string;
+}
+
 <% for (const schema of it.schemas) { %>
 <% if (schema.isEnum) { %>
 export enum <%= schema.className %> {

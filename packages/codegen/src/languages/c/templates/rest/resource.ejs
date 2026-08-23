@@ -16,14 +16,15 @@
 #include "../client.h"
 
 <% for (const op of r.operations) { -%>
-<% const bodyTyped = op.hasBody && isTypedResponse(op.bodyType); -%>
+<% const bodyTyped = op.hasBody && (isTypedResponse(op.bodyType) || op.isRawBinary); -%>
 <% const respTyped = isTypedResponse(op.responseType); -%>
 <% const respVoid = isVoid(op.responseType); -%>
 <% const respCType = respTyped ? 'sdk_' + it.naming.propertyName(op.responseType) + '_t' : 'cJSON*'; -%>
 <% const params = ['sdk_client_t* client']; -%>
 <% for (const p of op.pathParams) { params.push('const char* ' + p.name); } -%>
 <% if (op.hasBody) { -%>
-<%   if (bodyTyped) { params.push('const sdk_' + it.naming.propertyName(op.bodyType) + '_t* body'); } -%>
+<%   if (op.isRawBinary) { params.push('const sdk_file_upload_t* body'); } -%>
+<%   else if (bodyTyped) { params.push('const sdk_' + it.naming.propertyName(op.bodyType) + '_t* body'); } -%>
 <%   else { params.push('const cJSON* body'); } -%>
 <% } -%>
 <% for (const p of op.queryParams) { params.push('const char* ' + p.name); } -%>
@@ -50,8 +51,29 @@ static inline cJSON* <%= prefix %>_<%= safeName(op.name) %>(<%= params.join(', '
 <% } -%>
 <% const pathArg = op.pathParams.length > 0 ? 'path_buf' : '"' + op.path + '"'; -%>
 <% /* Build body JSON */ -%>
-<% if (op.hasBody && bodyTyped) { -%>
+<% if (op.hasBody && bodyTyped && !op.isRawBinary) { -%>
   cJSON* body_json = sdk_<%= it.naming.propertyName(op.bodyType) %>_to_json(body);
+<% } -%>
+<% if (op.isMultipart) { -%>
+  size_t file_capacity = <%= op.multipartFields.filter(f => f.isFile).length %>;
+<% for (const field of op.multipartFields.filter(f => f.isFileArray)) { -%>
+  file_capacity += body-><%= field.name %>.count;
+<% } -%>
+  sdk_multipart_file_part_t* file_parts = file_capacity
+    ? (sdk_multipart_file_part_t*)calloc(file_capacity, sizeof(sdk_multipart_file_part_t))
+    : NULL;
+  size_t file_count = 0;
+<% for (const field of op.multipartFields.filter(f => f.isFile)) { -%>
+  if (body-><%= field.name %>.data) {
+    file_parts[file_count++] = (sdk_multipart_file_part_t){"<%= field.originalName %>", &body-><%= field.name %>};
+  }
+<% } -%>
+<% for (const field of op.multipartFields.filter(f => f.isFileArray)) { -%>
+  for (size_t i = 0; i < body-><%= field.name %>.count; ++i) {
+    const sdk_file_upload_t* file = &body-><%= field.name %>.items[i];
+    if (file->data) file_parts[file_count++] = (sdk_multipart_file_part_t){"<%= field.originalName %>", file};
+  }
+<% } -%>
 <% } -%>
 <% /* Build query params */ -%>
 <% if (op.queryParams.length > 0) { -%>
@@ -64,9 +86,16 @@ static inline cJSON* <%= prefix %>_<%= safeName(op.name) %>(<%= params.join(', '
   snprintf(full_path, sizeof(full_path), "%s%s", <%= pathArg %>, query_buf);
 <% } -%>
 <% const finalPath = op.queryParams.length > 0 ? 'full_path' : pathArg; -%>
-<% const bodyArg = op.hasBody ? (bodyTyped ? 'body_json' : '(cJSON*)body') : 'NULL'; -%>
-  cJSON* result = sdk_request(client, "<%= op.method %>", <%= finalPath %>, <%= bodyArg %>);
-<% if (op.hasBody && bodyTyped) { -%>
+<% const bodyArg = op.hasBody ? (bodyTyped && !op.isRawBinary ? 'body_json' : '(cJSON*)body') : 'NULL'; -%>
+<% if (op.isRawBinary) { -%>
+  cJSON* result = sdk_request_file(client, "<%= op.method %>", <%= finalPath %>, body, "<%= op.contentType %>");
+<% } else { -%>
+  cJSON* result = <%= op.isMultipart ? 'sdk_request_multipart' : 'sdk_request' %>(client, "<%= op.method %>", <%= finalPath %>, <%= bodyArg %><% if (op.isMultipart) { %>, file_parts, file_count<% } %>);
+<% } -%>
+<% if (op.isMultipart) { -%>
+  free(file_parts);
+<% } -%>
+<% if (op.hasBody && bodyTyped && !op.isRawBinary) { -%>
   cJSON_Delete(body_json);
 <% } -%>
 <% if (respVoid) { -%>

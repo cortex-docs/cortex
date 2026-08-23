@@ -44,11 +44,18 @@ class <%= it.clientClass %>:
         endpoint: str = "<%= it.endpoint %>",
 <% if (hasSubscriptions) { -%>
         ws_endpoint: Optional[str] = None,
+        reconnect: bool = True,
+        reconnect_interval: float = 3.0,
+        max_reconnect_attempts: int = 10,
+        heartbeat_interval: Optional[float] = 30.0,
+        heartbeat_timeout: Optional[float] = 10.0,
 <% } -%>
         bearer_token: Optional[str] = None,
         headers: Optional[dict[str, str]] = None,
+        timeout: float = 15.0,
     ) -> None:
         self.endpoint = endpoint
+        self._timeout = timeout
         self._headers: dict[str, str] = {
             "Content-Type": "application/json",
             **(headers or {}),
@@ -57,10 +64,15 @@ class <%= it.clientClass %>:
             self._headers["Authorization"] = f"Bearer {bearer_token}"
 <% if (hasSubscriptions) { -%>
         self.ws_endpoint = ws_endpoint or endpoint.replace("http", "ws", 1)
+        self._reconnect = reconnect
+        self._reconnect_interval = reconnect_interval
+        self._max_reconnect_attempts = max_reconnect_attempts
+        self._heartbeat_interval = heartbeat_interval
+        self._heartbeat_timeout = heartbeat_timeout
 <% } -%>
 
     def _execute(self, query: str, variables: Optional[dict] = None) -> Any:
-        with httpx.Client() as client:
+        with httpx.Client(timeout=self._timeout) as client:
             response = client.post(
                 self.endpoint,
                 json={"query": query, "variables": variables or {}},
@@ -95,43 +107,43 @@ class <%= it.clientClass %>:
         extra_headers = {
             k: v for k, v in self._headers.items() if k != "Content-Type"
         }
-        async with websockets.connect(
-            self.ws_endpoint,
-            subprotocols=["graphql-transport-ws"],
-            additional_headers=extra_headers or None,
-        ) as ws:
-            await ws.send(json.dumps({"type": "connection_init"}))
-            ack = json.loads(await ws.recv())
-            if ack.get("type") != "connection_ack":
-                raise GqlError(
-                    f"Expected connection_ack, got {ack.get('type')}", []
-                )
-
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": "subscribe",
-                        "id": "1",
+        attempts = 0
+        while True:
+            try:
+                async with websockets.connect(
+                    self.ws_endpoint,
+                    subprotocols=["graphql-transport-ws"],
+                    additional_headers=extra_headers or None,
+                    ping_interval=self._heartbeat_interval,
+                    ping_timeout=self._heartbeat_timeout,
+                ) as ws:
+                    await ws.send(json.dumps({"type": "connection_init"}))
+                    ack = json.loads(await ws.recv())
+                    if ack.get("type") != "connection_ack":
+                        raise GqlError(f"Expected connection_ack, got {ack.get('type')}", [])
+                    await ws.send(json.dumps({
+                        "type": "subscribe", "id": "1",
                         "payload": {"query": query, "variables": variables},
-                    }
-                )
-            )
-
-            while True:
-                raw = json.loads(await ws.recv())
-                msg_type = raw.get("type")
-                if msg_type == "next":
-                    yield raw["payload"]["data"]
-                elif msg_type == "complete":
-                    break
-                elif msg_type == "error":
-                    errors = raw.get("payload", [])
-                    raise GqlError(
-                        "; ".join(
-                            e.get("message", str(e)) for e in errors
-                        ),
-                        errors,
-                    )
+                    }))
+                    attempts = 0
+                    while True:
+                        raw = json.loads(await ws.recv())
+                        msg_type = raw.get("type")
+                        if msg_type == "next":
+                            yield raw["payload"]["data"]
+                        elif msg_type == "complete":
+                            return
+                        elif msg_type == "error":
+                            errors = raw.get("payload", [])
+                            raise GqlError(
+                                "; ".join(e.get("message", str(e)) for e in errors),
+                                errors,
+                            )
+            except (OSError, websockets.ConnectionClosed):
+                if not self._reconnect or attempts >= self._max_reconnect_attempts:
+                    raise
+                attempts += 1
+                await asyncio.sleep(self._reconnect_interval)
 
     async def subscribe_once(
         self, fn: Callable[[_builder.SubscriptionBuilder], _builder.SubscriptionBuilder], timeout: float = 10.0

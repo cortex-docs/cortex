@@ -35,7 +35,10 @@ class TestPhp extends TestCase
         self::$gqlWsUrl  = preg_replace('/^http/', 'ws', self::$gqlUrl);
         self::$wsUrl     = preg_replace('/^http/', 'ws', self::$baseUrl) . '/ws';
         self::$grpcAddr  = getenv('GRPC_ADDR') ?: 'localhost:50051';
-        self::$genDir    = getenv('GEN_DIR') ?: '/tmp/cortex-e2e-sdks/generated';
+        $localGenDir     = __DIR__ . '/generated';
+        self::$genDir    = is_dir($localGenDir . '/php')
+            ? $localGenDir
+            : (getenv('GEN_DIR') ?: '/tmp/cortex-e2e-sdks/generated');
         self::$phpSrcDir = self::$genDir . '/php/src';
         self::$phpDir    = self::$genDir . '/php';
 
@@ -91,16 +94,9 @@ class TestPhp extends TestCase
                 require_once $wsClientPath;
             }
 
-            foreach (get_declared_classes() as $cls) {
-                if (str_ends_with($cls, 'Client') && !str_starts_with($cls, 'GuzzleHttp')
-                    && $cls !== 'GqlClient' && $cls !== 'PetServiceClient' && $cls !== 'OwnerServiceClient'
-                    && !str_starts_with($cls, 'Composer')) {
-                    if (method_exists($cls, 'request')) {
-                        self::$clientClass = $cls;
-                        break;
-                    }
-                }
-            }
+            self::$clientClass = class_exists('TestProjectSdk\\RestApiV1')
+                ? 'TestProjectSdk\\RestApiV1'
+                : null;
 
             if (self::$clientClass !== null) {
                 $cls = self::$clientClass;
@@ -138,8 +134,27 @@ class TestPhp extends TestCase
         if (!self::$hasGuzzle || self::$client === null) {
             $this->markTestSkipped('Guzzle not available or client not found');
         }
-        $result = self::$client->pets()->create(['name' => 'PhpPet', 'species' => 'bird']);
+        $result = self::$client->pets()->create([
+            'name' => 'PhpPet',
+            'species' => 'bird',
+            'profilePic' => new \TestProjectSdk\FileUpload('profile.png', 'pet-avatar', 'image/png'),
+            'attachments' => [
+                new \TestProjectSdk\FileUpload('record.pdf', 'pdf-file', 'application/pdf'),
+                new \TestProjectSdk\FileUpload('notes.txt', 'notes', 'text/plain'),
+            ],
+        ]);
         $this->assertEquals('PhpPet', $result['name']);
+        $this->assertEquals('profile.png', $result['profile_pic_filename']);
+        $this->assertEquals(10, $result['profile_pic_size']);
+        $this->assertEquals('image/png', $result['profile_pic_content_type']);
+        $this->assertEquals(2, $result['attachment_count']);
+        $this->assertEquals(['application/pdf', 'text/plain'], $result['attachment_content_types']);
+
+        $raw = self::$client->uploads()->uploadFile(
+            new \TestProjectSdk\FileUpload('raw.pdf', 'raw-pdf', 'application/pdf'),
+        );
+        $this->assertEquals(7, $raw['size']);
+        $this->assertEquals('application/pdf', $raw['content_type']);
     }
 
     public function testRestPetsDelete(): void
@@ -162,16 +177,51 @@ class TestPhp extends TestCase
         $this->assertNotEmpty($result['data'][0]['email'], 'first owner should have email');
     }
 
+    public function testChunkedResponseStream(): void
+    {
+        if (!self::$hasGuzzle || self::$client === null) {
+            $this->markTestSkipped('Guzzle not available or client not found');
+        }
+        $chunks = iterator_to_array(self::$client->requestStream('GET', '/pets/stream', chunkSize: 1, timeout: 2.0));
+        $body = implode('', $chunks);
+        $this->assertGreaterThan(1, count($chunks));
+        $this->assertStringContainsString('Rex', $body);
+        $this->assertStringContainsString('Whiskers', $body);
+    }
+
+    public function testHttpTimeoutOverride(): void
+    {
+        if (!self::$hasGuzzle || self::$clientClass === null) {
+            $this->markTestSkipped('Guzzle not available or client not found');
+        }
+        $class = self::$clientClass;
+        $short = new $class(baseUrl: self::$baseUrl, timeout: 0.04);
+        try {
+            $short->request('GET', '/transport/slow?delay=250');
+            $this->fail('expected short HTTP timeout');
+        } catch (\Throwable $error) {
+            $this->assertStringContainsString('timed out', strtolower($error->getMessage()));
+        }
+
+        $longer = new $class(baseUrl: self::$baseUrl, timeout: 0.5);
+        $this->assertSame(100, $longer->request('GET', '/transport/slow?delay=100')['delayed']);
+    }
+
     // ========================================================================
     // GraphQL — Query Builder
     // ========================================================================
 
     public function testQuerySingleRootWithPartialSelection(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(
+            endpoint: self::$gqlUrl,
+            wsEndpoint: self::$gqlWsUrl,
+            reconnectInterval: 0.05,
+            maxReconnectAttempts: 5,
+        );
         $r = $gql->query(fn($q) =>
             $q->pets(['limit' => 10], fn($p) =>
                 $p->data(fn($d) => $d->id()->name()->species())->nextCursor()
@@ -186,10 +236,10 @@ class TestPhp extends TestCase
 
     public function testQueryMultiEntity(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $r = $gql->query(fn($q) =>
             $q
                 ->pets(['limit' => 5], fn($p) => $p->data(fn($d) => $d->id()->name()))
@@ -204,10 +254,10 @@ class TestPhp extends TestCase
 
     public function testQuerySingleEntityWithRequiredArgs(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $r = $gql->query(fn($q) =>
             $q->pet(['id' => 'pet-1'], fn($p) => $p->id()->name()->species())
         );
@@ -218,10 +268,10 @@ class TestPhp extends TestCase
 
     public function testQueryNoArgsOverload(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $r = $gql->query(fn($q) =>
             $q->pets(fn($p) => $p->data(fn($d) => $d->id()->name()))
         );
@@ -230,10 +280,10 @@ class TestPhp extends TestCase
 
     public function testQueryNestedSelection(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $r = $gql->query(fn($q) =>
             $q->owners(['limit' => 5], fn($o) =>
                 $o->data(fn($d) =>
@@ -252,10 +302,10 @@ class TestPhp extends TestCase
 
     public function testMutateCreateWithFieldSelection(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $r = $gql->mutate(fn($m) =>
             $m->createPet(
                 ['input' => ['name' => 'BuilderPet', 'species' => 'DOG']],
@@ -269,10 +319,10 @@ class TestPhp extends TestCase
 
     public function testMutateScalarReturn(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $r = $gql->mutate(fn($m) => $m->deletePet(['id' => 'pet-1']));
         $this->assertNotNull($r->deletePet);
         $this->assertIsBool($r->deletePet);
@@ -280,10 +330,10 @@ class TestPhp extends TestCase
 
     public function testMutateMultipleMutations(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $r = $gql->mutate(fn($m) =>
             $m
                 ->createPet(
@@ -303,10 +353,15 @@ class TestPhp extends TestCase
 
     public function testSubscribePetAdopted(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(
+            endpoint: self::$gqlUrl,
+            wsEndpoint: self::$gqlWsUrl,
+            reconnectInterval: 0.05,
+            maxReconnectAttempts: 5,
+        );
         $event = $gql->subscribeOnce(fn($s) =>
             $s->petAdopted(['species' => 'DOG'], fn($p) => $p->id()->name()->species())
         );
@@ -318,10 +373,10 @@ class TestPhp extends TestCase
 
     public function testSubscribeOwnerActivity(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $event = $gql->subscribeOnce(fn($s) =>
             $s->ownerActivity(['ownerId' => 'owner-1'], fn($o) => $o->id()->name()->email())
         );
@@ -333,10 +388,10 @@ class TestPhp extends TestCase
 
     public function testSubscribeUnsubscribeStopsReceivingEvents(): void
     {
-        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('GqlClient')) {
-            $this->markTestSkipped('GqlClient not available');
+        if (!self::$hasGuzzle || !self::$hasGql || !class_exists('Graphql')) {
+            $this->markTestSkipped('Graphql not available');
         }
-        $gql = new \GqlClient(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
+        $gql = new \Graphql(endpoint: self::$gqlUrl, wsEndpoint: self::$gqlWsUrl);
         $eventCount = 0;
         $unsubscribe = $gql->subscribe(
             fn($s) => $s->petAdopted(fn($p) => $p->id()->name()),
@@ -354,10 +409,10 @@ class TestPhp extends TestCase
 
     public function testWebSocketConnectAndReceivePresence(): void
     {
-        if (!self::$hasWs || !class_exists('WsClient')) {
-            $this->markTestSkipped('WsClient not available');
+        if (!self::$hasWs || !class_exists('WebsocketApi')) {
+            $this->markTestSkipped('WebsocketApi not available');
         }
-        $ws = new \WsClient(url: self::$wsUrl);
+        $ws = new \WebsocketApi(url: self::$wsUrl, reconnectInterval: 0.05, maxReconnectAttempts: 5);
         $presenceMsg = null;
         $ws->onChatPresence(function ($msg) use (&$presenceMsg) {
             $presenceMsg = $msg;
@@ -373,10 +428,10 @@ class TestPhp extends TestCase
 
     public function testWebSocketClientHasChannelMethods(): void
     {
-        if (!self::$hasWs || !class_exists('WsClient')) {
-            $this->markTestSkipped('WsClient not available');
+        if (!self::$hasWs || !class_exists('WebsocketApi')) {
+            $this->markTestSkipped('WebsocketApi not available');
         }
-        $ws = new \WsClient(url: self::$wsUrl);
+        $ws = new \WebsocketApi(url: self::$wsUrl);
         $this->assertTrue(method_exists($ws, 'connect'));
         $this->assertTrue(method_exists($ws, 'disconnect'));
         $this->assertTrue(method_exists($ws, 'subscribe'));
@@ -391,10 +446,10 @@ class TestPhp extends TestCase
 
     public function testGrpcPetServiceListPets(): void
     {
-        if (!self::$hasGrpc || !class_exists('PetServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \PetServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $r = $client->listPets([]);
         $this->assertNotNull($r->data);
         $this->assertGreaterThanOrEqual(2, count($r->data));
@@ -404,10 +459,10 @@ class TestPhp extends TestCase
 
     public function testGrpcPetServiceGetPet(): void
     {
-        if (!self::$hasGrpc || !class_exists('PetServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \PetServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $r = $client->getPet(['id' => 'pet-1']);
         $this->assertEquals('Rex', $r->name);
         $this->assertEquals('pet-1', $r->id);
@@ -416,10 +471,10 @@ class TestPhp extends TestCase
 
     public function testGrpcPetServiceCreatePet(): void
     {
-        if (!self::$hasGrpc || !class_exists('PetServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \PetServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $r = $client->createPet(['name' => 'GrpcPhpPet', 'species' => 'SPECIES_DOG']);
         $this->assertEquals('GrpcPhpPet', $r->name);
         $this->assertNotNull($r->id);
@@ -428,10 +483,10 @@ class TestPhp extends TestCase
 
     public function testGrpcPetServiceDeletePet(): void
     {
-        if (!self::$hasGrpc || !class_exists('PetServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \PetServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $r = $client->deletePet(['id' => 'pet-1']);
         $this->assertNotNull($r);
         $client->close();
@@ -439,10 +494,10 @@ class TestPhp extends TestCase
 
     public function testGrpcPetServiceWatchPets(): void
     {
-        if (!self::$hasGrpc || !class_exists('PetServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \PetServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $pets = $client->watchPets([]);
         $this->assertGreaterThanOrEqual(2, count($pets));
         $this->assertNotNull($pets[0]->name);
@@ -453,10 +508,10 @@ class TestPhp extends TestCase
 
     public function testGrpcOwnerServiceListOwners(): void
     {
-        if (!self::$hasGrpc || !class_exists('OwnerServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \OwnerServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $r = $client->listOwners([]);
         $this->assertNotNull($r->data);
         $this->assertGreaterThanOrEqual(1, count($r->data));
@@ -465,10 +520,10 @@ class TestPhp extends TestCase
 
     public function testGrpcOwnerServiceGetOwner(): void
     {
-        if (!self::$hasGrpc || !class_exists('OwnerServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \OwnerServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $r = $client->getOwner(['id' => 'owner-1']);
         $this->assertEquals('Alice', $r->name);
         $this->assertEquals('alice@example.com', $r->email);
@@ -477,10 +532,10 @@ class TestPhp extends TestCase
 
     public function testGrpcOwnerServiceCreateOwner(): void
     {
-        if (!self::$hasGrpc || !class_exists('OwnerServiceClient')) {
+        if (!self::$hasGrpc || !class_exists('Grpc')) {
             $this->markTestSkipped('gRPC client not available');
         }
-        $client = new \OwnerServiceClient(new \GrpcClientOptions(baseUrl: self::$baseUrl));
+        $client = new \Grpc(new \GrpcClientOptions(baseUrl: self::$baseUrl));
         $r = $client->createOwner(['name' => 'GrpcOwner', 'email' => 'grpc@test.com']);
         $this->assertEquals('GrpcOwner', $r->name);
         $this->assertEquals('grpc@test.com', $r->email);

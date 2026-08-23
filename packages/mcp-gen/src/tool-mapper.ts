@@ -1,10 +1,16 @@
-import type { Operation, SchemaObject, AsyncApiChannel, GraphQLOperation, GraphQLField, GrpcService, GrpcMethod, GrpcMessage } from '@cortex/core';
+import type {
+  Operation,
+  SchemaObject,
+  AsyncApiChannel,
+  GraphQLOperation,
+  OpenRpcMethod,
+} from '@cortex/core';
 
 export interface McpTool {
   name: string;
   description: string;
   inputSchema: McpInputSchema;
-  source: 'rest' | 'websocket' | 'graphql' | 'grpc';
+  source: 'rest' | 'websocket' | 'graphql' | 'openrpc';
   method?: string;
   path?: string;
   channelName?: string;
@@ -12,6 +18,8 @@ export interface McpTool {
   serviceName?: string;
   operation?: Operation;
   channel?: AsyncApiChannel;
+  graphqlOperation?: GraphQLOperation;
+  openRpcMethod?: OpenRpcMethod;
 }
 
 export interface McpInputSchema {
@@ -56,8 +64,10 @@ export function mapChannelsToTools(channels: AsyncApiChannel[]): McpTool[] {
       }
 
       tools.push({
-        name: `ws_send_${channel.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-        description: channel.publish.summary ?? `Send message to ${channel.name}`,
+        name: `ws_prepare_${channel.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        description: channel.publish.summary
+          ? `Prepare payload: ${channel.publish.summary}`
+          : `Prepare a payload for ${channel.name}`,
         inputSchema: { type: 'object', properties, required },
         source: 'websocket',
         channelName: channel.name,
@@ -68,7 +78,8 @@ export function mapChannelsToTools(channels: AsyncApiChannel[]): McpTool[] {
     if (channel.subscribe) {
       tools.push({
         name: `ws_describe_${channel.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-        description: `Describe the ${channel.name} WebSocket channel. ${channel.subscribe.summary ?? ''}`.trim(),
+        description:
+          `Describe the ${channel.name} WebSocket channel. ${channel.subscribe.summary ?? ''}`.trim(),
         inputSchema: { type: 'object', properties: {}, required: [] },
         source: 'websocket',
         channelName: channel.name,
@@ -140,11 +151,17 @@ function schemaToMcpProperty(schema: SchemaObject, description?: string): McpPro
 
 function mapSchemaType(type?: string): string {
   switch (type) {
-    case 'integer': return 'number';
-    case 'array': return 'array';
-    case 'boolean': return 'boolean';
-    case 'object': return 'object';
-    case 'string': default: return 'string';
+    case 'integer':
+      return 'number';
+    case 'array':
+      return 'array';
+    case 'boolean':
+      return 'boolean';
+    case 'object':
+      return 'object';
+    case 'string':
+    default:
+      return 'string';
   }
 }
 
@@ -152,11 +169,15 @@ function gqlTypeToMcpType(type: string): string {
   const base = type.replace(/[!\[\]]/g, '');
   switch (base) {
     case 'Int':
-    case 'Float': return 'number';
-    case 'Boolean': return 'boolean';
+    case 'Float':
+      return 'number';
+    case 'Boolean':
+      return 'boolean';
     case 'ID':
-    case 'String': return 'string';
-    default: return 'string';
+    case 'String':
+      return 'string';
+    default:
+      return 'string';
   }
 }
 
@@ -179,6 +200,10 @@ export function mapGraphQLToTools(
         };
         if (arg.required) required.push(arg.name);
       }
+      properties.selection = {
+        type: 'string',
+        description: 'GraphQL field selection for an object result, for example: id name',
+      };
 
       tools.push({
         name: `gql_${prefix}_${op.name}`,
@@ -186,6 +211,7 @@ export function mapGraphQLToTools(
         inputSchema: { type: 'object', properties, required },
         source: 'graphql',
         operationType: label,
+        graphqlOperation: op,
       });
     }
   };
@@ -197,52 +223,47 @@ export function mapGraphQLToTools(
   return tools;
 }
 
-export function mapGrpcToTools(services: GrpcService[], messages: GrpcMessage[]): McpTool[] {
+export function mapOpenRpcToTools(methods: OpenRpcMethod[]): McpTool[] {
   const tools: McpTool[] = [];
-  const msgMap = new Map(messages.map((m) => [m.name, m]));
 
-  for (const svc of services) {
-    for (const method of svc.methods) {
-      const properties: Record<string, McpPropertySchema> = {};
-      const required: string[] = [];
+  for (const method of methods) {
+    const properties: Record<string, McpPropertySchema> = {};
+    const required: string[] = [];
 
-      const inputMsg = msgMap.get(method.inputType);
-      if (inputMsg) {
-        for (const field of inputMsg.fields) {
-          properties[field.name] = {
-            type: field.repeated ? 'array' : grpcFieldType(field.type),
-            description: field.description,
-          };
-          if (!field.optional) required.push(field.name);
-        }
-      }
-
-      const streamLabel = method.serverStreaming && method.clientStreaming ? ' (bidirectional stream)'
-        : method.serverStreaming ? ' (server stream)'
-        : method.clientStreaming ? ' (client stream)'
-        : '';
-
-      tools.push({
-        name: `grpc_${svc.name}_${method.name}`,
-        description: (method.description ?? `gRPC ${svc.name}.${method.name}`) + streamLabel,
-        inputSchema: { type: 'object', properties, required },
-        source: 'grpc',
-        serviceName: svc.name,
-      });
+    for (const param of method.params) {
+      properties[param.name] = {
+        type: openRpcSchemaType(param.schema),
+        description: param.description,
+      };
+      if (param.required) required.push(param.name);
     }
+
+    tools.push({
+      name: `rpc_${method.name}`,
+      description: method.summary ?? method.description ?? `OpenRPC method: ${method.name}`,
+      inputSchema: { type: 'object', properties, required },
+      source: 'openrpc',
+      operationType: method.tags[0],
+      openRpcMethod: method,
+    });
   }
 
   return tools;
 }
 
-function grpcFieldType(type: string): string {
-  switch (type) {
-    case 'int32': case 'int64': case 'uint32': case 'uint64':
-    case 'sint32': case 'sint64': case 'fixed32': case 'fixed64':
-    case 'sfixed32': case 'sfixed64': case 'float': case 'double':
+function openRpcSchemaType(schema: any): string {
+  if (!schema) return 'string';
+  switch (schema.type) {
+    case 'integer':
+    case 'number':
       return 'number';
-    case 'bool': return 'boolean';
-    case 'bytes': return 'string';
-    default: return 'string';
+    case 'boolean':
+      return 'boolean';
+    case 'array':
+      return 'array';
+    case 'object':
+      return 'object';
+    default:
+      return 'string';
   }
 }

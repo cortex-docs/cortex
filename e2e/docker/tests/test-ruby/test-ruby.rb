@@ -7,7 +7,8 @@ BASE_URL = ENV.fetch('MOCK_URL', 'http://localhost:4010')
 GQL_URL = "#{BASE_URL}/graphql"
 GQL_WS_URL = GQL_URL.sub(/^http/, 'ws')
 WS_URL = "ws://#{URI(BASE_URL).host}:#{URI(BASE_URL).port}/ws"
-GEN_DIR = ENV.fetch('GEN_DIR', '/tmp/cortex-e2e-sdks/generated')
+LOCAL_GEN_DIR = File.join(__dir__, 'generated')
+GEN_DIR = File.directory?(File.join(LOCAL_GEN_DIR, 'ruby')) ? LOCAL_GEN_DIR : ENV.fetch('GEN_DIR', '/tmp/cortex-e2e-sdks/generated')
 
 # --- Install dependencies ---
 begin
@@ -64,18 +65,7 @@ end
 
 # --- Discover the generated module ---
 SDK_MODULE = begin
-  found = nil
-  if defined?(TestProject) && TestProject.const_defined?(:Client, false)
-    found = TestProject
-  else
-    ObjectSpace.each_object(Module) do |mod|
-      next unless mod.respond_to?(:const_defined?) && mod.const_defined?(:Client, false)
-      next if mod.name.to_s.empty? || %w[Object Kernel WebSocket].include?(mod.name.to_s)
-      found = mod
-      break
-    end
-  end
-  found
+  defined?(TestProjectSdk) && TestProjectSdk.const_defined?(:RestApiV1, false) ? TestProjectSdk : nil
 end
 
 # ── REST ─────────────────────────────────────────────────────────
@@ -83,7 +73,7 @@ end
 class TestREST < Minitest::Test
   def setup
     skip 'SDK module not found' if SDK_MODULE.nil?
-    @rest = SDK_MODULE::Client.new(base_url: BASE_URL)
+    @rest = SDK_MODULE::RestApiV1.new(base_url: BASE_URL)
   end
 
   def test_rest_pets_list
@@ -98,8 +88,25 @@ class TestREST < Minitest::Test
   end
 
   def test_rest_pets_create
-    r = @rest.pets.create({ name: 'RubyPet', species: 'bird' })
+    r = @rest.pets.create({
+      name: 'RubyPet',
+      species: 'bird',
+      profilePic: FileUpload.new(filename: 'profile.png', data: 'pet-avatar', content_type: 'image/png'),
+      attachments: [
+        FileUpload.new(filename: 'record.pdf', data: 'pdf-file', content_type: 'application/pdf'),
+        FileUpload.new(filename: 'notes.txt', data: 'notes', content_type: 'text/plain')
+      ]
+    })
     assert_equal 'RubyPet', r.name
+    assert_equal 'profile.png', r.profile_pic_filename
+    assert_equal 10, r.profile_pic_size
+    assert_equal 'image/png', r.profile_pic_content_type
+    assert_equal 2, r.attachment_count
+    assert_equal ['application/pdf', 'text/plain'], r.attachment_content_types
+
+    raw = @rest.uploads.upload_file(FileUpload.new(filename: 'raw.pdf', data: 'raw-pdf', content_type: 'application/pdf'))
+    assert_equal 7, raw.size
+    assert_equal 'application/pdf', raw.content_type
   end
 
   def test_rest_pets_delete
@@ -111,6 +118,23 @@ class TestREST < Minitest::Test
     assert r.data.length >= 1
     refute_nil r.data[0].email
   end
+
+  def test_chunked_response_stream
+    chunks = []
+    @rest.request_stream(:get, '/pets/stream', timeout: 2) { |chunk| chunks << chunk }
+    body = chunks.join
+    assert_operator chunks.length, :>=, 2
+    assert_includes body, 'Rex'
+    assert_includes body, 'Whiskers'
+  end
+
+  def test_http_timeout_override
+    short = SDK_MODULE::RestApiV1.new(base_url: BASE_URL, timeout: 0.04)
+    assert_raises(StandardError) { short.request(:get, '/transport/slow?delay=250') }
+
+    longer = SDK_MODULE::RestApiV1.new(base_url: BASE_URL, timeout: 0.5)
+    assert_equal 100, longer.request(:get, '/transport/slow?delay=100')['delayed']
+  end
 end
 
 # ── GraphQL — Query Builder ──────────────────────────────────────
@@ -118,7 +142,7 @@ end
 class TestGraphQL < Minitest::Test
   def setup
     skip 'no gql-client.rb' unless HAS_GQL
-    @gql = GqlClient.new(endpoint: GQL_URL, ws_endpoint: GQL_WS_URL)
+    @gql = Graphql.new(endpoint: GQL_URL, ws_endpoint: GQL_WS_URL, reconnect_interval: 0.05)
   end
 
   def teardown
@@ -249,11 +273,11 @@ end
 
 class TestWebSocket < Minitest::Test
   def setup
-    skip 'WebSocket client not available' unless HAS_WS && defined?(WsClient)
+    skip 'WebSocket client not available' unless HAS_WS && defined?(WebsocketApi)
   end
 
   def test_connect_receive_presence
-    ws = WsClient.new(url: WS_URL)
+    ws = WebsocketApi.new(url: WS_URL, reconnect_interval: 0.05)
     received = nil
 
     ws.on_chat_presence { |msg| received = msg }
@@ -268,12 +292,14 @@ class TestWebSocket < Minitest::Test
     assert_equal 'server', received.user_id
     assert_equal 'online', received.status
 
+    # Keep the restored connection open for a client-initiated heartbeat tick.
+    sleep 0.2
     ws.send_chat_messages({ text: 'hello from generated SDK' })
     ws.disconnect
   end
 
   def test_ws_client_has_channel_methods
-    ws = WsClient.new(url: WS_URL)
+    ws = WebsocketApi.new(url: WS_URL)
     assert ws.respond_to?(:subscribe), 'missing subscribe'
     assert ws.respond_to?(:send_message), 'missing send_message'
     assert ws.respond_to?(:connect), 'missing connect'
@@ -287,9 +313,9 @@ end
 
 class TestGRPC < Minitest::Test
   def setup
-    skip 'gRPC client not available' unless HAS_GRPC && defined?(PetServiceClient) && defined?(OwnerServiceClient)
-    @pet_client = PetServiceClient.new(base_url: BASE_URL)
-    @owner_client = OwnerServiceClient.new(base_url: BASE_URL)
+    skip 'gRPC client not available' unless HAS_GRPC && defined?(Grpc)
+    @pet_client = Grpc.new(base_url: BASE_URL)
+    @owner_client = @pet_client
   end
 
   def teardown

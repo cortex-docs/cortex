@@ -5,6 +5,11 @@ set -e
 GEN="${GEN_DIR:-/tmp/cortex-e2e-sdks/generated}"
 BASE="${MOCK_URL:-http://localhost:4010}"
 JAVA_SRC="$GEN/java/src"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -d "$SCRIPT_DIR/generated/java/src" ]; then
+  GEN="$SCRIPT_DIR/generated"
+  JAVA_SRC="$GEN/java/src"
+fi
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
 
@@ -19,8 +24,8 @@ echo ""
 if [ ! -d "$JAVA_SRC" ]; then echo "  ✗ SDK source not found at $JAVA_SRC"; exit 1; fi
 echo "  ✓ SDK source found"
 
-# 2. Read the package name from client.java
-PKG=$(grep "^package " "$JAVA_SRC/client.java" | head -1 | sed 's/package //;s/;//')
+# 2. Read the package name from the REST client.
+PKG=$(grep "^package " "$JAVA_SRC/RestApiV1.java" | head -1 | sed 's/package //;s/;//')
 PKG_DIR=$(echo "$PKG" | tr '.' '/')
 echo "  ✓ Package: $PKG"
 
@@ -29,12 +34,14 @@ mkdir -p "$TMP/$PKG_DIR"
 mkdir -p "$TMP/${PKG_DIR}/models"
 
 # Copy REST core files
-for f in client.java ApiException.java; do
+for f in RestApiV1.java ApiException.java PaginatedResponse.java; do
   [ -f "$JAVA_SRC/$f" ] && cp "$JAVA_SRC/$f" "$TMP/$PKG_DIR/"
 done
 
-# Copy types to models subdir (different package)
-[ -f "$JAVA_SRC/types.java" ] && cp "$JAVA_SRC/types.java" "$TMP/${PKG_DIR}/models/"
+# Copy REST models (different package).
+if [ -d "$JAVA_SRC/models" ]; then
+  cp "$JAVA_SRC/models"/*.java "$TMP/${PKG_DIR}/models/"
+fi
 
 # Copy resource files
 if [ -d "$JAVA_SRC/resources" ]; then
@@ -131,7 +138,6 @@ done
 echo "  ✓ SDK files copied and split to build dir"
 
 # 6. Copy test file with correct package name
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 sed "s/^package .*;/package $PKG;/" "$SCRIPT_DIR/TestJava.java" > "$TMP/$PKG_DIR/TestJava.java"
 split_java_file "$TMP/$PKG_DIR/TestJava.java"
 echo "  ✓ Test file copied"

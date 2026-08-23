@@ -6,6 +6,18 @@
 #include <stdint.h>
 #include "cjson/cJSON.h"
 
+typedef struct {
+  const char* filename;
+  const unsigned char* data;
+  size_t size;
+  const char* content_type;
+} sdk_file_upload_t;
+
+typedef struct {
+  const sdk_file_upload_t* items;
+  size_t count;
+} sdk_file_upload_list_t;
+
 <% for (const schema of it.schemas) { %>
 <% if (schema.isEnum) { %>
 typedef enum {
@@ -33,7 +45,11 @@ static inline sdk_<%= it.naming.propertyName(schema.name) %>_t sdk_<%= it.naming
 <% } else { %>
 typedef struct {
 <% for (const prop of schema.properties) { %>
-<% if (prop.type === 'char*') { %>
+<% if (prop.isFile) { %>
+  sdk_file_upload_t <%= prop.name %>;
+<% } else if (prop.isFileArray) { %>
+  sdk_file_upload_list_t <%= prop.name %>;
+<% } else if (prop.type === 'char*') { %>
   char* <%= prop.name %>;
 <% } else if (prop.type === 'int64_t') { %>
   int64_t <%= prop.name %>;
@@ -50,7 +66,11 @@ typedef struct {
 static inline cJSON* sdk_<%= it.naming.propertyName(schema.name) %>_to_json(const sdk_<%= it.naming.propertyName(schema.name) %>_t* v) {
   cJSON* j = cJSON_CreateObject();
 <% for (const prop of schema.properties) { %>
-<% if (prop.type === 'char*') { %>
+<% if (prop.isFile) { %>
+  /* File fields are encoded only for multipart requests. */
+<% } else if (prop.isFileArray) { %>
+  /* File-list fields are encoded only for multipart requests. */
+<% } else if (prop.type === 'char*') { %>
   if (v-><%= prop.name %>) cJSON_AddStringToObject(j, "<%= prop.originalName %>", v-><%= prop.name %>);
 <% } else if (prop.type === 'int64_t') { %>
   cJSON_AddNumberToObject(j, "<%= prop.originalName %>", (double)v-><%= prop.name %>);
@@ -69,7 +89,11 @@ static inline void sdk_<%= it.naming.propertyName(schema.name) %>_from_json(cons
   memset(v, 0, sizeof(*v));
   if (!j) return;
 <% for (const prop of schema.properties) { %>
-<% if (prop.type === 'char*') { %>
+<% if (prop.isFile) { %>
+  /* Multipart file fields are not read from JSON responses. */
+<% } else if (prop.isFileArray) { %>
+  /* Multipart file-list fields are not read from JSON responses. */
+<% } else if (prop.type === 'char*') { %>
   { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsString(f)) v-><%= prop.name %> = strdup(f->valuestring); }
 <% } else if (prop.type === 'int64_t') { %>
   { cJSON* f = cJSON_GetObjectItem(j, "<%= prop.originalName %>"); if (f && cJSON_IsNumber(f)) v-><%= prop.name %> = (int64_t)f->valuedouble; }
@@ -86,7 +110,11 @@ static inline void sdk_<%= it.naming.propertyName(schema.name) %>_from_json(cons
 static inline void sdk_<%= it.naming.propertyName(schema.name) %>_free(sdk_<%= it.naming.propertyName(schema.name) %>_t* v) {
   if (!v) return;
 <% for (const prop of schema.properties) { %>
-<% if (prop.type === 'char*') { %>
+<% if (prop.isFile) { %>
+  /* FileUpload borrows its data; there is nothing to free. */
+<% } else if (prop.isFileArray) { %>
+  /* FileUploadList borrows its items; there is nothing to free. */
+<% } else if (prop.type === 'char*') { %>
   free(v-><%= prop.name %>); v-><%= prop.name %> = NULL;
 <% } else if (prop.type === 'cJSON*') { %>
   if (v-><%= prop.name %>) { cJSON_Delete(v-><%= prop.name %>); v-><%= prop.name %> = NULL; }

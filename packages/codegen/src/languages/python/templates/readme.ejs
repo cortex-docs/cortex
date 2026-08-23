@@ -1,6 +1,7 @@
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
 <% const clientClass = it.clientClass; -%>
 <% const pkgName = it.config.languageConfig.package_name; -%>
+<% const moduleName = pkgName.replace(/[-.]/g, '_'); -%>
 <% const hasWs = it.config.config.sources.some(s => s.type === 'asyncapi-spec'); -%>
 <% const hasGql = it.config.config.sources.some(s => s.type === 'graphql-spec'); -%>
 <% const hasGrpc = it.config.config.sources.some(s => s.type === 'grpc-spec'); -%>
@@ -78,8 +79,8 @@ pip install <%= pkgName %>
 ### Examples
 
 ```python
-from <%= pkgName %> import <%= clientClass %>
-from <%= pkgName %>.types import *
+from <%= moduleName %> import <%= clientClass %>
+from <%= moduleName %>.types import *
 <% for (const resource of it.resources) { %>
 # ── <%= it.utils.toPascalCase(resource.name) %> ──
 <% for (const op of resource.operations) { %>
@@ -295,7 +296,7 @@ await ws.disconnect()
 ### Initialization
 
 ```python
-from <%= pkgName %> import <%= grpcClass %>, GrpcClientOptions
+from <%= moduleName %> import <%= grpcClass %>, GrpcClientOptions
 
 <%= grpcVar %> = <%= grpcClass %>(GrpcClientOptions(target="localhost:50051"))
 ```

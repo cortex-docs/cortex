@@ -1,0 +1,90 @@
+import sanitizeHtml from 'sanitize-html';
+
+const SVG_TAGS = [
+  'svg',
+  'g',
+  'path',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'rect',
+  'defs',
+  'linearGradient',
+  'radialGradient',
+  'stop',
+  'clipPath',
+  'mask',
+  'pattern',
+  'symbol',
+  'use',
+  'title',
+  'desc',
+];
+
+const SVG_ATTRIBUTES = [
+  'aria-hidden',
+  'aria-label',
+  'class',
+  'clip-path',
+  'clip-rule',
+  'cx',
+  'cy',
+  'd',
+  'fill',
+  'fill-opacity',
+  'fill-rule',
+  'focusable',
+  'height',
+  'id',
+  'mask',
+  'offset',
+  'opacity',
+  'points',
+  'preserveAspectRatio',
+  'r',
+  'role',
+  'rx',
+  'ry',
+  'spreadMethod',
+  'stop-color',
+  'stop-opacity',
+  'stroke',
+  'stroke-dasharray',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'stroke-opacity',
+  'stroke-width',
+  'transform',
+  'viewBox',
+  'width',
+  'x',
+  'x1',
+  'x2',
+  'xlink:href',
+  'xmlns',
+  'xmlns:xlink',
+  'y',
+  'y1',
+  'y2',
+];
+
+export function sanitizeSvg(svg: string): string | undefined {
+  if (svg.length > 1_000_000 || !/<svg(?:\s|>)/i.test(svg)) return undefined;
+  const sanitized = sanitizeHtml(svg, {
+    allowedTags: SVG_TAGS,
+    allowedAttributes: { '*': SVG_ATTRIBUTES },
+    allowedSchemes: [],
+    allowProtocolRelative: false,
+    parser: {
+      lowerCaseTags: false,
+      lowerCaseAttributeNames: false,
+    },
+    exclusiveFilter: (frame) => {
+      const href = frame.attribs.href ?? frame.attribs['xlink:href'];
+      return typeof href === 'string' && !href.startsWith('#');
+    },
+  }).trim();
+  return sanitized.startsWith('<svg') ? sanitized : undefined;
+}

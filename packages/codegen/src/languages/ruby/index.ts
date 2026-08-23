@@ -21,6 +21,7 @@ export class RubyPlugin extends TemplateBasedPlugin {
       any: 'Object',
       void: 'nil',
       datetime: 'String',
+      file: 'FileUpload',
       nullable: (type) => `${type}`,
     },
     naming: {
@@ -42,6 +43,18 @@ export class RubyPlugin extends TemplateBasedPlugin {
       const moduleName = toPascalCase(context.languageConfig.package_name);
 
       return [
+        {
+          path: `lib/${gemName}.rb`,
+          content: `# frozen_string_literal: true
+
+require_relative "${gemName}/errors"
+
+Dir[File.expand_path("../src/**/*.rb", __dir__)].sort.each do |file|
+  require file unless File.basename(file) == "index.rb"
+end
+`,
+          overwrite: true,
+        },
         {
           path: `lib/${gemName}/errors.rb`,
           content: `# frozen_string_literal: true

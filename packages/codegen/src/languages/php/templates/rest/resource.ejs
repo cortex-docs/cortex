@@ -1,5 +1,5 @@
 <% const r = it.resource; -%>
-<% const ns = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const ns = it.naming.className(it.config.languageConfig.package_name.replace(/[\/.]+/g, '-')); -%>
 <% const clientClass = it.clientClass; -%>
 <?php
 
@@ -16,7 +16,7 @@ class <%= r.className %>
 <% for (const op of r.operations) { -%>
 <% const params = []; -%>
 <% for (const p of op.pathParams) { params.push(`string $${p.name}`); } -%>
-<% if (op.hasBody) { params.push('array $body'); } -%>
+<% if (op.hasBody) { params.push(op.isRawBinary ? 'FileUpload $body' : 'array $body'); } -%>
 <% if (op.queryParams.length > 0) { params.push('?array $query = null'); } -%>
 <% let pathExpr = `'${op.path}'`; -%>
 <% if (op.pathParams.length > 0) { let expr = `'${op.path}'`; for (const p of op.pathParams) { expr = `str_replace('{${p.originalName}}', $${p.name}, ${expr})`; } pathExpr = expr; } -%>
@@ -27,7 +27,7 @@ class <%= r.className %>
 <% } -%>
     public function <%= op.name %>(<%= params.join(', ') %>): mixed
     {
-        return $this->client->request('<%= op.method %>', <%= pathExpr %>, <%= queryArg %>, <%= bodyArg %>);
+        return $this->client->request('<%= op.method %>', <%= pathExpr %>, <%= queryArg %>, <%= bodyArg %><% if (op.isMultipart) { %>, true<% } %><% if (op.isRawBinary) { %>, false, true, '<%= op.contentType %>'<% } %>);
     }
 
 <% } -%>

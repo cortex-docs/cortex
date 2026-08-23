@@ -6,6 +6,8 @@
 #include <optional>
 #include <stdexcept>
 #include <cstdint>
+#include <functional>
+#include <utility>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 <% for (const r of it.resources) { %>
@@ -20,7 +22,7 @@ struct ClientOptions {
   std::string api_key;
   std::string bearer_token;
   std::map<std::string, std::string> headers;
-  int timeout = 30;
+  int timeout = 15;
 };
 
 class ApiError : public std::runtime_error {
@@ -36,7 +38,10 @@ using RequestFn = std::function<nlohmann::json(
   const std::string&,
   const std::string&,
   const std::map<std::string, std::string>&,
-  const nlohmann::json*
+  const nlohmann::json*,
+  const httplib::MultipartFormDataItems*,
+  const FileUpload*,
+  const std::string&
 )>;
 
 class <%= clientClass %> {
@@ -48,7 +53,10 @@ class <%= clientClass %> {
     const std::string& method,
     const std::string& path,
     const std::map<std::string, std::string>& query,
-    const nlohmann::json* body
+    const nlohmann::json* body,
+    const httplib::MultipartFormDataItems* multipart = nullptr,
+    const FileUpload* raw_file = nullptr,
+    const std::string& raw_content_type = ""
   ) {
     httplib::Client cli(base_url_);
     cli.set_connection_timeout(timeout_);
@@ -65,11 +73,37 @@ class <%= clientClass %> {
       }
     }
 
-    httplib::Headers hdrs(headers_.begin(), headers_.end());
+    httplib::Headers hdrs;
+    for (const auto& [key, value] : headers_) {
+      if ((!multipart && !raw_file) || key != "Content-Type") hdrs.emplace(key, value);
+    }
     std::string json_body = body ? body->dump() : "";
 
     httplib::Result res;
-    if (method == "GET") {
+    if (raw_file) {
+      const auto content_type = raw_file->content_type.empty()
+        ? (raw_content_type.empty() ? "application/octet-stream" : raw_content_type)
+        : raw_file->content_type;
+      httplib::Request file_request;
+      file_request.method = method;
+      file_request.path = full_path;
+      file_request.headers = hdrs;
+      file_request.body = raw_file->data;
+      file_request.set_header("Content-Type", content_type);
+      res = cli.send(file_request);
+    } else if (multipart) {
+      const auto boundary = httplib::detail::make_multipart_data_boundary();
+      httplib::Request multipart_request;
+      multipart_request.method = method;
+      multipart_request.path = full_path;
+      multipart_request.headers = hdrs;
+      multipart_request.body = httplib::detail::serialize_multipart_formdata(*multipart, boundary);
+      multipart_request.set_header(
+        "Content-Type",
+        httplib::detail::serialize_multipart_formdata_get_content_type(boundary)
+      );
+      res = cli.send(multipart_request);
+    } else if (method == "GET") {
       res = cli.Get(full_path, hdrs);
     } else if (method == "POST") {
       res = cli.Post(full_path, hdrs, json_body, "application/json");
@@ -120,8 +154,11 @@ public:
 
     auto req = [this](const std::string& method, const std::string& path,
                        const std::map<std::string, std::string>& query,
-                       const nlohmann::json* body) {
-      return this->do_request(method, path, query, body);
+                       const nlohmann::json* body,
+                       const httplib::MultipartFormDataItems* multipart,
+                       const FileUpload* raw_file,
+                       const std::string& raw_content_type) {
+      return this->do_request(method, path, query, body, multipart, raw_file, raw_content_type);
     };
 <% for (const r of it.resources) { %>
     <%= it.naming.propertyName(r.name) %> = <%= r.className %>(req);
@@ -134,7 +171,47 @@ public:
     const std::map<std::string, std::string>& query = {},
     const nlohmann::json* body = nullptr
   ) {
-    return do_request(method, path, query, body);
+    return do_request(method, path, query, body, nullptr, nullptr, "");
+  }
+
+  /* Streams decoded HTTP payload chunks. Return false from on_chunk to cancel. */
+  void request_stream(
+    const std::string& method,
+    const std::string& path,
+    const std::function<bool(const char*, size_t)>& on_chunk,
+    const std::map<std::string, std::string>& query = {},
+    const nlohmann::json* body = nullptr
+  ) {
+    httplib::Client cli(base_url_);
+    cli.set_connection_timeout(timeout_);
+    cli.set_read_timeout(timeout_);
+    std::string full_path = path;
+    if (!query.empty()) {
+      full_path += "?";
+      bool first = true;
+      for (const auto& [k, v] : query) {
+        if (!first) full_path += "&";
+        full_path += httplib::detail::encode_query_param(k) + "=" + httplib::detail::encode_query_param(v);
+        first = false;
+      }
+    }
+    httplib::Headers hdrs(headers_.begin(), headers_.end());
+    httplib::Request request;
+    request.method = method;
+    request.path = full_path;
+    request.headers = std::move(hdrs);
+    if (body) request.body = body->dump();
+    request.content_receiver = [&on_chunk](
+      const char* data,
+      size_t length,
+      uint64_t,
+      uint64_t
+    ) {
+      return on_chunk(data, length);
+    };
+    httplib::Result res = cli.send(request);
+    if (!res) throw ApiError(-1, "Request failed", "Connection error");
+    if (res->status >= 400) throw ApiError(res->status, res->reason, res->body);
   }
 };
 

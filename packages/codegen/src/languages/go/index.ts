@@ -29,6 +29,7 @@ export class GoPlugin extends TemplateBasedPlugin {
       any: 'interface{}',
       void: '',
       datetime: 'string',
+      file: 'FileUpload',
       nullable: (type) => `*${type}`,
     },
     naming: {
@@ -39,16 +40,18 @@ export class GoPlugin extends TemplateBasedPlugin {
       enumValue: toUpperSnakeCase,
       parameterName: toCamelCase,
     },
-    packageTemplates: [
-      { template: 'go-mod', path: 'go.mod' },
-    ],
+    packageTemplates: [{ template: 'go-mod', path: 'go.mod' }],
+    clientPath: () => 'client.go',
+    typesPath: 'types.go',
+    resourcePath: (resource) => `${resource.fileName}.go`,
+    indexPath: 'index.go',
     packageFiles: (context) => {
       const parts = context.languageConfig.package_name.split('/');
       const pkgName = parts[parts.length - 1].replace(/-/g, '');
 
       return [
         {
-          path: 'src/errors.go',
+          path: 'errors.go',
           content: `package ${pkgName}\n\nimport "fmt"\n\n// APIError represents an error response from the API.\ntype APIError struct {\n\tStatusCode int\n\tBody       string\n}\n\nfunc (e *APIError) Error() string {\n\treturn fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)\n}\n`,
           overwrite: true,
         },

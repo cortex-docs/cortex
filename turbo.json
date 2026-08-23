@@ -3,7 +3,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**"]
+      "outputs": ["dist/**", ".next-build/**", ".cortex/**"]
     },
     "dev": {
       "cache": false,
@@ -11,6 +11,10 @@
     },
     "test": {
       "dependsOn": ["build"]
+    },
+    "test:coverage": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"]
     },
     "test:e2e": {
       "dependsOn": ["build"]

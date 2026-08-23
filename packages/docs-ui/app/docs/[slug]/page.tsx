@@ -1,102 +1,195 @@
 'use client';
 
-import { use, useCallback, useEffect, useRef, useState } from 'react';
+import { use, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { DocsHeader } from '@/components/docs/docs-header';
+
 import { DocsBreadcrumb, type BreadcrumbSegment } from '@/components/docs/docs-breadcrumb';
-import { useProjectWatch } from '@/lib/use-project-watch';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import { useDocs } from '../docs-shell';
 
-interface DocsDocument {
-  title: string;
-  slug: string;
-  content: string;
+interface TocItem {
+  id: string;
+  text: string;
+  level: number;
 }
 
-interface DocsSection {
-  section: string;
-  documents: DocsDocument[];
+function extractToc(html: string): TocItem[] {
+  const items: TocItem[] = [];
+  const re = /<h([1-3])\s+id="([^"]+)"[^>]*>(.*?)<\/h[1-3]>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const text = m[3].replace(/<[^>]+>/g, '').trim();
+    if (text) items.push({ id: m[2], level: parseInt(m[1], 10), text });
+  }
+  return items;
 }
 
-interface DocsResponse {
-  sections: DocsSection[];
-}
-
-export default function DocSlugPage({
-  params,
+function TableOfContents({
+  items,
+  activeId,
+  scrollContainer,
 }: {
-  params: Promise<{ slug: string }>;
+  items: TocItem[];
+  activeId: string;
+  scrollContainer: HTMLElement | null;
 }) {
-  const { slug } = use(params);
-  const [data, setData] = useState<DocsResponse | null>(null);
-  const [activeSlug, setActiveSlug] = useState(slug);
-  const mainRef = useRef<HTMLElement>(null);
-  const isScrollingRef = useRef(false);
+  if (items.length === 0) return null;
 
-  const fetchDocs = useCallback(() => {
-    fetch('/api/docs')
-      .then((r) => r.json())
-      .then((d: DocsResponse) => setData(d));
-  }, []);
-
-  useEffect(() => {
-    fetchDocs();
-  }, [fetchDocs]);
-  useProjectWatch(fetchDocs);
-
-  useEffect(() => {
-    if (!data) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (isScrollingRef.current) return;
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const docSlug = entry.target.getAttribute('data-doc-slug');
-            if (docSlug) {
-              setActiveSlug(docSlug);
-              const newPath = `/docs/${docSlug}`;
-              if (window.location.pathname !== newPath) {
-                window.history.replaceState(null, '', newPath);
-              }
-            }
-            break;
-          }
-        }
-      },
-      { rootMargin: '-80px 0px -60% 0px', threshold: 0.1 },
-    );
-
-    document.querySelectorAll('[data-doc-slug]').forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [data]);
-
-  const initialSlugRef = useRef(slug);
-
-  useEffect(() => {
-    if (!data) return;
-    if (slug === initialSlugRef.current) {
-      const firstSlug = data.sections?.[0]?.documents?.[0]?.slug;
-      if (slug === firstSlug) return;
-    }
-    initialSlugRef.current = '';
-    const el = document.querySelector(`[data-doc-slug="${slug}"]`);
-    if (el) {
-      isScrollingRef.current = true;
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveSlug(slug);
-      setTimeout(() => {
-        isScrollingRef.current = false;
-      }, 800);
-    }
-  }, [slug, data]);
-
-  const activeDoc = data?.sections
-    .flatMap((s) => s.documents)
-    .find((d) => d.slug === activeSlug);
-
-  const activeSectionData = data?.sections.find((s) =>
-    s.documents.some((d) => d.slug === activeSlug),
+  return (
+    <nav className="space-y-1">
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 mb-3">
+        On this page
+      </h4>
+      {items.map((item) => (
+        <button
+          key={item.id}
+          onClick={() => {
+            const el = scrollContainer?.querySelector(`#${CSS.escape(item.id)}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          className={cn(
+            'block w-full text-left text-[13px] py-1 transition-colors cursor-pointer',
+            item.level === 1 && 'font-medium',
+            item.level === 2 && 'pl-3',
+            item.level === 3 && 'pl-6',
+            activeId === item.id
+              ? 'text-foreground font-medium'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {item.text}
+        </button>
+      ))}
+    </nav>
   );
+}
+
+function CopyPageButton({ markdown }: { markdown: string }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(markdown).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
+      }}
+      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors cursor-pointer"
+    >
+      {copied ? (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+      {copied ? 'Copied!' : 'Copy page'}
+    </button>
+  );
+}
+
+export default function DocSlugPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+  const { data, allDocs } = useDocs();
+  const mainRef = useRef<HTMLElement>(null);
+  const articleRef = useRef<HTMLElement>(null);
+  const [activeTocId, setActiveTocId] = useState('');
+  const [tocSpacer, setTocSpacer] = useState(0);
+
+  const currentIndex = allDocs.findIndex((d) => d.slug === slug);
+  const nextDoc = currentIndex >= 0 ? allDocs[currentIndex + 1] : undefined;
+  const prevDoc = currentIndex > 0 ? allDocs[currentIndex - 1] : undefined;
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+  }, [slug]);
+
+  const activeDoc = allDocs[currentIndex];
+
+  const tocItems = useMemo(() => (activeDoc ? extractToc(activeDoc.content) : []), [activeDoc]);
+
+  useEffect(() => {
+    const container = mainRef.current;
+    if (!container || tocItems.length === 0) return;
+
+    const handleScroll = () => {
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+
+      if (nearBottom) {
+        setActiveTocId(tocItems[tocItems.length - 1].id);
+        return;
+      }
+
+      const headings = tocItems
+        .map((item) => container.querySelector(`#${CSS.escape(item.id)}`))
+        .filter(Boolean) as HTMLElement[];
+
+      let current = '';
+      for (const heading of headings) {
+        const rect = heading.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        if (rect.top - containerRect.top <= 100) {
+          current = heading.id;
+        }
+      }
+      setActiveTocId(current);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [tocItems, data]);
+
+  useEffect(() => {
+    const container = mainRef.current;
+    const article = articleRef.current;
+    if (!container || !article || tocItems.length === 0) {
+      setTocSpacer(0);
+      return;
+    }
+
+    const lastId = tocItems[tocItems.length - 1].id;
+    const lastHeading = article.querySelector(`#${CSS.escape(lastId)}`);
+    if (!lastHeading) {
+      setTocSpacer(0);
+      return;
+    }
+
+    const containerHeight = container.clientHeight;
+    const headingBottom =
+      lastHeading.getBoundingClientRect().bottom - article.getBoundingClientRect().top;
+    const articleHeight = article.scrollHeight;
+    const contentAfterLastHeading = articleHeight - headingBottom;
+    const needed = Math.round(containerHeight * 0.5 - contentAfterLastHeading);
+    setTocSpacer(Math.max(0, Math.min(needed, containerHeight * 0.6)));
+  }, [tocItems, activeDoc]);
+
+  const activeSectionData = data?.sections.find((s) => s.documents.some((d) => d.slug === slug));
 
   const breadcrumbs: BreadcrumbSegment[] = [
     { label: 'Docs', href: '/docs' },
@@ -105,67 +198,113 @@ export default function DocSlugPage({
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <DocsHeader />
-      <div className="flex">
-        <aside className="w-64 shrink-0 border-r border-border p-4 sticky top-0 h-[calc(100vh-88px)] overflow-y-auto">
-          {data?.sections.map((section, idx) => (
-            <div key={`${section.section}-${idx}`} className="mb-6">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-2">
-                {section.section}
-              </h3>
-              <ul className="space-y-0.5">
-                {section.documents.map((doc) => (
-                  <li key={doc.slug}>
-                    <Link
-                      href={`/docs/${doc.slug}`}
-                      className={`block w-full text-left text-sm px-2.5 py-1.5 rounded-lg transition-all ${
-                        activeSlug === doc.slug
-                          ? 'bg-accent text-accent-foreground font-medium'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                      }`}
-                    >
-                      {doc.title}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-          {data && data.sections.length === 0 && (
-            <p className="text-sm text-muted-foreground px-2">
-              No documentation sections configured.
-            </p>
-          )}
-        </aside>
-
-        <main ref={mainRef} className="flex-1 overflow-y-auto h-[calc(100vh-88px)]">
-          <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/30">
-            <DocsBreadcrumb segments={breadcrumbs} />
-          </div>
-          <div className="p-8 flex justify-center">
-            <div className="w-full max-w-3xl space-y-16">
-              {data?.sections.flatMap((section) =>
-                section.documents.map((doc) => (
-                  <article
-                    key={doc.slug}
-                    data-doc-slug={doc.slug}
-                    className="docs-content scroll-mt-16"
-                  >
-                    <div dangerouslySetInnerHTML={{ __html: doc.content }} />
-                  </article>
-                )),
-              )}
-              {!data && (
-                <div className="fixed inset-0 flex items-center justify-center">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+    <>
+      <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto h-[calc(100vh-88px)]">
+        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/30">
+          <DocsBreadcrumb segments={breadcrumbs} />
+        </div>
+        <div className="p-8 flex justify-center">
+          <div className="w-full max-w-3xl">
+            {activeDoc ? (
+              <>
+                <div className="flex justify-end mb-2">
+                  <CopyPageButton markdown={activeDoc.markdown} />
                 </div>
-              )}
-              <div className="h-[40vh]" aria-hidden="true" />
-            </div>
+                <article ref={articleRef} className="docs-content">
+                  <div dangerouslySetInnerHTML={{ __html: activeDoc.content }} />
+                </article>
+                {(prevDoc || nextDoc) && (
+                  <nav className="mt-12 grid grid-cols-2 gap-4">
+                    {prevDoc ? (
+                      <Link href={`/docs/${prevDoc.slug}`} className="group">
+                        <Card className="h-full transition-colors hover:bg-accent/50">
+                          <CardHeader>
+                            <CardDescription className="text-xs uppercase tracking-wider">
+                              Previous
+                            </CardDescription>
+                            <CardTitle className="text-sm group-hover:text-(--primary-text) transition-colors">
+                              ← {prevDoc.title}
+                            </CardTitle>
+                          </CardHeader>
+                        </Card>
+                      </Link>
+                    ) : (
+                      <span />
+                    )}
+                    {nextDoc && (
+                      <Link href={`/docs/${nextDoc.slug}`} className="group col-start-2">
+                        <Card className="h-full text-right transition-colors hover:bg-accent/50">
+                          <CardHeader className="items-end">
+                            <CardDescription className="text-xs uppercase tracking-wider">
+                              Next
+                            </CardDescription>
+                            <CardTitle className="text-sm group-hover:text-(--primary-text) transition-colors">
+                              {nextDoc.title} →
+                            </CardTitle>
+                          </CardHeader>
+                        </Card>
+                      </Link>
+                    )}
+                  </nav>
+                )}
+                {tocSpacer > 0 && <div style={{ height: tocSpacer }} aria-hidden="true" />}
+                <footer className="mt-12 flex justify-center pb-2">
+                  <a
+                    href="https://cortexdocs.dev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Visit Cortex Docs"
+                    className="inline-flex items-center gap-2 rounded-[10px] border border-white/15 bg-[#0a0a0a] px-3 py-2 shadow-sm transition-colors hover:bg-[#18181b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    <svg
+                      className="size-5 shrink-0 text-white"
+                      viewBox="0 0 22 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M9 2.5Q11 1 13 2.5L18 5Q20 6 18 7L13 9.5Q11 11 9 9.5L4 7Q2 6 4 5L9 2.5Z"
+                        strokeWidth="1.5"
+                        fill="currentColor"
+                        fillOpacity="0.1"
+                      />
+                      <path d="M3 10L9 13.5Q11 14.8 13 13.5L19 10" strokeWidth="1.5" />
+                      <path
+                        d="M3 13.5L9 17Q11 18.3 13 17L19 13.5"
+                        strokeWidth="1.5"
+                        opacity="0.5"
+                      />
+                    </svg>
+                    <span className="inline-flex items-baseline gap-1 whitespace-nowrap text-xs leading-none">
+                      <span className="text-zinc-400">Built with</span>
+                      <span className="font-semibold text-white">Cortex Docs</span>
+                    </span>
+                  </a>
+                </footer>
+              </>
+            ) : !data ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+              </div>
+            ) : (
+              <p className="text-muted-foreground py-20 text-center">Document not found.</p>
+            )}
           </div>
-        </main>
-      </div>
-    </div>
+        </div>
+      </main>
+
+      {tocItems.length > 0 && (
+        <aside className="hidden xl:block w-56 shrink-0 border-l border-border p-4 sticky top-0 h-[calc(100vh-88px)] overflow-y-auto">
+          <TableOfContents
+            items={tocItems}
+            activeId={activeTocId}
+            scrollContainer={mainRef.current}
+          />
+        </aside>
+      )}
+    </>
   );
 }

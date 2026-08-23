@@ -6,9 +6,18 @@
     <Nullable>enable</Nullable>
     <Version><%= it.version %></Version>
     <Description><%= it.title %> SDK</Description>
+    <PackageId><%= it.packageName %></PackageId>
+    <Authors><%= it.project %></Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+<% if (it.repositoryUrl) { %>    <PackageProjectUrl><%= it.repositoryUrl %></PackageProjectUrl>
+    <RepositoryUrl><%= it.gitRepositoryUrl %></RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+<% } %>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include=".cortex-package.json" Pack="true" PackagePath="" />
     <PackageReference Include="System.Text.Json" Version="9.0.0" />
 <% if (it.hasGrpc) { %>    <PackageReference Include="Grpc.Net.Client" Version="2.67.0" />
     <PackageReference Include="Google.Protobuf" Version="3.28.0" />

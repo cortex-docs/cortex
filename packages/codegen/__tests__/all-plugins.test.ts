@@ -3,8 +3,6 @@ import * as path from 'node:path';
 import { OpenAPIParser } from '@cortex/core';
 import type { CortexConfig } from '@cortex/core';
 import { createDefaultRegistry } from '../src/index';
-import { CodegenEngine } from '../src/engine';
-import { FileEmitter } from '../src/emitter';
 import { getLanguageNaming } from '../src/naming';
 import type { CodegenContext } from '../src/plugin';
 
@@ -76,12 +74,12 @@ describe('All Language Plugins', () => {
     {
       language: 'python',
       packageName: 'petstore-api',
-      expectedFiles: ['setup.py', 'pyproject.toml'],
+      expectedFiles: ['setup.py', 'pyproject.toml', 'src/__init__.py'],
     },
     {
       language: 'go',
       packageName: 'github.com/test/petstore',
-      expectedFiles: ['go.mod', 'src/client.go', 'src/types.go'],
+      expectedFiles: ['go.mod', 'client.go', 'types.go'],
     },
     {
       language: 'java',
@@ -153,6 +151,41 @@ describe('All Language Plugins', () => {
         }
       });
 
+      it('generates a 15-second HTTP timeout and chunked response streaming API', async () => {
+        const plugin = registry.get(language)!;
+        const context = await createContext(language, packageName);
+        const files = await plugin.generate(context);
+        const streamTokens: Record<string, string> = {
+          typescript: 'requestStream(',
+          python: 'def request_stream(',
+          go: 'RequestStream(',
+          java: 'requestStream(',
+          kotlin: 'requestStream(',
+          ruby: 'def request_stream(',
+          php: 'function requestStream(',
+          csharp: 'RequestStreamAsync(',
+          rust: 'request_stream(',
+          cpp: 'request_stream(',
+          c: 'sdk_request_stream(',
+        };
+        const timeoutTokens: Record<string, string> = {
+          typescript: '15_000',
+          python: 'timeout: float = 15.0',
+          go: '15 * time.Second',
+          java: 'Duration.ofSeconds(15)',
+          kotlin: 'Duration.ofSeconds(15)',
+          ruby: 'timeout: 15',
+          php: '$timeout = 15.0',
+          csharp: 'TimeSpan.FromSeconds(15)',
+          rust: 'Duration::from_secs(15)',
+          cpp: 'timeout = 15',
+          c: 'timeout = 15',
+        };
+
+        expect(files.some((file) => file.content.includes(streamTokens[language]))).toBe(true);
+        expect(files.some((file) => file.content.includes(timeoutTokens[language]))).toBe(true);
+      });
+
       if (language === 'typescript') {
         it('generates typed REST resource methods', async () => {
           const plugin = registry.get(language)!;
@@ -177,4 +210,37 @@ describe('All Language Plugins', () => {
       }
     });
   }
+
+  it('adds the configured repository to every SDK package', async () => {
+    const repository = 'https://github.com/acme/generated-sdk';
+    const nativeManifests: Record<string, string | undefined> = {
+      typescript: 'package.json',
+      python: 'pyproject.toml',
+      java: 'pom.xml',
+      kotlin: 'build.gradle.kts',
+      ruby: 'petstore_api.gemspec',
+      php: 'composer.json',
+      csharp: 'PetstoreApi.csproj',
+      rust: 'Cargo.toml',
+      cpp: 'conanfile.py',
+      c: 'conanfile.py',
+    };
+
+    for (const { language, packageName } of testCases) {
+      const context = await createContext(language, packageName);
+      context.languageConfig.github_repository = repository;
+      context.config.sources[0].languages[0].github_repository = repository;
+      const files = await registry.get(language)!.generate(context);
+      const metadata = JSON.parse(
+        files.find((file) => file.path === '.cortex-package.json')!.content,
+      );
+      expect(metadata.githubRepository).toBe(repository);
+      expect(files.find((file) => file.path === 'README.md')?.content).toContain(
+        `[Source repository](${repository})`,
+      );
+      const manifest = nativeManifests[language];
+      if (manifest)
+        expect(files.find((file) => file.path === manifest)?.content).toContain(repository);
+    }
+  });
 });

@@ -11,10 +11,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { WebSocket as NodeWS } from 'ws';
-import { TestProjectClient } from './generated/typescript/src/client';
-import { GqlClient } from './generated/typescript/src/gql-client';
-import { OwnerServiceClient, PetServiceClient } from './generated/typescript/src/grpc-client';
-import { WsClient } from './generated/typescript/src/ws-client';
+import {
+  RequestTimeoutError,
+  RestApiV1 as TestProjectClient,
+} from './generated/typescript/src/client';
+import { Graphql as GqlClient } from './generated/typescript/src/gql-client';
+import { Grpc } from './generated/typescript/src/grpc-client';
+import { WebsocketApi as WsClient } from './generated/typescript/src/ws-client';
 
 Object.defineProperty(globalThis, 'WebSocket', {
   value: NodeWS,
@@ -29,6 +32,34 @@ const GQL_WS_URL = GQL_URL.replace(/^http/, 'ws');
 const GENERATED_TYPESCRIPT_DIR = resolveGeneratedTypescriptDir();
 const generatedRequire = createRequire(join(GENERATED_TYPESCRIPT_DIR, 'package.json'));
 const TSC_BIN = generatedRequire.resolve('typescript/bin/tsc');
+
+interface TransportStats {
+  wsConnections: number;
+  wsDisconnectCommands: number;
+  clientHeartbeats: number;
+  serverHeartbeatAcks: number;
+  gqlConnections: number;
+  gqlDisconnects: number;
+}
+
+async function getTransportStats(): Promise<TransportStats> {
+  const response = await fetch(`${BASE}/transport/status`);
+  if (!response.ok) throw new Error(`Transport status failed: ${response.status}`);
+  return response.json() as Promise<TransportStats>;
+}
+
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  message: string,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(message);
+}
 
 function resolveGeneratedTypescriptDir(): string {
   const localGenerated = fileURLToPath(new URL('./generated/typescript/', import.meta.url));
@@ -73,8 +104,38 @@ describe('REST', () => {
     const r = await rest.pets.create({
       name: 'TsPet',
       species: 'bird',
+      profilePic: {
+        data: new Blob(['pet-avatar'], { type: 'image/png' }),
+        fileName: 'profile.png',
+        contentType: 'image/png',
+      },
+      attachments: [
+        {
+          data: new Blob(['pdf-file'], { type: 'application/pdf' }),
+          fileName: 'record.pdf',
+          contentType: 'application/pdf',
+        },
+        {
+          data: new Blob(['notes'], { type: 'text/plain' }),
+          fileName: 'notes.txt',
+          contentType: 'text/plain',
+        },
+      ],
     });
     expect(r.name).toBe('TsPet');
+    expect(r.profile_pic_filename).toBe('profile.png');
+    expect(r.profile_pic_size).toBe(10);
+    expect(r.profile_pic_content_type).toBe('image/png');
+    expect(r.attachment_count).toBe(2);
+    expect(r.attachment_content_types).toEqual(['application/pdf', 'text/plain']);
+
+    const raw = await rest.uploads.uploadFile({
+      data: new Blob(['raw-pdf'], { type: 'application/pdf' }),
+      fileName: 'raw.pdf',
+      contentType: 'application/pdf',
+    });
+    expect(raw.size).toBe(7);
+    expect(raw.content_type).toBe('application/pdf');
   });
 
   test('rest.pets.delete()', async () => {
@@ -85,6 +146,39 @@ describe('REST', () => {
     const r = await rest.owners.list();
     expect(r.data.length).toBeGreaterThanOrEqual(1);
     expect(r.data[0].email).toBeDefined();
+  });
+
+  test('requestStream() yields a chunked response incrementally', async () => {
+    const decoder = new TextDecoder();
+    let body = '';
+    let chunkCount = 0;
+
+    for await (const chunk of rest.requestStream('GET', '/pets/stream', { timeout: 2000 })) {
+      chunkCount++;
+      body += decoder.decode(chunk, { stream: true });
+    }
+    body += decoder.decode();
+
+    const records = body
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(chunkCount).toBeGreaterThanOrEqual(2);
+    expect(records.map((pet) => pet.name)).toEqual(['Rex', 'Whiskers']);
+  });
+
+  test('client and per-request HTTP timeouts cancel slow requests', async () => {
+    const shortTimeoutClient = new TestProjectClient({ baseUrl: BASE, timeout: 40 });
+    await expect(
+      shortTimeoutClient.request('GET', '/transport/slow?delay=250'),
+    ).rejects.toBeInstanceOf(RequestTimeoutError);
+
+    const response = await shortTimeoutClient.request<{ delayed: number }>(
+      'GET',
+      '/transport/slow?delay=100',
+      { timeout: 500 },
+    );
+    expect(response.delayed).toBe(100);
   });
 });
 
@@ -221,6 +315,60 @@ describe('GraphQL — Query Builder', () => {
     await new Promise((r) => setTimeout(r, 500));
     expect(eventCount).toBe(countAfterUnsub);
   });
+
+  test('subscription reconnects and restores the active operation', async () => {
+    const reconnecting = new GqlClient({
+      endpoint: GQL_URL,
+      wsEndpoint: GQL_WS_URL,
+      webSocketImpl: NodeWS,
+      reconnect: true,
+      reconnectInterval: 50,
+      maxReconnectAttempts: 5,
+      heartbeatInterval: 50,
+    });
+    const before = await getTransportStats();
+    let eventCount = 0;
+    let firstEvent!: () => void;
+    let recovered!: () => void;
+    let rejectRecovery!: (error: Error) => void;
+    const firstEventReceived = new Promise<void>((resolve) => {
+      firstEvent = resolve;
+    });
+    const recoveredEventReceived = new Promise<void>((resolve, reject) => {
+      recovered = resolve;
+      rejectRecovery = reject;
+    });
+
+    const unsubscribe = reconnecting.subscribe(
+      (s) => s.petAdopted({ species: 'DOG' }, (p) => p.id().name()),
+      () => {
+        eventCount++;
+        if (eventCount === 1) firstEvent();
+        if (eventCount === 2) recovered();
+      },
+      rejectRecovery,
+    );
+
+    try {
+      await firstEventReceived;
+      const disconnectResponse = await fetch(`${BASE}/transport/graphql/disconnect`, {
+        method: 'POST',
+      });
+      expect(disconnectResponse.ok).toBe(true);
+      await Promise.race([
+        recoveredEventReceived,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('GraphQL reconnect timeout')), 5000),
+        ),
+      ]);
+      const after = await getTransportStats();
+      expect(after.gqlConnections).toBeGreaterThanOrEqual(before.gqlConnections + 2);
+      expect(after.gqlDisconnects).toBeGreaterThan(before.gqlDisconnects);
+    } finally {
+      unsubscribe();
+      reconnecting.dispose();
+    }
+  });
 });
 
 // ─── WebSocket ────────────────────────────────────────────────────
@@ -252,6 +400,101 @@ describe('WebSocket', () => {
     expect(typeof ws.sendChatMessages).toBe('function');
     expect(typeof ws.onChatPresence).toBe('function');
   });
+
+  test('reconnects after an unexpected server disconnect', async () => {
+    const before = await getTransportStats();
+    const ws = new WsClient({
+      url: WS_URL,
+      reconnect: true,
+      reconnectInterval: 50,
+      maxReconnectAttempts: 5,
+      heartbeatInterval: 0,
+    });
+    let connected = 0;
+    let disconnected = 0;
+    let presenceEvents = 0;
+    ws.on('connected', () => {
+      connected++;
+    });
+    ws.on('disconnected', () => {
+      disconnected++;
+    });
+    ws.onChatPresence(() => {
+      presenceEvents++;
+    });
+
+    try {
+      await ws.connect();
+      await waitFor(() => presenceEvents >= 1, 'Initial WebSocket presence event was not received');
+      ws.send('__control__/disconnect', {});
+      await waitFor(
+        () => connected >= 2 && disconnected >= 1 && presenceEvents >= 2,
+        'WebSocket client did not reconnect',
+      );
+      const after = await getTransportStats();
+      expect(after.wsConnections).toBeGreaterThanOrEqual(before.wsConnections + 2);
+      expect(after.wsDisconnectCommands).toBeGreaterThan(before.wsDisconnectCommands);
+    } finally {
+      ws.disconnect();
+    }
+  });
+
+  test('exchanges the configured client and server heartbeat messages', async () => {
+    const before = await getTransportStats();
+    const ws = new WsClient({
+      url: WS_URL,
+      reconnect: false,
+      heartbeatInterval: 50,
+      heartbeatTimeout: 250,
+    });
+    const errors: Error[] = [];
+    ws.on('error', (error) => {
+      errors.push(error as Error);
+    });
+
+    try {
+      await ws.connect();
+      await waitFor(async () => {
+        const current = await getTransportStats();
+        return (
+          current.clientHeartbeats > before.clientHeartbeats &&
+          current.serverHeartbeatAcks > before.serverHeartbeatAcks
+        );
+      }, 'Configured WebSocket heartbeat exchange did not complete');
+      expect(errors).toEqual([]);
+    } finally {
+      ws.disconnect();
+    }
+  });
+
+  test('closes a stale WebSocket after the heartbeat timeout', async () => {
+    const ws = new WsClient({
+      url: `${WS_URL}?heartbeat=ignore`,
+      reconnect: false,
+      heartbeatInterval: 30,
+      heartbeatTimeout: 80,
+    });
+    let heartbeatError: Error | undefined;
+    let disconnected = false;
+    ws.on('error', (error) => {
+      const candidate = error as Error;
+      if (candidate.message.includes('heartbeat timeout')) heartbeatError = candidate;
+    });
+    ws.on('disconnected', () => {
+      disconnected = true;
+    });
+
+    try {
+      await ws.connect();
+      await waitFor(
+        () => heartbeatError !== undefined && disconnected,
+        'Stale WebSocket was not closed after the heartbeat timeout',
+      );
+      expect(heartbeatError?.message).toContain('heartbeat timeout');
+    } finally {
+      ws.disconnect();
+    }
+  });
 });
 
 // ─── gRPC (real calls through generated SDK) ─────────────────────
@@ -259,12 +502,12 @@ describe('WebSocket', () => {
 describe('gRPC', () => {
   const GRPC_ADDR = process.env.GRPC_ADDR || 'localhost:50051';
 
-  let petClient: PetServiceClient;
-  let ownerClient: OwnerServiceClient;
+  let petClient: Grpc;
+  let ownerClient: Grpc;
 
   beforeAll(() => {
-    petClient = new PetServiceClient({ address: GRPC_ADDR });
-    ownerClient = new OwnerServiceClient({ address: GRPC_ADDR });
+    petClient = new Grpc({ address: GRPC_ADDR });
+    ownerClient = new Grpc({ address: GRPC_ADDR });
   });
 
   afterAll(() => {

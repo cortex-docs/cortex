@@ -1,5 +1,4 @@
-
-# OpenRPC / JSON-RPC Client Generation
+# OpenRPC Client Generation
 
 Cortex generates typed JSON-RPC client libraries from your OpenRPC specification files. The generated clients provide type-safe method calls that send JSON-RPC 2.0 requests over HTTP. Both OpenRPC v1.3.2 and v1.2.6 are supported.
 
@@ -24,12 +23,12 @@ Then add your OpenRPC source to `cortex.config.yml`:
 
 ```yaml
 sources:
-  - title: "JSON-RPC"
+  - title: 'OpenRPC'
     type: openrpc-spec
     spec: ./specs/api-openrpc.json
     languages:
       - language: typescript
-        package_name: "@my-org/typescript-client-sdk"
+        package_name: '@my-org/typescript-client-sdk'
 ```
 
 ### Generate
@@ -117,9 +116,7 @@ Cortex supports OpenRPC v1.2.6 and v1.3.2. Here is an example spec:
     "title": "My API",
     "version": "1.0.0"
   },
-  "servers": [
-    { "url": "https://api.example.com/rpc" }
-  ],
+  "servers": [{ "url": "https://api.example.com/rpc" }],
   "methods": [
     {
       "name": "getUser",
@@ -159,18 +156,18 @@ Add an OpenRPC source in `cortex.config.yml`:
 
 ```yaml
 sources:
-  - title: "JSON-RPC API"
+  - title: 'OpenRPC API'
     type: openrpc-spec
     spec: ./specs/api-openrpc.json
     languages:
       - language: typescript
-        package_name: "@my-org/sdk"
+        package_name: '@my-org/sdk'
 ```
 
 ## Supported Versions
 
-| Version | Status |
-|---------|--------|
+| Version       | Status          |
+| ------------- | --------------- |
 | OpenRPC 1.3.2 | Fully supported |
 | OpenRPC 1.2.6 | Fully supported |
 

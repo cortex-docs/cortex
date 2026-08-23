@@ -11,6 +11,7 @@ import asyncio
 import time
 
 import pytest
+import httpx
 
 # ── Environment ──────────────────────────────────────────────────────────────
 BASE = os.environ.get('MOCK_URL', 'http://localhost:4010')
@@ -20,7 +21,8 @@ GQL_WS_EP = GQL_EP.replace('http', 'ws', 1)
 GRPC_ADDR = os.environ.get('GRPC_ADDR', 'localhost:50051')
 
 # ── Import from local generated SDK ─────────────────────────────────────────
-GEN = os.environ.get('GEN_DIR', os.path.join(os.path.dirname(__file__), 'generated'))
+LOCAL_GEN = os.path.join(os.path.dirname(__file__), 'generated')
+GEN = LOCAL_GEN if os.path.isdir(os.path.join(LOCAL_GEN, 'python')) else os.environ.get('GEN_DIR', LOCAL_GEN)
 src_dir = os.path.join(GEN, 'python', 'src')
 if os.path.isdir(src_dir):
     for f in os.listdir(src_dir):
@@ -30,15 +32,15 @@ if os.path.isdir(src_dir):
                 shutil.copy(os.path.join(src_dir, f), new)
 sys.path.insert(0, os.path.join(GEN, 'python'))
 
-from src.client import TestProjectClient
-from src.types import CreatePetRequest as RestCreatePetRequest
-from src.gql_client import GqlClient
+from src.client import RestApiV1 as TestProjectClient
+from src.types import CreatePetRequest as RestCreatePetRequest, FileUpload
+from src.gql_client import Graphql as GqlClient
 from src.gql_types import (
     CreateOwnerInput,
     CreatePetInput,
     Species as GqlSpecies,
 )
-from src.grpc_client import GrpcClientOptions, OwnerServiceClient, PetServiceClient
+from src.grpc_client import Grpc, GrpcClientOptions
 from src.grpc_types import (
     CreateOwnerRequest,
     CreatePetRequest,
@@ -52,7 +54,7 @@ from src.grpc_types import (
 )
 
 rest = TestProjectClient(base_url=BASE)
-gql = GqlClient(endpoint=GQL_EP, ws_endpoint=GQL_WS_EP)
+gql = GqlClient(endpoint=GQL_EP, ws_endpoint=GQL_WS_EP, reconnect_interval=0.05)
 grpc_options = GrpcClientOptions(target=GRPC_ADDR, base_url=BASE)
 
 
@@ -63,24 +65,60 @@ grpc_options = GrpcClientOptions(target=GRPC_ADDR, base_url=BASE)
 class TestREST:
     def test_pets_list(self):
         r = rest.pets.list()
-        assert len(r.get('data', [])) >= 2
-        assert r['data'][0].get('name') is not None
+        assert len(r.data) >= 2
+        assert r.data[0].name is not None
 
     def test_pets_get(self):
         r = rest.pets.get('pet-1')
         assert r.name == 'Rex'
 
     def test_pets_create(self):
-        r = rest.pets.create(body=RestCreatePetRequest(name='PyPet', species='bird'))
+        r = rest.pets.create(body=RestCreatePetRequest(
+            name='PyPet',
+            species='bird',
+            profile_pic=FileUpload(filename='profile.png', data=b'pet-avatar', content_type='image/png'),
+            attachments=[
+                FileUpload(filename='record.pdf', data=b'pdf-file', content_type='application/pdf'),
+                FileUpload(filename='notes.txt', data=b'notes', content_type='text/plain'),
+            ],
+        ))
         assert r.name == 'PyPet'
+        assert r.profile_pic_filename == 'profile.png'
+        assert r.profile_pic_size == 10
+        assert r.profile_pic_content_type == 'image/png'
+        assert r.attachment_count == 2
+        assert r.attachment_content_types == ['application/pdf', 'text/plain']
+
+        raw = rest.uploads.upload_file(FileUpload(
+            filename='raw.pdf', data=b'raw-pdf', content_type='application/pdf',
+        ))
+        assert raw.size == 7
+        assert raw.content_type == 'application/pdf'
 
     def test_pets_delete(self):
         rest.pets.delete('pet-1')
 
     def test_owners_list(self):
         r = rest.owners.list()
-        assert len(r.get('data', [])) >= 1
-        assert r['data'][0].get('email') is not None
+        assert len(r.data) >= 1
+        assert r.data[0].email is not None
+
+    def test_chunked_response_stream(self):
+        chunks = list(rest.request_stream('GET', '/pets/stream', timeout=2.0, chunk_size=1))
+        body = b''.join(chunks).decode()
+        assert len(chunks) > 1
+        assert [line for line in body.splitlines() if line] == [
+            line for line in body.splitlines() if line
+        ]
+        assert 'Rex' in body and 'Whiskers' in body
+
+    def test_http_timeout_override(self):
+        short = TestProjectClient(base_url=BASE, timeout=0.04)
+        with pytest.raises(httpx.TimeoutException):
+            short.request('GET', '/transport/slow?delay=250')
+
+        result = short.request('GET', '/transport/slow?delay=100', timeout=0.5)
+        assert result['delayed'] == 100
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -223,12 +261,12 @@ class TestGraphQL:
 class TestWebSocket:
     def test_connect_and_receive_presence(self):
         try:
-            from src.ws_client import WsClient
+            from src.ws_client import WebsocketApi as WsClient
         except ImportError:
             pytest.skip('WebSocket dependency missing')
 
         async def go():
-            ws = WsClient(url=WS_URL)
+            ws = WsClient(url=WS_URL, reconnect_interval=0.05)
             received = asyncio.get_running_loop().create_future()
             ws.on_chat_presence(lambda msg: received.set_result(msg))
             await ws.connect()
@@ -242,7 +280,7 @@ class TestWebSocket:
 
     def test_ws_has_channel_methods(self):
         try:
-            from src.ws_client import WsClient
+            from src.ws_client import WebsocketApi as WsClient
         except ImportError:
             pytest.skip('WebSocket dependency missing')
 
@@ -264,7 +302,7 @@ class TestGRPC:
     # ─── PetService RPCs ────────────────────────────────────
 
     def test_pet_service_list_pets(self):
-        client = PetServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             resp = client.list_pets(ListPetsRequest())
             assert len(resp.data) >= 2
@@ -273,7 +311,7 @@ class TestGRPC:
             client.close()
 
     def test_pet_service_get_pet(self):
-        client = PetServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             resp = client.get_pet(GetPetRequest(id='pet-1'))
             assert resp.name == 'Rex'
@@ -282,7 +320,7 @@ class TestGRPC:
             client.close()
 
     def test_pet_service_create_pet(self):
-        client = PetServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             resp = client.create_pet(CreatePetRequest(name='GrpcPyPet', species=Species.SPECIES_DOG))
             assert resp.name == 'GrpcPyPet'
@@ -291,7 +329,7 @@ class TestGRPC:
             client.close()
 
     def test_pet_service_delete_pet(self):
-        client = PetServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             resp = client.delete_pet(DeletePetRequest(id='pet-1'))
             assert resp is not None
@@ -299,7 +337,7 @@ class TestGRPC:
             client.close()
 
     def test_pet_service_watch_pets(self):
-        client = PetServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             pets = list(client.watch_pets(WatchPetsRequest()))
             assert len(pets) >= 2
@@ -310,7 +348,7 @@ class TestGRPC:
     # ─── OwnerService RPCs ──────────────────────────────────
 
     def test_owner_service_list_owners(self):
-        client = OwnerServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             resp = client.list_owners(ListOwnersRequest())
             assert len(resp.data) >= 1
@@ -318,7 +356,7 @@ class TestGRPC:
             client.close()
 
     def test_owner_service_get_owner(self):
-        client = OwnerServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             resp = client.get_owner(GetOwnerRequest(id='owner-1'))
             assert resp.name == 'Alice'
@@ -327,7 +365,7 @@ class TestGRPC:
             client.close()
 
     def test_owner_service_create_owner(self):
-        client = OwnerServiceClient(grpc_options)
+        client = Grpc(grpc_options)
         try:
             resp = client.create_owner(CreateOwnerRequest(name='GrpcOwner', email='grpc@test.com'))
             assert resp.name == 'GrpcOwner'

@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileUpload {
+    pub filename: String,
+    pub data: Vec<u8>,
+    pub content_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListResponse<T> {
     pub data: Vec<T>,
     #[serde(skip_serializing_if = "Option::is_none")]

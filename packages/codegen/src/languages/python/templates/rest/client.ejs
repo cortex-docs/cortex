@@ -2,10 +2,12 @@
 <% const clientClass = it.clientClass; %>
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Iterator, Mapping, Optional
+import json
 import httpx
 
 from .exceptions import ApiError
+from .types import FileUpload
 <% for (const r of it.resources) { %>
 from .resources.<%= it.naming.fileName(r.name) %> import <%= r.className %>
 <% } %>
@@ -19,7 +21,7 @@ class <%= clientClass %>:
         api_key: Optional[str] = None,
         bearer_token: Optional[str] = None,
         headers: Optional[dict[str, str]] = None,
-        timeout: float = 30.0,
+        timeout: float = 15.0,
     ) -> None:
         self.base_url = base_url
         self._timeout = timeout
@@ -45,17 +47,50 @@ class <%= clientClass %>:
         query: Optional[dict[str, Any]] = None,
         body: Optional[Any] = None,
         headers: Optional[dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        multipart: bool = False,
+        raw_file: bool = False,
+        raw_content_type: Optional[str] = None,
     ) -> Any:
         url = f"{self.base_url}{path}"
         merged_headers = {**self._headers, **(headers or {})}
 
-        with httpx.Client(timeout=self._timeout) as client:
+        request_args: dict[str, Any] = {"json": body}
+        if raw_file:
+            if not isinstance(body, FileUpload):
+                raise TypeError("raw file body must be a FileUpload")
+            merged_headers["Content-Type"] = body.content_type or raw_content_type or "application/octet-stream"
+            request_args = {"content": body.data}
+        elif multipart:
+            merged_headers.pop("Content-Type", None)
+            merged_headers.pop("content-type", None)
+            fields: dict[str, str] = {}
+            files: list[tuple[str, tuple[str, bytes, str]]] = []
+            for name, value in (body.items() if isinstance(body, Mapping) else []):
+                if value is None:
+                    continue
+                if isinstance(value, FileUpload):
+                    files.append((name, (value.filename, value.data, value.content_type)))
+                elif isinstance(value, (list, tuple)) and all(isinstance(item, FileUpload) for item in value):
+                    files.extend(
+                        (name, (item.filename, item.data, item.content_type))
+                        for item in value
+                    )
+                elif isinstance(value, (dict, list, tuple)):
+                    fields[name] = json.dumps(value)
+                elif hasattr(value, "value"):
+                    fields[name] = str(value.value)
+                else:
+                    fields[name] = str(value).lower() if isinstance(value, bool) else str(value)
+            request_args = {"data": fields, "files": files}
+
+        with httpx.Client(timeout=self._timeout if timeout is None else timeout) as client:
             response = client.request(
                 method=method,
                 url=url,
                 params=query,
-                json=body,
                 headers=merged_headers,
+                **request_args,
             )
 
         if not response.is_success:
@@ -69,3 +104,28 @@ class <%= clientClass %>:
             return None
 
         return response.json()
+
+    def request_stream(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Optional[dict[str, Any]] = None,
+        body: Optional[Any] = None,
+        headers: Optional[dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        chunk_size: int = 8192,
+    ) -> Iterator[bytes]:
+        """Yield decoded response payload chunks without buffering the body."""
+        url = f"{self.base_url}{path}"
+        merged_headers = {**self._headers, **(headers or {})}
+        with httpx.Client(timeout=self._timeout if timeout is None else timeout) as client:
+            with client.stream(method, url, params=query, json=body, headers=merged_headers) as response:
+                if not response.is_success:
+                    response.read()
+                    raise ApiError(
+                        status=response.status_code,
+                        message=response.reason_phrase or "Unknown error",
+                        body=response.text,
+                    )
+                yield from response.iter_bytes(chunk_size=chunk_size)

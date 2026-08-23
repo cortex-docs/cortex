@@ -1,7 +1,34 @@
 {
   "name": "@cortex/codegen",
   "version": "0.1.0",
-  "description": "SDK code generation engine for Cortex",
+  "description": "SDK code generation engine for Cortex Docs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cortex-docs/cortex.git",
+    "directory": "packages/codegen"
+  },
+  "homepage": "https://github.com/cortex-docs/cortex#readme",
+  "bugs": {
+    "url": "https://github.com/cortex-docs/cortex/issues"
+  },
+  "keywords": [
+    "cortex-docs",
+    "openapi",
+    "sdk",
+    "code-generation"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,22 +39,22 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc && npm run copy-templates",
+    "build": "npm run clean && tsc && npm run copy-templates",
+    "prepack": "npm run build",
     "copy-templates": "for dir in src/languages/*/templates; do lang=$(basename $(dirname $dir)); mkdir -p dist/languages/$lang && cp -r $dir dist/languages/$lang/; done",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@asyncapi/generator": "^2.11.0",
-    "@asyncapi/nodejs-ws-template": "^0.10.0",
-    "@cortex/core": "*",
+    "@cortex/core": "0.1.0",
     "eta": "^3.5.0",
     "graphql": "^16.14.0",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.3.1"
   },
   "devDependencies": {
     "typescript": "^5.8.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.10"
   }
 }

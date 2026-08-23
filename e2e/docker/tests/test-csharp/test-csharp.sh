@@ -2,10 +2,12 @@
 # C# integration test — validates generated SDK source files + exercises all protocol methods
 set -e
 
-GEN="${GEN_DIR:-/tmp/cortex-e2e-sdks/generated}"
 BASE="${MOCK_URL:-http://localhost:4010}"
-CS_SRC="$GEN/csharp/src"
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOCAL_GEN="$TEST_DIR/generated"
+GEN="${GEN_DIR:-/tmp/cortex-e2e-sdks/generated}"
+if [ -d "$LOCAL_GEN/csharp/src" ]; then GEN="$LOCAL_GEN"; fi
+CS_SRC="$GEN/csharp/src"
 
 echo ""
 echo "C# — validate generated SDK + call all protocol methods"

@@ -23,19 +23,19 @@ module <%= moduleName %>
 <% } -%>
 <% if (op.listItemType && schemaNames.has(op.listItemType)) { -%>
     def <%= op.name %><%= paramStr %>
-      result = @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %>)
-      ListResponse.from_hash(result, <%= op.listItemType %>)
+      result = @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %><% if (op.isMultipart) { %>, multipart: true<% } %><% if (op.isRawBinary) { %>, raw_file: true, raw_content_type: "<%= op.contentType %>"<% } %>)
+      ListResponse.from_hash(result, Rest<%= op.listItemType %>)
     end
 
 <% } else if (schemaNames.has(op.responseType)) { -%>
     def <%= op.name %><%= paramStr %>
-      result = @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %>)
-      <%= op.responseType %>.from_hash(result)
+      result = @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %><% if (op.isMultipart) { %>, multipart: true<% } %><% if (op.isRawBinary) { %>, raw_file: true, raw_content_type: "<%= op.contentType %>"<% } %>)
+      Rest<%= op.responseType %>.from_hash(result)
     end
 
 <% } else { -%>
     def <%= op.name %><%= paramStr %>
-      @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %>)
+      @client.request("<%= op.method %>", <%= pathExpr %>, query: <%= queryHash %>, body: <%= bodyArg %><% if (op.isMultipart) { %>, multipart: true<% } %><% if (op.isRawBinary) { %>, raw_file: true, raw_content_type: "<%= op.contentType %>"<% } %>)
     end
 
 <% } -%>

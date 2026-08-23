@@ -26,22 +26,47 @@ class <%= it.clientClass %>:
         reconnect: bool = True,
         reconnect_interval: float = 3.0,
         max_reconnect_attempts: int = 10,
+        heartbeat_interval: Optional[float] = <%= it.heartbeat.intervalMs / 1000 %>,
+        heartbeat_timeout: Optional[float] = <%= it.heartbeat.timeoutMs / 1000 %>,
+        heartbeat_message: Optional[str] = <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>None<% } %>,
+        heartbeat_expected_response: Optional[str] = <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>None<% } %>,
+        server_heartbeat_message: Optional[str] = <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>None<% } %>,
+        server_heartbeat_response: Optional[str] = <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>None<% } %>,
     ) -> None:
         self.url = url
         self._reconnect = reconnect
         self._reconnect_interval = reconnect_interval
         self._max_reconnect_attempts = max_reconnect_attempts
+        self._heartbeat_interval = heartbeat_interval
+        self._heartbeat_timeout = heartbeat_timeout
+        self._heartbeat_message = heartbeat_message
+        self._heartbeat_expected_response = heartbeat_expected_response
+        self._server_heartbeat_message = server_heartbeat_message
+        self._server_heartbeat_response = server_heartbeat_response
         self._handlers: dict[str, set[Callable]] = {}
         self._ws = None
         self._reconnect_attempts = 0
+        self._manually_closed = False
+        self._heartbeat_task = None
+        self._last_activity = 0.0
 
     async def connect(self) -> None:
-        self._ws = await websockets.connect(self.url)
+        self._manually_closed = False
+        self._ws = await websockets.connect(
+            self.url,
+            ping_interval=None,
+        )
         self._reconnect_attempts = 0
+        self._last_activity = asyncio.get_running_loop().time()
         asyncio.create_task(self._listen())
+        if self._heartbeat_interval and self._heartbeat_interval > 0 and self._heartbeat_message is not None:
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def disconnect(self) -> None:
-        self._reconnect = False
+        self._manually_closed = True
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
         if self._ws:
             await self._ws.close()
             self._ws = None
@@ -63,6 +88,15 @@ class <%= it.clientClass %>:
     async def _listen(self) -> None:
         try:
             async for raw in self._ws:
+                if self._heartbeat_matches(raw, self._server_heartbeat_message):
+                    self._last_activity = asyncio.get_running_loop().time()
+                    if self._server_heartbeat_response is not None:
+                        await self._ws.send(self._server_heartbeat_response)
+                    continue
+                if self._heartbeat_expected_response is None or self._heartbeat_matches(raw, self._heartbeat_expected_response):
+                    self._last_activity = asyncio.get_running_loop().time()
+                    if self._heartbeat_expected_response is not None:
+                        continue
                 try:
                     data = json.loads(raw)
                     channel = data.get("channel") or data.get("type") or data.get("event", "")
@@ -73,10 +107,46 @@ class <%= it.clientClass %>:
                 except json.JSONDecodeError:
                     pass
         except websockets.ConnectionClosed:
-            if self._reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
+            if self._heartbeat_task:
+                self._heartbeat_task.cancel()
+                self._heartbeat_task = None
+            while self._reconnect and not self._manually_closed and self._reconnect_attempts < self._max_reconnect_attempts:
                 self._reconnect_attempts += 1
                 await asyncio.sleep(self._reconnect_interval)
-                await self.connect()
+                if self._manually_closed:
+                    return
+                try:
+                    await self.connect()
+                    return
+                except (OSError, websockets.WebSocketException):
+                    continue
+
+    @staticmethod
+    def _heartbeat_matches(raw: str, expected: Optional[str]) -> bool:
+        if expected is None:
+            return False
+        if raw == expected:
+            return True
+        try:
+            return json.loads(raw) == json.loads(expected)
+        except (json.JSONDecodeError, TypeError):
+            return False
+
+    async def _heartbeat_loop(self) -> None:
+        try:
+            while not self._manually_closed and self._ws:
+                await asyncio.sleep(self._heartbeat_interval or 0)
+                if not self._ws or self._heartbeat_message is None:
+                    return
+                sent_at = asyncio.get_running_loop().time()
+                await self._ws.send(self._heartbeat_message)
+                if self._heartbeat_timeout and self._heartbeat_timeout > 0:
+                    await asyncio.sleep(self._heartbeat_timeout)
+                    if self._last_activity < sent_at and self._ws:
+                        await self._ws.close(code=4000, reason="Heartbeat timeout")
+                        return
+        except asyncio.CancelledError:
+            return
 
 <% for (const ch of it.channels) { %>
 <% if (ch.canSubscribe) { %>

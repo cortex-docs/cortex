@@ -177,10 +177,11 @@ html.dark {
     @apply leading-7 text-foreground/90 not-first:mt-4;
   }
   a {
-    @apply font-medium text-primary underline underline-offset-4;
+    @apply font-medium underline underline-offset-4;
+    color: var(--primary-text, var(--color-primary));
   }
   a:hover {
-    @apply text-primary/80;
+    opacity: 0.8;
   }
   strong {
     @apply font-semibold text-foreground;

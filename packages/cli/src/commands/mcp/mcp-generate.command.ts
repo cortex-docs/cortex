@@ -1,13 +1,30 @@
 import * as path from 'node:path';
 import { SubCommand, CommandRunner, Option } from 'nest-commander';
 import { McpGenerator } from '@cortex/mcp-gen';
-import { getFirstSpecPath, getSourcesByType, AsyncAPIParser } from '@cortex/core';
+import {
+  AsyncAPIParser,
+  GraphQLParser,
+  GrpcParser,
+  OpenRpcParser,
+  getSourcesByType,
+  isRemoteLocation,
+  resolveGeneratorTemplateRoot,
+} from '@cortex/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
+import {
+  emptyParsedSpec,
+  mergeAsyncApiSpecs,
+  mergeGraphQLSpecs,
+  mergeGrpcSpecs,
+  mergeOpenRpcSpecs,
+  mergeParsedSpecs,
+  sourceTitle,
+} from '../generate/spec-merge';
 
 @SubCommand({
   name: 'generate',
-  description: 'Generate an MCP server from your OpenAPI spec',
+  description: 'Generate an MCP server from configured API sources and documentation',
 })
 export class McpGenerateCommand extends CommandRunner {
   constructor(
@@ -18,57 +35,72 @@ export class McpGenerateCommand extends CommandRunner {
   }
 
   async run(
-    params: string[],
+    _params: string[],
     options: { spec?: string; output?: string; transport?: 'stdio' | 'sse' },
   ): Promise<void> {
     this.logger.header('Cortex MCP Generate');
 
-    const config = await this.project.loadConfig();
-    const specPath = path.resolve(options.spec ?? getFirstSpecPath(config, 'openapi-spec') ?? '');
+    const configFile = await this.project.findConfig();
+    if (!configFile) throw new Error('No cortex.config.yml file was found.');
+    const configPath = path.resolve(configFile);
+    const config = await this.project.loadConfig(configPath);
+    const templateRoot = resolveGeneratorTemplateRoot(config, configPath);
     const outputDir = path.resolve(options.output ?? '.cortex/mcp-server');
     const transport = options.transport ?? 'stdio';
 
-    this.logger.info(`Spec: ${specPath}`);
+    const openapiPaths = options.spec
+      ? [isRemoteLocation(options.spec) ? options.spec : path.resolve(options.spec)]
+      : getSourcesByType(config, 'openapi-spec').map((source) => source.spec);
+    const asyncapiPaths = getSourcesByType(config, 'asyncapi-spec').map((source) => source.spec);
+    const graphqlSources = getSourcesByType(config, 'graphql-spec');
+    const graphqlPaths = graphqlSources.map((source) => source.spec);
+    const grpcPaths = getSourcesByType(config, 'grpc-spec').map((source) => source.spec);
+    const openrpcPaths = getSourcesByType(config, 'openrpc-spec').map((source) => source.spec);
+
+    this.logger.info(
+      `Sources: ${openapiPaths.length + asyncapiPaths.length + graphqlPaths.length + grpcPaths.length + openrpcPaths.length}`,
+    );
     this.logger.info(`Output: ${outputDir}`);
     this.logger.info(`Transport: ${transport}`);
     this.logger.info('');
 
-    const spec = await this.project.parseSpec(specPath);
-    this.logger.success(
-      `Parsed spec: ${spec.info.title} v${spec.info.version} (${spec.operations.length} operations)`,
-    );
+    const [restSpecs, asyncApiSpecs, graphqlSpecs, grpcSpecs, openRpcSpecs] = await Promise.all([
+      Promise.all(openapiPaths.map((specPath) => this.project.parseSpec(specPath))),
+      Promise.all(asyncapiPaths.map((specPath) => new AsyncAPIParser().parse(specPath))),
+      Promise.all(
+        graphqlPaths.map((specPath, index) =>
+          new GraphQLParser().parse(specPath, graphqlSources[index].endpoint),
+        ),
+      ),
+      Promise.all(grpcPaths.map((specPath) => new GrpcParser().parse(specPath))),
+      Promise.all(openrpcPaths.map((specPath) => new OpenRpcParser().parse(specPath))),
+    ]);
 
-    const asyncapiSources = getSourcesByType(config, 'asyncapi-spec');
-    let asyncApiSpec;
-    if (asyncapiSources.length > 0) {
-      const asyncParser = new AsyncAPIParser();
-      asyncApiSpec = await asyncParser.parse(asyncapiSources[0].spec);
-    }
-
-    const gqlSources = getSourcesByType(config, 'graphql-spec');
-    let graphqlSpec;
-    if (gqlSources.length > 0) {
-      const { GraphQLParser } = await import('@cortex/core');
-      graphqlSpec = await new GraphQLParser().parse(gqlSources[0].spec);
-    }
-
-    const grpcSources = getSourcesByType(config, 'grpc-spec');
-    let grpcSpec;
-    if (grpcSources.length > 0) {
-      const { GrpcParser } = await import('@cortex/core');
-      grpcSpec = await new GrpcParser().parse(grpcSources[0].spec);
-    }
-
-    const configFile = await this.project.findConfig();
+    const projectTitle = config.title ?? config.project;
+    const restSpec = mergeParsedSpecs(restSpecs, projectTitle) ?? emptyParsedSpec(projectTitle);
+    const asyncApiSpec = mergeAsyncApiSpecs(asyncApiSpecs, sourceTitle(config, 'WebSocket API'));
+    const graphqlSpec = mergeGraphQLSpecs(graphqlSpecs, sourceTitle(config, 'GraphQL API'));
+    const openRpcSpec = mergeOpenRpcSpecs(openRpcSpecs, sourceTitle(config, 'OpenRPC API'));
+    // Parse and merge gRPC sources to reject invalid or conflicting definitions. The generated
+    // MCP package exposes the protobuf files as resources, but it does not create gRPC tools.
+    mergeGrpcSpecs(grpcSpecs, sourceTitle(config, 'gRPC API'));
 
     const generator = new McpGenerator();
-    const result = await generator.generate(spec, config, {
+    const result = await generator.generate(restSpec, config, {
       outputDir,
-      configDir: configFile ? path.dirname(configFile) : undefined,
+      configDir: path.dirname(configPath),
+      templateRoot,
       transport,
-      asyncApiSpec,
-      graphqlSpec,
-      grpcSpec,
+      asyncApiSpec: asyncApiSpec ?? undefined,
+      graphqlSpec: graphqlSpec ?? undefined,
+      openRpcSpec: openRpcSpec ?? undefined,
+      specPaths: {
+        openapi: openapiPaths,
+        asyncapi: asyncapiPaths,
+        graphql: graphqlPaths,
+        grpc: grpcPaths,
+        openrpc: openrpcPaths,
+      },
     });
 
     this.logger.success(`Generated MCP server: ${result.files.length} files`);
@@ -79,11 +111,11 @@ export class McpGenerateCommand extends CommandRunner {
       `cd ${outputDir}`,
       'npm install',
       'npm run build',
-      transport === 'stdio' ? 'npm start' : `npm start  (listens on port 3200)`,
+      transport === 'stdio' ? 'npm start' : 'npm start  (listens on port 3200)',
     ]);
   }
 
-  @Option({ flags: '-s, --spec <path>', description: 'Path to OpenAPI spec file' })
+  @Option({ flags: '-s, --spec <path>', description: 'Override the configured OpenAPI source' })
   parseSpec(val: string): string {
     return val;
   }
@@ -94,7 +126,10 @@ export class McpGenerateCommand extends CommandRunner {
   }
 
   @Option({ flags: '-t, --transport <type>', description: 'Transport type: stdio or sse' })
-  parseTransport(val: string): string {
+  parseTransport(val: string): 'stdio' | 'sse' {
+    if (val !== 'stdio' && val !== 'sse') {
+      throw new Error('Transport must be either "stdio" or "sse".');
+    }
     return val;
   }
 }

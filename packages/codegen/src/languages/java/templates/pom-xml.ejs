@@ -8,12 +8,23 @@
     <artifactId><%= it.packageName %></artifactId>
     <version><%= it.version %></version>
     <name><%= it.title %> SDK</name>
+<% if (it.repositoryUrl) { %>    <url><%= it.repositoryUrl %></url>
+    <scm>
+        <url><%= it.repositoryUrl %></url>
+        <connection>scm:git:<%= it.gitRepositoryUrl %></connection>
+        <developerConnection>scm:git:<%= it.gitRepositoryUrl %></developerConnection>
+    </scm>
+<% } %>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+    <build>
+        <sourceDirectory>src</sourceDirectory>
+    </build>
 
     <dependencies>
         <dependency>

@@ -4,6 +4,10 @@ set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SDK_DIR="$DIR/generated/kotlin"
 
+# OpenRPC currently emits domain types in the REST package. Exclude that
+# unrelated source from this REST/GraphQL/WS/gRPC integration project.
+find "$SDK_DIR/src" -maxdepth 1 -name 'openrpc-*.kt' -delete
+
 # Copy test file into Gradle project test source set
 mkdir -p "$SDK_DIR/src/test/kotlin"
 cp "$DIR/TestKotlin.kt" "$SDK_DIR/src/test/kotlin/"

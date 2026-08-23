@@ -29,6 +29,7 @@
 #include <optional>
 #include <cstdint>
 #include <nlohmann/json.hpp>
+#include <httplib.h>
 #include "../types.hpp"
 
 namespace sdk {
@@ -37,13 +38,27 @@ using RequestFn = std::function<nlohmann::json(
   const std::string&,
   const std::string&,
   const std::map<std::string, std::string>&,
-  const nlohmann::json*
+  const nlohmann::json*,
+  const httplib::MultipartFormDataItems*,
+  const FileUpload*,
+  const std::string&
 )>;
+
+#ifndef CORTEX_CPP_MULTIPART_VALUE_DEFINED
+#define CORTEX_CPP_MULTIPART_VALUE_DEFINED
+template <typename T>
+inline std::string multipart_value(const T& value) {
+  nlohmann::json json = value;
+  return json.is_string() ? json.get<std::string>() : json.dump();
+}
+#endif
 <% for (const s of inlineStructs) { %>
 
 struct <%= s.name %> {
 <% for (const p of s.props) { -%>
-<% if (p.required) { -%>
+<% if (p.isFile || p.isFileArray) { -%>
+  /* Multipart file fields are not serialized as JSON. */
+<% } else if (p.required) { -%>
   <%= p.type %> <%= p.name %>;
 <% } else { -%>
   std::optional<<%= p.type %>> <%= p.name %>;
@@ -54,7 +69,9 @@ struct <%= s.name %> {
 inline void to_json(nlohmann::json& j, const <%= s.name %>& v) {
   j = nlohmann::json{};
 <% for (const p of s.props) { -%>
-<% if (p.required) { -%>
+<% if (p.isFile || p.isFileArray) { -%>
+  /* Multipart file fields are not read from JSON responses. */
+<% } else if (p.required) { -%>
   j["<%= p.originalName %>"] = v.<%= p.name %>;
 <% } else { -%>
   if (v.<%= p.name %>.has_value()) j["<%= p.originalName %>"] = v.<%= p.name %>.value();
@@ -80,7 +97,7 @@ public:
   <%= r.className %>() = default;
   explicit <%= r.className %>(RequestFn fn) : do_request_(std::move(fn)) {}
 <% for (const op of r.operations) { -%>
-<% const bodyTyped = op.hasBody && (isTypedBody(op.bodyType) || op._bodyStructName); -%>
+<% const bodyTyped = op.hasBody && (isTypedBody(op.bodyType) || op._bodyStructName || op.isRawBinary); -%>
 <% const hasInlineResp = !!op._responseStructName; -%>
 <% const respTyped = isTypedResponse(op.responseType) || hasInlineResp; -%>
 <% const respVoid = isVoid(op.responseType); -%>
@@ -89,7 +106,8 @@ public:
 <% const params = []; -%>
 <% for (const p of op.pathParams) { params.push(`const std::string& ${p.name}`); } -%>
 <% if (op.hasBody) { -%>
-<%   if (bodyTyped) { params.push(`const ${bodyParamType}& body`); } -%>
+<%   if (op.isRawBinary) { params.push('const FileUpload& body'); } -%>
+<%   else if (bodyTyped) { params.push(`const ${bodyParamType}& body`); } -%>
 <%   else { params.push('const nlohmann::json& body'); } -%>
 <% } -%>
 <% for (const p of op.queryParams) { params.push(`const std::optional<std::string>& ${p.name} = std::nullopt`); } -%>
@@ -106,17 +124,53 @@ public:
 <% } -%>
 <% } -%>
 <% if (bodyTyped) { -%>
+<% if (!op.isMultipart && !op.isRawBinary) { -%>
     nlohmann::json body_json = body;
 <% } -%>
+<% } -%>
+<% if (op.isMultipart) { -%>
+    httplib::MultipartFormDataItems multipart;
+<% for (const field of op.multipartFields) { -%>
+<% if (field.isFile) { -%>
+<% if (field.required) { -%>
+    multipart.push_back({"<%= field.originalName %>", body.<%= field.name %>.data, body.<%= field.name %>.filename, body.<%= field.name %>.content_type});
+<% } else { -%>
+    if (body.<%= field.name %>.has_value()) {
+      const auto& file = body.<%= field.name %>.value();
+      multipart.push_back({"<%= field.originalName %>", file.data, file.filename, file.content_type});
+    }
+<% } -%>
+<% } else if (field.isFileArray) { -%>
+<% if (field.required) { -%>
+    for (const auto& file : body.<%= field.name %>) {
+      multipart.push_back({"<%= field.originalName %>", file.data, file.filename, file.content_type});
+    }
+<% } else { -%>
+    if (body.<%= field.name %>.has_value()) {
+      for (const auto& file : body.<%= field.name %>.value()) {
+        multipart.push_back({"<%= field.originalName %>", file.data, file.filename, file.content_type});
+      }
+    }
+<% } -%>
+<% } else if (field.required) { -%>
+    multipart.push_back({"<%= field.originalName %>", multipart_value(body.<%= field.name %>), "", ""});
+<% } else { -%>
+    if (body.<%= field.name %>.has_value()) multipart.push_back({"<%= field.originalName %>", multipart_value(body.<%= field.name %>.value()), "", ""});
+<% } -%>
+<% } -%>
+<% } -%>
 <% const queryArg = op.queryParams.length > 0 ? 'query' : '{}'; -%>
-<% const bodyArg = op.hasBody ? (bodyTyped ? '&body_json' : '&body') : 'nullptr'; -%>
+<% const bodyArg = op.hasBody && !op.isMultipart && !op.isRawBinary ? (bodyTyped ? '&body_json' : '&body') : 'nullptr'; -%>
+<% const multipartArg = op.isMultipart ? '&multipart' : 'nullptr'; -%>
+<% const rawFileArg = op.isRawBinary ? '&body' : 'nullptr'; -%>
+<% const rawContentTypeArg = op.isRawBinary ? `"${op.contentType}"` : '""'; -%>
 <% if (respVoid) { -%>
-    do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>);
+    do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>, <%= multipartArg %>, <%= rawFileArg %>, <%= rawContentTypeArg %>);
 <% } else if (respTyped) { -%>
-    nlohmann::json result = do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>);
+    nlohmann::json result = do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>, <%= multipartArg %>, <%= rawFileArg %>, <%= rawContentTypeArg %>);
     return result.get<<%= retType %>>();
 <% } else { -%>
-    return do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>);
+    return do_request_("<%= op.method %>", "<%= pathExpr %>", <%= queryArg %>, <%= bodyArg %>, <%= multipartArg %>, <%= rawFileArg %>, <%= rawContentTypeArg %>);
 <% } -%>
   }
 <% } %>

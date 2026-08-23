@@ -1,11 +1,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
-import { buildToolInfos, generateReadme, generateSetupSection, type McpToolInfo } from '@cortex/mcp-gen';
+import { gitRepositoryUrl, normalizeRepositoryUrl } from '@cortex/core';
+import { locationExists } from '@/lib/load-location';
+import {
+  buildToolInfos,
+  generateReadme,
+  generateSetupSection,
+  renderMcpTemplate,
+  type McpToolInfo,
+} from '@cortex/mcp-gen';
 
 interface McpInfo {
   serverName: string;
   packageName: string;
+  githubRepository?: string;
   instructions: string;
   instructionsHtml: string;
   tools: McpToolInfo[];
@@ -15,6 +24,9 @@ interface McpInfo {
 }
 
 function findDocsConfig(): string | null {
+  const configPath = process.env.CORTEX_CONFIG_PATH;
+  if (configPath && fs.existsSync(configPath)) return configPath;
+
   const specPath = process.env.CORTEX_SPEC_PATH;
   if (specPath) {
     const dir = path.dirname(specPath);
@@ -27,61 +39,10 @@ function findDocsConfig(): string | null {
 }
 
 export async function GET() {
-  const specPath =
-    process.env.CORTEX_SPEC_PATH ||
-    path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.yaml');
-  const asyncApiPath =
-    process.env.CORTEX_ASYNCAPI_PATH ||
-    path.join(process.cwd(), '..', 'core', '__fixtures__', 'chat-asyncapi.yaml');
-
-  if (!fs.existsSync(specPath)) {
-    return NextResponse.json({ error: 'No spec configured' }, { status: 404 });
-  }
+  const specPath = process.env.CORTEX_SPEC_PATH;
+  const asyncApiPath = process.env.CORTEX_ASYNCAPI_PATH;
 
   try {
-    const { OpenAPIParser } = await import('@cortex/core');
-    const parser = new OpenAPIParser();
-    const spec = await parser.parse(specPath);
-
-    let asyncApiSpec;
-    if (asyncApiPath && fs.existsSync(asyncApiPath)) {
-      try {
-        const { AsyncAPIParser } = await import('@cortex/core');
-        const asyncParser = new AsyncAPIParser();
-        asyncApiSpec = await asyncParser.parse(asyncApiPath);
-      } catch {
-        // AsyncAPI parsing failed; skip
-      }
-    }
-
-    let graphqlSpec;
-    const graphqlPath =
-      process.env.CORTEX_GRAPHQL_PATH ||
-      path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.graphql');
-    if (fs.existsSync(graphqlPath)) {
-      try {
-        const { GraphQLParser } = await import('@cortex/core');
-        const gqlParser = new GraphQLParser();
-        graphqlSpec = await gqlParser.parse(graphqlPath);
-      } catch {
-        // GraphQL parsing failed; skip
-      }
-    }
-
-    let grpcSpec;
-    const grpcPath =
-      process.env.CORTEX_GRPC_PATH ||
-      path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.proto');
-    if (fs.existsSync(grpcPath)) {
-      try {
-        const { GrpcParser } = await import('@cortex/core');
-        const grpcParser = new GrpcParser();
-        grpcSpec = await grpcParser.parse(grpcPath);
-      } catch {
-        // gRPC parsing failed; skip
-      }
-    }
-
     const configPath = findDocsConfig();
     let config;
     let configDir: string | undefined;
@@ -96,7 +57,60 @@ export async function GET() {
       }
     }
 
-    const tools = buildToolInfos({ spec, asyncApiSpec, graphqlSpec, grpcSpec, config, configDir });
+    let spec;
+    if (specPath && locationExists(specPath)) {
+      const { OpenAPIParser } = await import('@cortex/core');
+      const parser = new OpenAPIParser();
+      spec = await parser.parse(specPath);
+    }
+
+    let asyncApiSpec;
+    if (asyncApiPath && locationExists(asyncApiPath)) {
+      try {
+        const { AsyncAPIParser } = await import('@cortex/core');
+        const asyncParser = new AsyncAPIParser();
+        asyncApiSpec = await asyncParser.parse(asyncApiPath);
+      } catch {
+        // AsyncAPI parsing failed; skip
+      }
+    }
+
+    let graphqlSpec;
+    const graphqlPath = process.env.CORTEX_GRAPHQL_PATH;
+    if (graphqlPath && locationExists(graphqlPath)) {
+      try {
+        const { GraphQLParser } = await import('@cortex/core');
+        const gqlParser = new GraphQLParser();
+        const graphqlSource = config?.sources?.find(
+          (source: { type?: string; spec?: string }) =>
+            source.type === 'graphql-spec' && source.spec === graphqlPath,
+        );
+        graphqlSpec = await gqlParser.parse(graphqlPath, graphqlSource?.endpoint);
+      } catch {
+        // GraphQL parsing failed; skip
+      }
+    }
+
+    let openRpcSpec;
+    const openRpcPath = process.env.CORTEX_OPENRPC_PATH;
+    if (openRpcPath && locationExists(openRpcPath)) {
+      try {
+        const { OpenRpcParser } = await import('@cortex/core');
+        const openRpcParser = new OpenRpcParser();
+        openRpcSpec = await openRpcParser.parse(openRpcPath);
+      } catch {
+        // OpenRPC parsing failed; skip
+      }
+    }
+
+    const tools = buildToolInfos({
+      spec,
+      asyncApiSpec,
+      graphqlSpec,
+      openRpcSpec,
+      config,
+      configDir,
+    });
 
     const configSources = config?.sources ?? [];
 
@@ -125,12 +139,12 @@ export async function GET() {
     }
 
     const sdkBlock = sdkEntries.map((s) => `  - ${s.language}: ${s.install}`).join('\n');
-    const title = config?.title || spec.info.title;
+    const title = config?.title || spec?.info.title || config?.project || 'API';
 
     const introBlocks: string[] = [];
     for (const source of configSources) {
       if (source.intro) {
-        const introPath = path.resolve(path.dirname(configPath ?? specPath), source.intro);
+        const introPath = path.resolve(path.dirname(configPath ?? specPath ?? '.'), source.intro);
         if (fs.existsSync(introPath)) {
           const content = fs.readFileSync(introPath, 'utf-8').trim();
           introBlocks.push(`### ${source.title}\n\n${content}`);
@@ -146,18 +160,14 @@ export async function GET() {
       '',
       '1. ALWAYS prefer the SDK over raw HTTP calls. The SDK provides typed methods, error handling, and auth built in.',
       sdkBlock ? `\nAvailable SDKs:\n${sdkBlock}\n` : '',
-      '2. When the user\'s language has an SDK, show the install command first, then a working code example using the SDK client.',
-      '3. Adapt examples to the user\'s existing codebase — match their import style, error handling patterns, and variable naming.',
-      '4. Only fall back to direct HTTP/curl calls if no SDK exists for the user\'s language.',
+      "2. When the user's language has an SDK, show the install command first, then a working code example using the SDK client.",
+      "3. Adapt examples to the user's existing codebase — match their import style, error handling patterns, and variable naming.",
+      "4. Only fall back to direct HTTP/curl calls if no SDK exists for the user's language.",
       '5. Use the `docs_*` and `sdk_*` tools to look up quickstart guides and SDK references before writing code.',
       '',
       '## Tool categories',
       '',
       '- `docs_*`, `intro_*` — Documentation pages, intro guides, and SDK references. Read these first for context.',
-      '- `pets_*`, `owners_*` — REST API operations with typed parameters.',
-      '- `ws_*` — WebSocket channels for real-time events.',
-      '- `gql_*` — GraphQL queries, mutations, and subscriptions.',
-      '- `grpc_*` — gRPC service methods.',
     ].join('\n');
 
     const mcpPackageName = config?.mcp?.package_name ?? `@${config?.project ?? 'my-org'}/mcp`;
@@ -165,11 +175,12 @@ export async function GET() {
     const { renderMarkdown } = await import('@/lib/markdown');
     const instructionsHtml = await renderMarkdown(instructions);
 
-    const serverName = spec.info.title.toLowerCase().replace(/\s+/g, '-') + '-mcp';
+    const serverName =
+      (spec?.info.title || config?.project || 'api').toLowerCase().replace(/\s+/g, '-') + '-mcp';
     const readmeData = {
       serverName,
       packageName: mcpPackageName,
-      specTitle: spec.info.title,
+      specTitle: spec?.info.title || config?.title || config?.project || 'API',
       transport: 'stdio' as const,
       toolInfos: tools,
       instructions,
@@ -177,14 +188,42 @@ export async function GET() {
 
     const setupMarkdown = generateSetupSection(readmeData);
     const setupHtml = await renderMarkdown(setupMarkdown);
+    const customReadme = renderMcpTemplate(
+      'readme',
+      {
+        ...readmeData,
+        version: '0.0.0',
+        repositoryUrl: config?.mcp?.github_repository
+          ? normalizeRepositoryUrl(config.mcp.github_repository)
+          : undefined,
+        gitRepositoryUrl: config?.mcp?.github_repository
+          ? gitRepositoryUrl(config.mcp.github_repository)
+          : undefined,
+        specTitle: readmeData.specTitle,
+        baseUrl: spec?.info.servers[0]?.url ?? 'http://localhost:3000',
+        tools: [],
+        esc: (value?: string) => (value ?? '').replace(/'/g, "\\'").replace(/\n/g, ' '),
+        zodType: () => 'z.unknown()',
+        specs: {
+          openapi: process.env.CORTEX_SPEC_PATH,
+          asyncapi: process.env.CORTEX_ASYNCAPI_PATH,
+          graphql: process.env.CORTEX_GRAPHQL_PATH,
+          openrpc: process.env.CORTEX_OPENRPC_PATH,
+        },
+      },
+      { templateRoot: process.env.CORTEX_TEMPLATE_ROOT },
+    );
 
     const mcpInfo: McpInfo = {
       serverName,
       packageName: mcpPackageName,
+      githubRepository: config?.mcp?.github_repository
+        ? normalizeRepositoryUrl(config.mcp.github_repository)
+        : undefined,
       instructions,
       instructionsHtml,
       tools,
-      readme: generateReadme(readmeData),
+      readme: customReadme ?? generateReadme(readmeData),
       setupMarkdown,
       setupHtml,
     };

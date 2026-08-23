@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <curl/curl.h>
 #include "cjson/cJSON.h"
+#include "types.h"
 
 <% const clientPrefix = it.naming.propertyName(it.config.languageConfig.package_name); %>
 
@@ -22,6 +23,14 @@ typedef struct {
   size_t size;
 } sdk_response_buf_t;
 
+/* Return non-zero to continue receiving response chunks. */
+typedef int (*sdk_chunk_handler_t)(const unsigned char* data, size_t size, void* user_data);
+
+typedef struct {
+  sdk_chunk_handler_t handler;
+  void* user_data;
+} sdk_stream_ctx_t;
+
 static size_t sdk_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
   size_t total = size * nmemb;
   sdk_response_buf_t* buf = (sdk_response_buf_t*)userp;
@@ -34,10 +43,16 @@ static size_t sdk_write_cb(void* contents, size_t size, size_t nmemb, void* user
   return total;
 }
 
+static size_t sdk_stream_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+  size_t total = size * nmemb;
+  sdk_stream_ctx_t* ctx = (sdk_stream_ctx_t*)userp;
+  return ctx->handler((const unsigned char*)contents, total, ctx->user_data) ? total : 0;
+}
+
 static inline void sdk_client_init(sdk_client_t* c, const char* base_url) {
   memset(c, 0, sizeof(*c));
   c->base_url = strdup(base_url);
-  c->timeout = 30;
+  c->timeout = 15;
 }
 
 static inline void sdk_client_free(sdk_client_t* c) {
@@ -116,6 +131,180 @@ static inline cJSON* sdk_request(sdk_client_t* client, const char* method, const
   cJSON* json = cJSON_Parse(resp.data);
   free(resp.data);
   return json;
+}
+
+typedef struct {
+  const char* name;
+  const sdk_file_upload_t* file;
+} sdk_multipart_file_part_t;
+
+static inline cJSON* sdk_request_multipart(sdk_client_t* client, const char* method, const char* path,
+    const cJSON* fields, const sdk_multipart_file_part_t* files, size_t file_count) {
+  CURL* curl = curl_easy_init();
+  if (!curl) return NULL;
+  char url[2048];
+  snprintf(url, sizeof(url), "%s%s", client->base_url, path);
+  sdk_response_buf_t resp = {NULL, 0};
+  struct curl_slist* headers = NULL;
+  if (client->bearer_token) {
+    char auth[512];
+    snprintf(auth, sizeof(auth), "Authorization: Bearer %s", client->bearer_token);
+    headers = curl_slist_append(headers, auth);
+  }
+  if (client->api_key) {
+    char key[512];
+    snprintf(key, sizeof(key), "X-API-Key: %s", client->api_key);
+    headers = curl_slist_append(headers, key);
+  }
+
+  curl_mime* mime = curl_mime_init(curl);
+  if (fields && cJSON_IsObject(fields)) {
+    const cJSON* field = NULL;
+    cJSON_ArrayForEach(field, fields) {
+      curl_mimepart* part = curl_mime_addpart(mime);
+      curl_mime_name(part, field->string);
+      if (cJSON_IsString(field)) {
+        curl_mime_data(part, field->valuestring, CURL_ZERO_TERMINATED);
+      } else if (cJSON_IsBool(field)) {
+        curl_mime_data(part, cJSON_IsTrue(field) ? "true" : "false", CURL_ZERO_TERMINATED);
+      } else if (cJSON_IsNumber(field)) {
+        char value[64];
+        snprintf(value, sizeof(value), "%.17g", field->valuedouble);
+        curl_mime_data(part, value, CURL_ZERO_TERMINATED);
+      } else {
+        char* value = cJSON_PrintUnformatted(field);
+        curl_mime_data(part, value ? value : "", CURL_ZERO_TERMINATED);
+        free(value);
+      }
+    }
+  }
+  for (size_t i = 0; i < file_count; i++) {
+    const sdk_file_upload_t* file = files[i].file;
+    if (!file || !file->data) continue;
+    curl_mimepart* part = curl_mime_addpart(mime);
+    curl_mime_name(part, files[i].name);
+    curl_mime_filename(part, file->filename ? file->filename : "upload.bin");
+    curl_mime_type(part, file->content_type ? file->content_type : "application/octet-stream");
+    curl_mime_data(part, (const char*)file->data, file->size);
+  }
+
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, sdk_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)client->timeout);
+  if (strcmp(method, "POST") != 0) curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+  CURLcode result = curl_easy_perform(curl);
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+  curl_mime_free(mime);
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  if (result != CURLE_OK) { free(resp.data); return NULL; }
+  if (http_code == 204 || !resp.data || resp.size == 0) {
+    free(resp.data);
+    return cJSON_CreateNull();
+  }
+  cJSON* json = cJSON_Parse(resp.data);
+  free(resp.data);
+  return json;
+}
+
+static inline cJSON* sdk_request_file(sdk_client_t* client, const char* method, const char* path,
+    const sdk_file_upload_t* file, const char* default_content_type) {
+  if (!client || !file || !file->data) return NULL;
+  CURL* curl = curl_easy_init();
+  if (!curl) return NULL;
+  char url[2048];
+  snprintf(url, sizeof(url), "%s%s", client->base_url, path);
+  sdk_response_buf_t resp = {NULL, 0};
+  struct curl_slist* headers = NULL;
+  char content_type[512];
+  const char* mime = file->content_type && file->content_type[0]
+    ? file->content_type
+    : (default_content_type && default_content_type[0] ? default_content_type : "application/octet-stream");
+  snprintf(content_type, sizeof(content_type), "Content-Type: %s", mime);
+  headers = curl_slist_append(headers, content_type);
+  if (client->bearer_token) {
+    char auth[512];
+    snprintf(auth, sizeof(auth), "Authorization: Bearer %s", client->bearer_token);
+    headers = curl_slist_append(headers, auth);
+  }
+  if (client->api_key) {
+    char key[512];
+    snprintf(key, sizeof(key), "X-API-Key: %s", client->api_key);
+    headers = curl_slist_append(headers, key);
+  }
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, (const char*)file->data);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)file->size);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, sdk_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)client->timeout);
+  CURLcode result = curl_easy_perform(curl);
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  if (result != CURLE_OK) { free(resp.data); return NULL; }
+  if (http_code == 204 || !resp.data || resp.size == 0) {
+    free(resp.data);
+    return cJSON_CreateNull();
+  }
+  cJSON* json = cJSON_Parse(resp.data);
+  free(resp.data);
+  return json;
+}
+
+/* Streams an HTTP response as decoded payload chunks without buffering it. */
+static inline int sdk_request_stream(sdk_client_t* client, const char* method, const char* path,
+    const cJSON* body, sdk_chunk_handler_t handler, void* user_data) {
+  if (!client || !handler) return -1;
+  CURL* curl = curl_easy_init();
+  if (!curl) return -1;
+
+  char url[2048];
+  snprintf(url, sizeof(url), "%s%s", client->base_url, path);
+  struct curl_slist* headers = NULL;
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+  if (client->bearer_token) {
+    char auth[512];
+    snprintf(auth, sizeof(auth), "Authorization: Bearer %s", client->bearer_token);
+    headers = curl_slist_append(headers, auth);
+  }
+  if (client->api_key) {
+    char key[512];
+    snprintf(key, sizeof(key), "X-API-Key: %s", client->api_key);
+    headers = curl_slist_append(headers, key);
+  }
+
+  sdk_stream_ctx_t ctx = {handler, user_data};
+  curl_easy_setopt(curl, CURLOPT_URL, url);
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, sdk_stream_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)client->timeout);
+
+  char* body_str = body ? cJSON_PrintUnformatted(body) : NULL;
+  if (strcmp(method, "POST") == 0) {
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str ? body_str : "");
+  } else if (strcmp(method, "GET") != 0) {
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+    if (body_str) curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body_str);
+  }
+
+  CURLcode result = curl_easy_perform(curl);
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  free(body_str);
+  if (result != CURLE_OK) return -(int)result;
+  return (int)http_code;
 }
 
 #endif /* SDK_CLIENT_H */

@@ -2,6 +2,9 @@
 <% const ns = it.naming.className(it.config.languageConfig.package_name); -%>
 <% const clientClass = it.clientClass; -%>
 using System.Net.Http.Headers;
+using System.Globalization;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -21,6 +24,7 @@ public class ApiListResult<T>
 public class <%= clientClass %> : IDisposable
 {
     private readonly HttpClient _httpClient;
+    private readonly TimeSpan _timeout;
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -38,7 +42,8 @@ public class <%= clientClass %> : IDisposable
         TimeSpan? timeout = null)
     {
         BaseUrl = baseUrl;
-        _httpClient = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) };
+        _timeout = timeout ?? TimeSpan.FromSeconds(15);
+        _httpClient = new HttpClient { Timeout = _timeout };
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         if (bearerToken is not null)
@@ -55,9 +60,12 @@ public class <%= clientClass %> : IDisposable
         HttpMethod method,
         string path,
         Dictionary<string, string>? query = null,
-        object? body = null)
+        object? body = null,
+        bool multipart = false,
+        bool rawFile = false,
+        string? rawContentType = null)
     {
-        var responseBody = await SendAsync(method, path, query, body);
+        var responseBody = await SendAsync(method, path, query, body, multipart, rawFile, rawContentType);
         return JsonSerializer.Deserialize<T>(responseBody, JsonOpts)!;
     }
 
@@ -65,16 +73,22 @@ public class <%= clientClass %> : IDisposable
         HttpMethod method,
         string path,
         Dictionary<string, string>? query = null,
-        object? body = null)
+        object? body = null,
+        bool multipart = false,
+        bool rawFile = false,
+        string? rawContentType = null)
     {
-        await SendAsync(method, path, query, body);
+        await SendAsync(method, path, query, body, multipart, rawFile, rawContentType);
     }
 
     private async Task<string> SendAsync(
         HttpMethod method,
         string path,
         Dictionary<string, string>? query,
-        object? body)
+        object? body,
+        bool multipart,
+        bool rawFile,
+        string? rawContentType)
     {
         var url = BaseUrl + path;
         if (query is { Count: > 0 })
@@ -87,10 +101,21 @@ public class <%= clientClass %> : IDisposable
 
         if (body is not null && method != HttpMethod.Get && method != HttpMethod.Delete)
         {
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(body),
-                Encoding.UTF8,
-                "application/json");
+            if (rawFile)
+            {
+                if (body is not FileUpload file) throw new ArgumentException("raw file body must be a FileUpload");
+                request.Content = new ByteArrayContent(file.Data);
+                request.Content.Headers.ContentType = new MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(file.ContentType)
+                        ? rawContentType ?? "application/octet-stream"
+                        : file.ContentType);
+            }
+            else
+            {
+                request.Content = multipart
+                    ? CreateMultipartContent(body)
+                    : new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            }
         }
 
         var response = await _httpClient.SendAsync(request);
@@ -101,6 +126,77 @@ public class <%= clientClass %> : IDisposable
             throw new ApiException((int)response.StatusCode, responseBody);
 
         return responseBody;
+    }
+
+    private static MultipartFormDataContent CreateMultipartContent(object body)
+    {
+        var content = new MultipartFormDataContent();
+        foreach (var property in body.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+            var value = property.GetValue(body);
+            if (value is null) continue;
+            var name = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
+            if (value is FileUpload file)
+            {
+                var fileContent = new ByteArrayContent(file.Data);
+                fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+                content.Add(fileContent, name, file.FileName);
+            }
+            else if (value is IEnumerable<FileUpload> files)
+            {
+                foreach (var upload in files)
+                {
+                    var fileContent = new ByteArrayContent(upload.Data);
+                    fileContent.Headers.ContentType = new MediaTypeHeaderValue(
+                        string.IsNullOrWhiteSpace(upload.ContentType) ? "application/octet-stream" : upload.ContentType);
+                    content.Add(fileContent, name, upload.FileName);
+                }
+            }
+            else
+            {
+                var text = value is string or ValueType
+                    ? Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
+                    : JsonSerializer.Serialize(value);
+                content.Add(new StringContent(text), name);
+            }
+        }
+        return content;
+    }
+
+    /// <summary>Streams decoded HTTP payload chunks without buffering the response.</summary>
+    public async IAsyncEnumerable<ReadOnlyMemory<byte>> RequestStreamAsync(
+        HttpMethod method,
+        string path,
+        Dictionary<string, string>? query = null,
+        object? body = null,
+        TimeSpan? timeout = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var url = BaseUrl + path;
+        if (query is { Count: > 0 })
+            url += "?" + string.Join("&", query.Select(kv => $"{kv.Key}={Uri.EscapeDataString(kv.Value)}"));
+
+        using var request = new HttpRequestMessage(method, url);
+        if (body is not null && method != HttpMethod.Get && method != HttpMethod.Delete)
+            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout ?? _timeout);
+        using var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            timeoutCts.Token);
+        if (!response.IsSuccessStatusCode)
+            throw new ApiException((int)response.StatusCode, await response.Content.ReadAsStringAsync(timeoutCts.Token));
+
+        await using var stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
+        var buffer = new byte[8192];
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(), timeoutCts.Token);
+            if (read == 0) yield break;
+            yield return buffer.AsMemory(0, read).ToArray();
+        }
     }
 
     public void Dispose() => _httpClient.Dispose();

@@ -24,6 +24,9 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 <% } -%>
 import java.util.function.Function;
@@ -37,23 +40,37 @@ public class <%= it.clientClass %> {
     private final HttpClient httpClient;
     private final Map<String, String> headers;
     private final Gson gson;
+    private final Duration requestTimeout;
+<% if (hasSubscriptions) { -%>
+    private final boolean reconnect;
+    private final Duration reconnectInterval;
+    private final int maxReconnectAttempts;
+<% } -%>
 
     public <%= it.clientClass %>(String endpoint) {
-        this(endpoint, null, null);
+        this(endpoint, null, null, Duration.ofSeconds(15)<% if (hasSubscriptions) { %>, true, Duration.ofSeconds(3), 10<% } %>);
     }
 
     public <%= it.clientClass %>(String endpoint, String wsEndpoint) {
-        this(endpoint, wsEndpoint, null);
+        this(endpoint, wsEndpoint, null, Duration.ofSeconds(15)<% if (hasSubscriptions) { %>, true, Duration.ofSeconds(3), 10<% } %>);
     }
 
     public <%= it.clientClass %>(String endpoint, String wsEndpoint, String bearerToken) {
+        this(endpoint, wsEndpoint, bearerToken, Duration.ofSeconds(15)<% if (hasSubscriptions) { %>, true, Duration.ofSeconds(3), 10<% } %>);
+    }
+
+    public <%= it.clientClass %>(String endpoint, String wsEndpoint, String bearerToken, Duration requestTimeout<% if (hasSubscriptions) { %>, boolean reconnect, Duration reconnectInterval, int maxReconnectAttempts<% } %>) {
         this.endpoint = endpoint;
+        this.requestTimeout = requestTimeout;
 <% if (hasSubscriptions) { -%>
         this.wsEndpoint = wsEndpoint != null ? wsEndpoint : endpoint.replaceFirst("^http", "ws");
+        this.reconnect = reconnect;
+        this.reconnectInterval = reconnectInterval;
+        this.maxReconnectAttempts = maxReconnectAttempts;
 <% } -%>
         this.httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
-            .connectTimeout(Duration.ofSeconds(30))
+            .connectTimeout(requestTimeout)
             .build();
         this.headers = new HashMap<>();
         this.headers.put("Content-Type", "application/json");
@@ -77,6 +94,7 @@ public class <%= it.clientClass %> {
 
         HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
             .uri(URI.create(endpoint))
+            .timeout(requestTimeout)
             .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)));
 
         headers.forEach(reqBuilder::header);
@@ -135,78 +153,9 @@ public class <%= it.clientClass %> {
     }
 
     public JsonObject subscribeOnce(Function<SubscriptionBuilder, SubscriptionBuilder> fn, long timeoutMs) throws GqlException {
-        SubscriptionBuilder builder = new SubscriptionBuilder();
-        fn.apply(builder);
-        GqlDocument doc = builder.buildDocument();
-
         CompletableFuture<JsonObject> result = new CompletableFuture<>();
-        String subId = UUID.randomUUID().toString();
-
+        Runnable unsubscribe = subscribe(fn, result::complete);
         try {
-            httpClient.newWebSocketBuilder()
-                .subprotocols("graphql-transport-ws")
-                .buildAsync(URI.create(wsEndpoint), new WebSocket.Listener() {
-                    private final StringBuilder buffer = new StringBuilder();
-
-                    @Override
-                    public void onOpen(WebSocket ws) {
-                        ws.sendText("{\"type\":\"connection_init\"}", true);
-                        ws.request(1);
-                    }
-
-                    @Override
-                    public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last) {
-                        buffer.append(data);
-                        if (last) {
-                            String msg = buffer.toString();
-                            buffer.setLength(0);
-                            try {
-                                JsonObject json = JsonParser.parseString(msg).getAsJsonObject();
-                                String type = json.has("type") ? json.get("type").getAsString() : "";
-
-                                if ("connection_ack".equals(type)) {
-                                    JsonObject subscribe = new JsonObject();
-                                    subscribe.addProperty("id", subId);
-                                    subscribe.addProperty("type", "subscribe");
-                                    JsonObject payload = new JsonObject();
-                                    payload.addProperty("query", doc.query);
-                                    if (doc.variables != null && !doc.variables.isEmpty()) {
-                                        payload.add("variables", gson.toJsonTree(doc.variables));
-                                    }
-                                    subscribe.add("payload", payload);
-                                    ws.sendText(gson.toJson(subscribe), true);
-                                } else if ("next".equals(type)) {
-                                    JsonObject payload = json.getAsJsonObject("payload");
-                                    JsonObject eventData = payload.has("data") ? payload.getAsJsonObject("data") : new JsonObject();
-                                    JsonObject complete = new JsonObject();
-                                    complete.addProperty("id", subId);
-                                    complete.addProperty("type", "complete");
-                                    ws.sendText(gson.toJson(complete), true);
-                                    ws.sendClose(WebSocket.NORMAL_CLOSURE, "");
-                                    result.complete(eventData);
-                                } else if ("error".equals(type)) {
-                                    result.completeExceptionally(new GqlException("Subscription error: " + msg));
-                                    ws.sendClose(WebSocket.NORMAL_CLOSURE, "");
-                                }
-                            } catch (Exception e) {
-                                if (!result.isDone()) {
-                                    result.completeExceptionally(new GqlException("Parse error: " + e.getMessage()));
-                                }
-                            }
-                        }
-                        ws.request(1);
-                        return null;
-                    }
-
-                    @Override
-                    public void onError(WebSocket ws, Throwable error) {
-                        if (!result.isDone()) {
-                            result.completeExceptionally(new GqlException(error.getMessage()));
-                        }
-                    }
-                })
-                .get(timeoutMs, TimeUnit.MILLISECONDS);
-
             return result.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.ExecutionException e) {
             Throwable cause = e.getCause();
@@ -214,6 +163,8 @@ public class <%= it.clientClass %> {
             throw new GqlException("Subscription failed: " + cause.getMessage());
         } catch (Exception e) {
             throw new GqlException("Subscription failed: " + e.getMessage());
+        } finally {
+            unsubscribe.run();
         }
     }
 
@@ -226,17 +177,21 @@ public class <%= it.clientClass %> {
         fn.apply(builder);
         GqlDocument doc = builder.buildDocument();
         String subId = UUID.randomUUID().toString();
-        CompletableFuture<WebSocket> wsFuture = new CompletableFuture<>();
+        AtomicReference<WebSocket> wsRef = new AtomicReference<>();
+        AtomicBoolean stopped = new AtomicBoolean(false);
+        AtomicInteger reconnectAttempts = new AtomicInteger(0);
 
-        try {
-            httpClient.newWebSocketBuilder()
-                .subprotocols("graphql-transport-ws")
-                .buildAsync(URI.create(wsEndpoint), new WebSocket.Listener() {
+        class SubscriptionConnector {
+            void open() {
+                httpClient.newWebSocketBuilder()
+                    .subprotocols("graphql-transport-ws")
+                    .buildAsync(URI.create(wsEndpoint), new WebSocket.Listener() {
                     private final StringBuilder buffer = new StringBuilder();
 
                     @Override
                     public void onOpen(WebSocket ws) {
-                        wsFuture.complete(ws);
+                        wsRef.set(ws);
+                        reconnectAttempts.set(0);
                         ws.sendText("{\"type\":\"connection_init\"}", true);
                         ws.request(1);
                     }
@@ -262,10 +217,12 @@ public class <%= it.clientClass %> {
                                     }
                                     subscribe.add("payload", payload);
                                     ws.sendText(gson.toJson(subscribe), true);
-                                } else if ("next".equals(type)) {
+                                } else if ("next".equals(type) && !stopped.get()) {
                                     JsonObject payload = json.getAsJsonObject("payload");
                                     JsonObject eventData = payload.has("data") ? payload.getAsJsonObject("data") : new JsonObject();
                                     onData.accept(eventData);
+                                } else if ("complete".equals(type) || "error".equals(type)) {
+                                    stopped.set(true);
                                 }
                             } catch (Exception ignored) {}
                         }
@@ -274,24 +231,40 @@ public class <%= it.clientClass %> {
                     }
 
                     @Override
-                    public void onError(WebSocket ws, Throwable error) {}
-                });
-
-            return () -> {
-                try {
-                    WebSocket ws = wsFuture.getNow(null);
-                    if (ws != null) {
-                        JsonObject complete = new JsonObject();
-                        complete.addProperty("id", subId);
-                        complete.addProperty("type", "complete");
-                        ws.sendText(gson.toJson(complete), true);
-                        ws.sendClose(WebSocket.NORMAL_CLOSURE, "");
+                    public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason) {
+                        wsRef.compareAndSet(ws, null);
+                        scheduleReconnect();
+                        return null;
                     }
-                } catch (Exception ignored) {}
-            };
-        } catch (Exception e) {
-            throw new GqlException("Subscribe failed: " + e.getMessage());
+
+                    @Override
+                    public void onError(WebSocket ws, Throwable error) {
+                        wsRef.compareAndSet(ws, null);
+                        scheduleReconnect();
+                    }
+                }).whenComplete((ws, error) -> { if (error != null) scheduleReconnect(); });
+            }
+
+            void scheduleReconnect() {
+                int attempt = reconnectAttempts.getAndIncrement();
+                if (stopped.get() || !reconnect || attempt >= maxReconnectAttempts) return;
+                CompletableFuture.delayedExecutor(reconnectInterval.toMillis(), TimeUnit.MILLISECONDS).execute(this::open);
+            }
         }
+
+        SubscriptionConnector connector = new SubscriptionConnector();
+        connector.open();
+        return () -> {
+            stopped.set(true);
+            WebSocket ws = wsRef.getAndSet(null);
+            if (ws != null) {
+                JsonObject complete = new JsonObject();
+                complete.addProperty("id", subId);
+                complete.addProperty("type", "complete");
+                ws.sendText(gson.toJson(complete), true);
+                ws.sendClose(WebSocket.NORMAL_CLOSURE, "");
+            }
+        };
     }
 
     public void dispose() {}

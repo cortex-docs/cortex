@@ -11,24 +11,45 @@ class <%= it.clientClass %>
     url: "<%= it.serverUrl %>",
     reconnect: true,
     reconnect_interval: 3,
-    max_reconnect_attempts: 10
+    max_reconnect_attempts: 10,
+    heartbeat_interval: <%= it.heartbeat.intervalMs / 1000 %>,
+    heartbeat_timeout: <%= it.heartbeat.timeoutMs / 1000 %>,
+    heartbeat_message: <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>nil<% } %>,
+    heartbeat_expected_response: <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>nil<% } %>,
+    server_heartbeat_message: <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>nil<% } %>,
+    server_heartbeat_response: <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>nil<% } %>
   )
     @url = url
     @reconnect = reconnect
     @reconnect_interval = reconnect_interval
     @max_reconnect_attempts = max_reconnect_attempts
+    @heartbeat_interval = heartbeat_interval
+    @heartbeat_timeout = heartbeat_timeout
+    @heartbeat_message = heartbeat_message
+    @heartbeat_expected_response = heartbeat_expected_response
+    @server_heartbeat_message = server_heartbeat_message
+    @server_heartbeat_response = server_heartbeat_response
     @handlers = {}
     @ws = nil
     @reconnect_attempts = 0
+    @heartbeat_thread = nil
+    @last_activity = Time.now
+    @manually_closed = false
   end
 
   def connect
+    @manually_closed = false
     @ws = WebSocket::Client::Simple.connect(@url)
     @reconnect_attempts = 0
     client = self
 
     @ws.on :message do |msg|
       client.send(:_handle_message, msg.data)
+    end
+
+    @ws.on :open do
+      @last_activity = Time.now
+      client.send(:_start_heartbeat)
     end
 
     @ws.on :close do |_e|
@@ -43,7 +64,8 @@ class <%= it.clientClass %>
   end
 
   def disconnect
-    @reconnect = false
+    @manually_closed = true
+    @heartbeat_thread&.kill
     @ws&.close
     @ws = nil
   end
@@ -94,6 +116,16 @@ class <%= it.clientClass %>
   private
 
   def _handle_message(raw)
+    if _heartbeat_matches(raw, @server_heartbeat_message)
+      @last_activity = Time.now
+      @ws&.send(@server_heartbeat_response) if @server_heartbeat_response
+      return
+    end
+    if @heartbeat_expected_response.nil? || _heartbeat_matches(raw, @heartbeat_expected_response)
+      @last_activity = Time.now
+      return if @heartbeat_expected_response
+    end
+
     data = JSON.parse(raw)
     channel = data["channel"] || data["type"] || data["event"] || ""
     return unless @handlers.key?(channel)
@@ -104,11 +136,43 @@ class <%= it.clientClass %>
     # ignore malformed messages
   end
 
-  def _handle_close
-    return unless @reconnect && @reconnect_attempts < @max_reconnect_attempts
+  def _start_heartbeat
+    @heartbeat_thread&.kill
+    return unless @heartbeat_interval&.positive? && @heartbeat_message
 
-    @reconnect_attempts += 1
-    sleep(@reconnect_interval)
-    connect
+    @heartbeat_thread = Thread.new do
+      loop do
+        sleep(@heartbeat_interval)
+        break unless @ws
+        if @heartbeat_timeout&.positive? && Time.now - @last_activity > @heartbeat_interval + @heartbeat_timeout
+          @ws.close
+          break
+        end
+        @ws.send(@heartbeat_message)
+      end
+    end
+  end
+
+  def _heartbeat_matches(actual, expected)
+    return false unless expected
+    return true if actual == expected
+
+    JSON.parse(actual) == JSON.parse(expected)
+  rescue JSON::ParserError, TypeError
+    false
+  end
+
+  def _handle_close
+    while @reconnect && !@manually_closed && @reconnect_attempts < @max_reconnect_attempts
+      @reconnect_attempts += 1
+      sleep(@reconnect_interval)
+      return if @manually_closed
+      begin
+        connect
+        return
+      rescue StandardError
+        next
+      end
+    end
   end
 end

@@ -5,5 +5,13 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "__tests__", "__fixtures__", "src/engine", "types", "templates"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "__tests__",
+    "__fixtures__",
+    "src/engine",
+    "types",
+    "templates"
+  ]
 }

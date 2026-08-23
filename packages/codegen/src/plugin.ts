@@ -1,4 +1,12 @@
-import type { ParsedSpec, CortexConfig, LanguageConfig, GraphQLSpec, AsyncApiSpec, GrpcSpec } from '@cortex/core';
+import type {
+  ParsedSpec,
+  CortexConfig,
+  LanguageConfig,
+  GraphQLSpec,
+  AsyncApiSpec,
+  GrpcSpec,
+  OpenRpcSpec,
+} from '@cortex/core';
 
 export interface GeneratedFile {
   path: string;
@@ -23,6 +31,11 @@ export interface CodegenContext {
   gqlSpec?: GraphQLSpec;
   asyncSpec?: AsyncApiSpec;
   grpcSpec?: GrpcSpec;
+  openRpcSpec?: OpenRpcSpec;
+  /** Absolute path to the configured custom template root. */
+  templateRoot?: string;
+  /** Absolute path to overrides for this source and language. */
+  templateDir?: string;
 }
 
 export interface LanguagePlugin {

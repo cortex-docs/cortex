@@ -5,6 +5,13 @@ using System.Text.Json.Serialization;
 
 namespace <%= ns %>.Models;
 
+public sealed class FileUpload
+{
+    public required string FileName { get; init; }
+    public required byte[] Data { get; init; }
+    public string ContentType { get; init; } = "application/octet-stream";
+}
+
 <% for (const schema of it.schemas) { -%>
 <% if (schema.isEnum) { -%>
 public enum <%= schema.className %>

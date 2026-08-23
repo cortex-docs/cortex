@@ -1,14 +1,16 @@
 #!/bin/bash
 set -e
 
-GEN="${GEN_DIR:-/tmp/cortex-e2e-sdks/generated}"
 BASE="${MOCK_URL:-http://localhost:4010}"
 GQL_URL="${MOCK_GQL_URL:-${BASE}/graphql}"
 GQL_WS_URL=$(echo "$GQL_URL" | sed 's|^http|ws|')
 WS_URL="${MOCK_WS_URL:-ws://localhost:4010/ws}"
 GRPC_ADDR="${MOCK_URL:-http://localhost:4010}"
-C_SRC="$GEN/c/src"
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOCAL_GEN="$TEST_DIR/generated"
+GEN="${GEN_DIR:-/tmp/cortex-e2e-sdks/generated}"
+if [ -d "$LOCAL_GEN/c/src" ]; then GEN="$LOCAL_GEN"; fi
+C_SRC="$GEN/c/src"
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
 

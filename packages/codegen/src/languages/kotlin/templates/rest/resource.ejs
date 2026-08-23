@@ -21,11 +21,17 @@ class <%= r.className %>(private val client: <%= clientClass %>) {
 <% } -%>
 <% if (isVoid) { -%>
     fun <%= op.name %>(<%= uniqueParams.join(', ') %>) {
-        client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'client.json.encodeToString(body)' : 'null' %>)
+<% if (op.isMultipart) { -%>
+<%~ include("rest/multipart-fields", { ...it, op }) %>
+<% } -%>
+        client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody && !op.isMultipart && !op.isRawBinary ? 'client.json.encodeToString(body)' : 'null' %><% if (op.isMultipart) { %>, multipart<% } %><% if (op.isRawBinary) { %>, null, body, "<%= op.contentType %>"<% } %>)
     }
 <% } else { -%>
     fun <%= op.name %>(<%= uniqueParams.join(', ') %>): <%= returnType %> {
-        return client.typedRequest<<%= returnType %>>("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'client.json.encodeToString(body)' : 'null' %>)
+<% if (op.isMultipart) { -%>
+<%~ include("rest/multipart-fields", { ...it, op }) %>
+<% } -%>
+        return client.typedRequest<<%= returnType %>>("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody && !op.isMultipart && !op.isRawBinary ? 'client.json.encodeToString(body)' : 'null' %><% if (op.isMultipart) { %>, multipart<% } %><% if (op.isRawBinary) { %>, null, body, "<%= op.contentType %>"<% } %>)
     }
 <% } -%>
 

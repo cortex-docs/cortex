@@ -1,6 +1,6 @@
 # Development Guide
 
-This document covers everything you need to contribute to Cortex.
+This document explains how to contribute to Cortex Docs.
 
 ## Prerequisites
 
@@ -10,13 +10,13 @@ This document covers everything you need to contribute to Cortex.
 
 For E2E tests:
 
-- **Playwright** browsers (installed automatically on first run)
+- **Playwright** Chromium browser
 
 ## Setup
 
 ```bash
 # Clone the repo
-git clone https://github.com/cortex-sdk/cortex.git
+git clone https://github.com/cortex-docs/cortex.git
 cd cortex
 
 # Install all dependencies (workspaces handled automatically)
@@ -55,30 +55,30 @@ cortex/
 ### Package Dependency Graph
 
 ```
-core  (no internal deps)
-  |
-  +---> codegen  (depends on core)
-  |        |
-  +---> mcp-gen  (depends on core)
-  |        |
-  +--------+---> cli  (depends on core, codegen, mcp-gen)
-  |
-  docs-ui     (standalone Next.js app)
-  docs-site   (standalone Next.js app)
+core
+  +---> codegen
+  +---> mcp-gen
+
+core + codegen + mcp-gen
+  +---> docs-ui
+
+core + codegen + mcp-gen + docs-ui
+  +---> cli
+          +---> docs-site
 ```
 
 Build order is enforced by Turborepo — `npm run build` handles it automatically.
 
 ### Package Overview
 
-| Package | Purpose | Tech |
-|---------|---------|------|
-| `@cortex/core` | OpenAPI parsing, config loading, naming utilities | `@apidevtools/swagger-parser`, `zod`, `js-yaml` |
-| `@cortex/codegen` | SDK code generation engine with language plugins | Programmatic string templates |
-| `@cortex/cli` | Command-line interface | `nest-commander` (NestJS) |
-| `@cortex/mcp-gen` | MCP server code generation | Programmatic templates |
-| `@cortex/docs-ui` | API reference documentation viewer | Next.js 15, `@scalar/api-reference-react`, Tailwind v4 |
-| `@cortex/docs-site` | Product documentation site (docs.cortex.dev) | Next.js 15, `remark`, Tailwind v4 |
+| Package             | Purpose                                           | Tech                                                   |
+| ------------------- | ------------------------------------------------- | ------------------------------------------------------ |
+| `@cortex/core`      | OpenAPI parsing, config loading, naming utilities | `@apidevtools/swagger-parser`, `zod`, `js-yaml`        |
+| `@cortex/codegen`   | SDK code generation engine with language plugins  | Programmatic string templates                          |
+| `@cortex/cli`       | Command-line interface                            | `nest-commander` (NestJS)                              |
+| `@cortex/mcp-gen`   | MCP server code generation                        | Programmatic templates                                 |
+| `@cortex/docs-ui`   | API reference documentation viewer                | Next.js 16, `@scalar/api-reference-react`, Tailwind v4 |
+| `@cortex/docs-site` | Cortex Docs product documentation configuration   | Markdown and the Cortex Docs CLI                       |
 
 ## Development Workflow
 
@@ -102,11 +102,11 @@ Build order is enforced by Turborepo — `npm run build` handles it automaticall
 
 **Environment variables (override defaults):**
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3012` | Next.js dev server port |
-| `MOCK_PORT` | `4010` | Mock HTTP/WS/GraphQL server port |
-| `GRPC_PORT` | `50051` | Mock gRPC server port |
+| Variable    | Default | Description                      |
+| ----------- | ------- | -------------------------------- |
+| `PORT`      | `3012`  | Next.js dev server port          |
+| `MOCK_PORT` | `4010`  | Mock HTTP/WS/GraphQL server port |
+| `GRPC_PORT` | `50051` | Mock gRPC server port            |
 
 **The docs UI relies exclusively on `test-project/` for all spec data** — it does not fall back to `packages/core/__fixtures__/`. This ensures you're always testing the same flow an end user would see with `cortex docs serve`.
 
@@ -148,7 +148,7 @@ cd packages/codegen && npx vitest run
 cd packages/mcp-gen && npx vitest run
 
 # Run E2E tests (starts docs-ui dev server automatically)
-npx playwright test
+npm run test:e2e
 
 # Run E2E tests with UI mode
 npx playwright test --ui
@@ -294,7 +294,7 @@ Register new commands in `packages/cli/src/app.module.ts`.
 
 ## Modifying the Docs UI
 
-The docs-ui is a Next.js 15 app using:
+The docs UI is a Next.js 16 app using:
 
 - **Scalar API Reference** for rendering the OpenAPI spec
 - **Geist Sans + Geist Mono** fonts
@@ -309,25 +309,13 @@ The spec is served via the `/api/spec` route, which reads the file path from the
 npm run --workspace=@cortex/docs-site dev
 ```
 
-Starts the product documentation site (docs.cortex.dev) locally on `:3200` with hot reload. Edit any `.md` file in `packages/docs-site/content/` and the page updates instantly.
+Starts the product documentation site locally on `:3200` with hot reload. Edit a Markdown file in `packages/docs-site/docs/` to update a page.
 
 ## Modifying the Docs Site
 
-The docs-site renders markdown files from `packages/docs-site/content/`. Each file has YAML frontmatter:
+The product site reads Markdown files from `packages/docs-site/docs/`. Add each page to the `docs` array in `packages/docs-site/cortex.config.yml`.
 
-```markdown
----
-title: Page Title
-description: Short description for meta tags.
-order: 1
----
-
-# Page Title
-
-Content here...
-```
-
-Add new pages by creating a `.md` file in the `content/` directory. The sidebar navigation is generated automatically from the frontmatter `order` field.
+The array order controls the sidebar order. Each entry supplies the page title and Markdown path.
 
 ## Commit Guidelines
 

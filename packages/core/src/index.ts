@@ -24,8 +24,16 @@ export {
   getSourcesByType,
   getFirstSourceByType,
   getFirstSpecPath,
+  isRemoteLocation,
+  resolveConfigPath,
   hasSourceType,
   sanitizePackageName,
+  normalizeRepositoryUrl,
+  gitRepositoryUrl,
+  resolveGeneratorTemplateRoot,
+  resolveLanguageTemplateDir,
+  getSourceLanguageTemplateDir,
+  getAllLanguageTemplateDirs,
   computeEffectiveLanguages,
   sourceHasLanguage,
 } from './config/utils';
@@ -33,14 +41,37 @@ export type {
   CortexConfig,
   DocsSection,
   DocsDocument,
+  HomeCallToAction,
+  HomeConfig,
+  HomeSection,
+  GeneratorConfig,
   LanguageConfig,
   McpConfig,
   OutputConfig,
+  PublishConfig,
+  PublishGitHubConfig,
+  PublishRegistryConfig,
   SourceConfig,
   SourceLanguageConfig,
   SourceType,
   SupportedLanguage,
+  JsonValue,
+  WebSocketHeartbeatConfig,
+  WebSocketHeartbeatFlowConfig,
+  WebSocketSourceConfig,
 } from './config/types';
+
+export { OpenRpcParser } from './openrpc/parser';
+export type {
+  OpenRpcSpec,
+  OpenRpcServer,
+  OpenRpcMethod,
+  OpenRpcParam,
+  OpenRpcResult,
+  OpenRpcSchema as OpenRpcSchemaType,
+  OpenRpcErrorDef,
+  OpenRpcErrorRef,
+} from './openrpc/types';
 
 export { GrpcParser } from './grpc/parser';
 export type {

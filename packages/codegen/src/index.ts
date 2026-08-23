@@ -1,5 +1,25 @@
-export { CodegenEngine, type GenerationResult, type LanguageResult } from './engine';
-export { renderSnippet, renderRestSnippet, getAvailableSnippetTemplates } from './snippet-renderer';
+export {
+  CodegenEngine,
+  type GenerateOptions,
+  type GenerationResult,
+  type LanguageResult,
+} from './engine';
+export {
+  renderLanguageTemplate,
+  renderSnippet,
+  renderRestSnippet,
+  getAvailableSnippetTemplates,
+  type SnippetData,
+} from './snippet-renderer';
+export {
+  LayeredTemplateRenderer,
+  applyFileTemplateOverrides,
+  assertTemplateRoot,
+  createLanguageTemplateRenderer,
+  findLanguageTemplateDir,
+  type TemplateGenerator,
+  type TemplateRenderOptions,
+} from './template-renderer';
 export { FileEmitter, type EmitResult } from './emitter';
 export {
   PluginRegistry,
@@ -9,6 +29,12 @@ export {
   type NamingConventions,
 } from './plugin';
 export { getLanguageNaming } from './naming';
+export type {
+  LanguageTemplateConfig,
+  LanguageTemplateData,
+  LanguageTypeMap,
+  PackageTemplateData,
+} from './languages/template-plugin';
 export { TypeScriptPlugin } from './languages/typescript/index';
 export { PythonPlugin } from './languages/python/index';
 export { GoPlugin } from './languages/go/index';
@@ -21,9 +47,29 @@ export { RustPlugin } from './languages/rust/index';
 export { CppPlugin } from './languages/cpp/index';
 export { CPlugin } from './languages/c/index';
 export { createWsPluginForLanguage, type WsCodegenContext } from './languages/ws-template-plugin';
-export { WsTemplateEngine, type WsLanguageConfig } from './languages/ws-template-plugin';
-export { GqlTemplateEngine, createGqlPluginForLanguage, type GqlLanguageConfig } from './languages/gql-template-plugin';
-export { GrpcTemplateEngine, createGrpcPluginForLanguage, type GrpcLanguageConfig } from './languages/grpc-template-plugin';
+export {
+  WsTemplateEngine,
+  type WsLanguageConfig,
+  type WsTemplateData,
+} from './languages/ws-template-plugin';
+export {
+  GqlTemplateEngine,
+  createGqlPluginForLanguage,
+  type GqlLanguageConfig,
+  type GqlTemplateData,
+} from './languages/gql-template-plugin';
+export {
+  GrpcTemplateEngine,
+  createGrpcPluginForLanguage,
+  type GrpcLanguageConfig,
+  type GrpcTemplateData,
+} from './languages/grpc-template-plugin';
+export {
+  OpenRpcTemplateEngine,
+  createOpenRpcPluginForLanguage,
+  type OpenRpcLanguageConfig,
+  type OpenRpcTemplateData,
+} from './languages/openrpc-template-plugin';
 
 import { PluginRegistry } from './plugin';
 import { TypeScriptPlugin } from './languages/typescript/index';

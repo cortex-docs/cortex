@@ -1,10 +1,15 @@
 Gem::Specification.new do |s|
-  s.name        = "<%= it.utils.toSnakeCase(it.packageName) %>"
+  s.name        = "<%= it.packageName %>"
   s.version     = "<%= it.version %>"
   s.summary     = "Ruby SDK for <%= it.title %>"
   s.authors     = ["<%= it.project %>"]
-  s.files       = Dir["lib/**/*.rb"]
+  s.files       = Dir["lib/**/*.rb", "src/**/*.rb", "README.md", ".cortex-package.json"]
+  s.require_paths = ["lib", "src"]
+  s.license     = "MIT"
   s.required_ruby_version = ">= 3.0.0"
+<% if (it.repositoryUrl) { %>  s.homepage    = "<%= it.repositoryUrl %>"
+  s.metadata    = { "source_code_uri" => "<%= it.repositoryUrl %>", "bug_tracker_uri" => "<%= it.repositoryUrl %>/issues" }
+<% } %>
 
   s.add_dependency "faraday", "~> 2.0"
   s.add_dependency "faraday-multipart", "~> 1.0"

@@ -3,7 +3,7 @@ import * as protoLoader from '@grpc/proto-loader';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 <% for (const msg of it.messages) { %>
-import type { <%= msg.name %> } from './grpc-types';
+import type { <%= msg.name %> } from './grpc-types.js';
 <% } %>
 
 export interface GrpcClientOptions {

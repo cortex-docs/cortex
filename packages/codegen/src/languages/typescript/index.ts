@@ -30,6 +30,7 @@ export class TypeScriptPlugin extends TemplateBasedPlugin {
       any: 'unknown',
       void: 'void',
       datetime: 'string',
+      file: 'FileUpload',
       nullable: (type) => `${type} | null`,
     },
     naming: {

@@ -1,6 +1,3 @@
-import * as path from 'node:path';
-import * as fs from 'node:fs';
-import { Eta } from 'eta';
 import {
   singularize,
   toPascalCase,
@@ -10,54 +7,27 @@ import {
   toUpperSnakeCase,
 } from '@cortex/core';
 import { getLanguageNaming } from './naming';
-
-const LANGUAGE_TEMPLATE_DIRS: Record<string, string> = {};
-
-function getTemplateDir(language: string): string {
-  if (LANGUAGE_TEMPLATE_DIRS[language]) return LANGUAGE_TEMPLATE_DIRS[language];
-
-  // Try __dirname first (works in plain Node.js)
-  const fromDirname = path.resolve(__dirname, 'languages', language, 'templates');
-  if (fs.existsSync(fromDirname)) {
-    LANGUAGE_TEMPLATE_DIRS[language] = fromDirname;
-    return fromDirname;
-  }
-
-  // Fallback: walk up from cwd to find the codegen package (works in bundled contexts)
-  const candidates = [
-    path.resolve(process.cwd(), 'node_modules/@cortex/codegen/dist/languages', language, 'templates'),
-    path.resolve(process.cwd(), '../codegen/dist/languages', language, 'templates'),
-    path.resolve(process.cwd(), '../codegen/src/languages', language, 'templates'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      LANGUAGE_TEMPLATE_DIRS[language] = candidate;
-      return candidate;
-    }
-  }
-
-  LANGUAGE_TEMPLATE_DIRS[language] = fromDirname;
-  return fromDirname;
-}
-
-function createEta(templateDir: string): Eta {
-  return new Eta({ autoEscape: false, autoTrim: false, views: templateDir, defaultExtension: '.ejs' });
-}
+import { createLanguageTemplateRenderer, type TemplateRenderOptions } from './template-renderer';
 
 export interface SnippetData {
   [key: string]: unknown;
 }
 
-export function renderSnippet(language: string, templateName: string, data: SnippetData): string | null {
-  const dir = getTemplateDir(language);
-  const templatePath = path.join(dir, `${templateName}.ejs`);
-  if (!fs.existsSync(templatePath)) {
-    console.error(`[renderSnippet] Template not found: ${templatePath} (__dirname: ${__dirname})`);
-    return null;
-  }
+export function renderLanguageTemplate(
+  language: string,
+  templateName: string,
+  data: SnippetData,
+  options?: TemplateRenderOptions,
+): string | null {
+  return createLanguageTemplateRenderer(language, options).render(templateName, data);
+}
 
-  const template = fs.readFileSync(templatePath, 'utf-8');
-  const eta = createEta(dir);
+export function renderSnippet(
+  language: string,
+  templateName: string,
+  data: SnippetData,
+  options?: TemplateRenderOptions,
+): string | null {
   const naming = getLanguageNaming(language);
 
   const enrichedData: Record<string, unknown> = {
@@ -82,7 +52,7 @@ export function renderSnippet(language: string, templateName: string, data: Snip
     };
   }
 
-  return eta.renderString(template, enrichedData);
+  return renderLanguageTemplate(language, templateName, enrichedData, options);
 }
 
 export function renderRestSnippet(
@@ -95,23 +65,20 @@ export function renderRestSnippet(
     spec: { info: { servers: Array<{ url: string }> } };
     [key: string]: unknown;
   },
+  options?: TemplateRenderOptions,
 ): string | null {
-  return renderSnippet(language, 'rest/snippet', data)
-    ?? renderSnippet(language, 'rest/init', data);
+  return (
+    renderSnippet(language, 'rest/snippet', data, options) ??
+    renderSnippet(language, 'rest/init', data, options)
+  );
 }
 
-export function getAvailableSnippetTemplates(language: string): string[] {
-  const dir = getTemplateDir(language);
-  const templates: string[] = [];
-
-  for (const protocol of ['rest', 'graphql', 'websocket', 'grpc']) {
-    const protocolDir = path.join(dir, protocol);
-    if (!fs.existsSync(protocolDir)) continue;
-    for (const file of fs.readdirSync(protocolDir)) {
-      if (file.endsWith('.ejs')) {
-        templates.push(`${protocol}/${file.replace('.ejs', '')}`);
-      }
-    }
-  }
-  return templates;
+export function getAvailableSnippetTemplates(
+  language: string,
+  options?: TemplateRenderOptions,
+): string[] {
+  const protocols = new Set(['rest', 'graphql', 'websocket', 'grpc', 'openrpc']);
+  return createLanguageTemplateRenderer(language, options)
+    .list()
+    .filter((name) => protocols.has(name.split('/')[0]) && !name.includes('/files/'));
 }

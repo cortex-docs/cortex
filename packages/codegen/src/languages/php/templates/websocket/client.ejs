@@ -13,21 +13,43 @@ class <%= it.clientClass %>
     /** @var resource|null */
     private $socket = null;
     private int $reconnectAttempts = 0;
+    private float $heartbeatInterval;
+    private float $heartbeatTimeout;
+    private ?string $heartbeatMessage;
+    private ?string $heartbeatExpectedResponse;
+    private ?string $serverHeartbeatMessage;
+    private ?string $serverHeartbeatResponse;
+    private float $lastActivity = 0.0;
+    private float $nextHeartbeat = 0.0;
+    private bool $manuallyClosed = false;
 
     public function __construct(
         string $url = '<%= it.serverUrl %>',
         bool $reconnect = true,
         float $reconnectInterval = 3.0,
         int $maxReconnectAttempts = 10,
+        float $heartbeatInterval = <%= it.heartbeat.intervalMs / 1000 %>,
+        float $heartbeatTimeout = <%= it.heartbeat.timeoutMs / 1000 %>,
+        ?string $heartbeatMessage = <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>null<% } %>,
+        ?string $heartbeatExpectedResponse = <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>null<% } %>,
+        ?string $serverHeartbeatMessage = <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>null<% } %>,
+        ?string $serverHeartbeatResponse = <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>null<% } %>,
     ) {
         $this->url = $url;
         $this->reconnect = $reconnect;
         $this->reconnectInterval = $reconnectInterval;
         $this->maxReconnectAttempts = $maxReconnectAttempts;
+        $this->heartbeatInterval = $heartbeatInterval;
+        $this->heartbeatTimeout = $heartbeatTimeout;
+        $this->heartbeatMessage = $heartbeatMessage;
+        $this->heartbeatExpectedResponse = $heartbeatExpectedResponse;
+        $this->serverHeartbeatMessage = $serverHeartbeatMessage;
+        $this->serverHeartbeatResponse = $serverHeartbeatResponse;
     }
 
     public function connect(): void
     {
+        $this->manuallyClosed = false;
         $parsed = parse_url($this->url);
         $scheme = $parsed['scheme'] ?? 'ws';
         $host = $parsed['host'] ?? 'localhost';
@@ -69,11 +91,13 @@ class <%= it.clientClass %>
 
         $this->socket = $socket;
         $this->reconnectAttempts = 0;
+        $this->lastActivity = microtime(true);
+        $this->nextHeartbeat = $this->lastActivity + $this->heartbeatInterval;
     }
 
     public function disconnect(): void
     {
-        $this->reconnect = false;
+        $this->manuallyClosed = true;
         if ($this->socket !== null) {
             @fclose($this->socket);
             $this->socket = null;
@@ -90,6 +114,19 @@ class <%= it.clientClass %>
         stream_set_blocking($this->socket, false);
 
         do {
+            $now = microtime(true);
+            if ($this->heartbeatInterval > 0 && $this->heartbeatMessage !== null && $now >= $this->nextHeartbeat) {
+                $this->sendFrame($this->heartbeatMessage);
+                $this->nextHeartbeat = $now + $this->heartbeatInterval;
+            }
+            if ($this->heartbeatTimeout > 0 && $now - $this->lastActivity > $this->heartbeatInterval + $this->heartbeatTimeout) {
+                @fclose($this->socket);
+                $this->socket = null;
+                $this->handleClose();
+                if ($this->socket === null) return;
+                stream_set_blocking($this->socket, false);
+                continue;
+            }
             $read = [$this->socket];
             $write = $except = null;
             $remaining = max(0, $deadline - microtime(true));
@@ -101,13 +138,17 @@ class <%= it.clientClass %>
                 if ($raw === null) {
                     $this->socket = null;
                     $this->handleClose();
-                    return;
+                    if ($this->socket === null) return;
+                    stream_set_blocking($this->socket, false);
+                    continue;
                 }
                 $this->handleMessage($raw);
             }
         } while (microtime(true) < $deadline);
 
-        stream_set_blocking($this->socket, true);
+        if ($this->socket !== null) {
+            stream_set_blocking($this->socket, true);
+        }
     }
 
     public function send(string $channel, mixed $payload): void
@@ -200,6 +241,7 @@ class <%= it.clientClass %>
         if ($header === false || strlen($header) < 2) {
             return null;
         }
+        $opcode = ord($header[0]) & 0x0F;
         $len = ord($header[1]) & 0x7F;
         if ($len === 126) {
             $ext = fread($this->socket, 2);
@@ -225,11 +267,26 @@ class <%= it.clientClass %>
                 $data[$i] = $data[$i] ^ $mask[$i % 4];
             }
         }
+        if ($opcode === 0x8) {
+            return null;
+        }
         return $data;
     }
 
     private function handleMessage(string $raw): void
     {
+        if ($this->heartbeatMatches($raw, $this->serverHeartbeatMessage)) {
+            $this->lastActivity = microtime(true);
+            if ($this->serverHeartbeatResponse !== null) {
+                $this->sendFrame($this->serverHeartbeatResponse);
+            }
+            return;
+        }
+        if ($this->heartbeatExpectedResponse === null || $this->heartbeatMatches($raw, $this->heartbeatExpectedResponse)) {
+            $this->lastActivity = microtime(true);
+            if ($this->heartbeatExpectedResponse !== null) return;
+        }
+
         $data = json_decode($raw, true);
         if (!is_array($data)) {
             return;
@@ -246,18 +303,29 @@ class <%= it.clientClass %>
         }
     }
 
+    private function heartbeatMatches(string $actual, ?string $expected): bool
+    {
+        if ($expected === null) return false;
+        if ($actual === $expected) return true;
+        $actualJson = json_decode($actual, true);
+        $actualError = json_last_error();
+        $expectedJson = json_decode($expected, true);
+        $expectedError = json_last_error();
+        return $actualError === JSON_ERROR_NONE && $expectedError === JSON_ERROR_NONE && $actualJson == $expectedJson;
+    }
+
     private function handleClose(): void
     {
-        if (!$this->reconnect || $this->reconnectAttempts >= $this->maxReconnectAttempts) {
-            return;
-        }
-
-        $this->reconnectAttempts++;
-        usleep((int) ($this->reconnectInterval * 1000000));
-        try {
-            $this->connect();
-        } catch (\RuntimeException $e) {
-            // Reconnection failed
+        while ($this->reconnect && !$this->manuallyClosed && $this->reconnectAttempts < $this->maxReconnectAttempts) {
+            $this->reconnectAttempts++;
+            usleep((int) ($this->reconnectInterval * 1000000));
+            if ($this->manuallyClosed) return;
+            try {
+                $this->connect();
+                return;
+            } catch (\RuntimeException $e) {
+                continue;
+            }
         }
     }
 }

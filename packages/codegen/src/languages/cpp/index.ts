@@ -21,6 +21,7 @@ export class CppPlugin extends TemplateBasedPlugin {
       any: 'nlohmann::json',
       void: 'void',
       datetime: 'std::string',
+      file: 'FileUpload',
       nullable: (type) => `std::optional<${type}>`,
     },
     naming: {
@@ -33,6 +34,7 @@ export class CppPlugin extends TemplateBasedPlugin {
     },
     packageTemplates: [
       { template: 'cmake', path: 'CMakeLists.txt' },
+      { template: 'conanfile', path: 'conanfile.py' },
     ],
     packageFiles: () => [],
   };

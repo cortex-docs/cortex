@@ -1,6 +1,6 @@
 # Cortex Documentation Site
 
-project: Cortex
+project: cortex-docs
 title: Cortex Docs
 logo_dark: ./assets/logo_dark.svg
 logo_light: ./assets/logo_light.svg
@@ -11,13 +11,13 @@ theme: system
 primaryColor: '#ffffff'
 home:
   title: Cortex Docs
-  description: Generate typed SDKs, interactive documentation, and MCP servers from your API specifications.
+  description: Generate typed SDKs, documentation, and MCP servers from OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC sources.
   cta:
     label: Getting Started
     href: /docs
   sections:
     - title: Documentation
-      description: Guides for getting started, configuration, SDK generation, publishing, and more.
+      description: Learn about SDK generation, request timeouts, connection recovery, heartbeats, and streaming APIs.
       badge: Docs
       href: /docs
       icon: assets/docs-icon.svg
@@ -41,12 +41,16 @@ docs:
         document: docs/websocket-sdks.md
       - title: GraphQL
         document: docs/graphql.md
-      - title: OpenRPC / JSON-RPC
+      - title: gRPC
+        document: docs/grpc.md
+      - title: OpenRPC
         document: docs/openrpc.md
   - section: Features
     sources:
       - title: Documentation
         document: docs/api-docs.md
+      - title: Custom Generators
+        document: docs/custom-generators.md
       - title: MCP Servers
         document: docs/mcp-servers.md
       - title: Publishing

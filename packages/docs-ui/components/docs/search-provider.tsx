@@ -1,19 +1,8 @@
 'use client';
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type MiniSearch from 'minisearch';
-import {
-  type SearchDocument,
-  createSearchIndex,
-  buildSearchDocuments,
-} from '@/lib/search-index';
+import { type SearchDocument, createSearchIndex, buildSearchDocuments } from '@/lib/search-index';
 import { useProjectWatch } from '@/lib/use-project-watch';
 
 interface SearchIndexContextValue {

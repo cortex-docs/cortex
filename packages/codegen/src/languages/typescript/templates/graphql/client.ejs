@@ -14,7 +14,7 @@ import {
   type SubscriptionBuilder,
   createSubscriptionBuilder,
 <% } -%>
-} from './gql-query-builder';
+} from './gql-query-builder.js';
 <% if (hasSubscriptions) { -%>
 import { createClient, type Client as GqlWsClient, type ClientOptions } from 'graphql-ws';
 <% } -%>
@@ -24,22 +24,36 @@ export interface <%= it.clientClass %>Options {
 <% if (hasSubscriptions) { -%>
   wsEndpoint?: string;
   webSocketImpl?: ClientOptions['webSocketImpl'];
+  reconnect?: boolean;
+  reconnectInterval?: number;
+  maxReconnectAttempts?: number;
+  heartbeatInterval?: number;
+  connectionAckTimeout?: number;
 <% } -%>
   headers?: Record<string, string>;
   bearerToken?: string;
+  /** HTTP query and mutation timeout in milliseconds. Defaults to 15 seconds. */
+  timeout?: number;
 }
 
 export class <%= it.clientClass %> {
   private endpoint: string;
   private headers: Record<string, string>;
+  private timeout: number;
 <% if (hasSubscriptions) { -%>
   private wsEndpoint: string;
   private wsClient: GqlWsClient | null = null;
   private webSocketImpl: ClientOptions['webSocketImpl'];
+  private reconnect: boolean;
+  private reconnectInterval: number;
+  private maxReconnectAttempts: number;
+  private heartbeatInterval: number;
+  private connectionAckTimeout: number;
 <% } -%>
 
   constructor(options: <%= it.clientClass %>Options = {}) {
     this.endpoint = options.endpoint ?? '<%= it.endpoint %>';
+    this.timeout = options.timeout ?? 15_000;
     this.headers = { 'Content-Type': 'application/json', ...options.headers };
     if (options.bearerToken) {
       this.headers['Authorization'] = `Bearer ${options.bearerToken}`;
@@ -47,23 +61,38 @@ export class <%= it.clientClass %> {
 <% if (hasSubscriptions) { -%>
     this.wsEndpoint = options.wsEndpoint ?? this.endpoint.replace(/^http/, 'ws');
     this.webSocketImpl = options.webSocketImpl;
+    this.reconnect = options.reconnect ?? true;
+    this.reconnectInterval = options.reconnectInterval ?? 3_000;
+    this.maxReconnectAttempts = options.maxReconnectAttempts ?? 10;
+    this.heartbeatInterval = options.heartbeatInterval ?? 30_000;
+    this.connectionAckTimeout = options.connectionAckTimeout ?? 10_000;
 <% } -%>
   }
 
   private async execute<T = unknown>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    const response = await fetch(this.endpoint, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({ query, variables }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    try {
+      const response = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ query, variables }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new GqlError(`GraphQL HTTP error ${response.status}: ${response.statusText}`, []);
+      }
 
-    const json = await response.json() as { data?: T; errors?: Array<{ message: string }> };
+      const json = await response.json() as { data?: T; errors?: Array<{ message: string }> };
 
-    if (json.errors?.length) {
-      throw new GqlError(json.errors.map((e) => e.message).join('; '), json.errors);
+      if (json.errors?.length) {
+        throw new GqlError(json.errors.map((e) => e.message).join('; '), json.errors);
+      }
+
+      return json.data as T;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return json.data as T;
   }
 <% if (hasQueries) { %>
   async query<T extends {}>(fn: (q: QueryBuilder) => QueryBuilder<T>): Promise<T> {
@@ -95,6 +124,12 @@ export class <%= it.clientClass %> {
       this.wsClient = createClient({
         url: this.wsEndpoint,
         webSocketImpl: this.webSocketImpl,
+        retryAttempts: this.reconnect ? this.maxReconnectAttempts : 0,
+        retryWait: async () => {
+          await new Promise((resolve) => setTimeout(resolve, this.reconnectInterval));
+        },
+        keepAlive: this.heartbeatInterval,
+        connectionAckWaitTimeout: this.connectionAckTimeout,
         connectionParams: () => {
           const params: Record<string, string> = {};
           if (this.headers['Authorization']) {

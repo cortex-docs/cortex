@@ -6,12 +6,12 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use test_project::client::Client;
-    use test_project::gql_client::GqlClient;
+    use test_project::client::RestApiV1;
+    use test_project::gql_client::Graphql;
     use test_project::gql_types;
     use test_project::grpc;
     use test_project::types;
-    use test_project::ws_client::WsClient;
+    use test_project::ws_client::WebsocketApi;
     use test_project::ws_types;
 
     #[derive(serde::Deserialize)]
@@ -57,8 +57,8 @@ mod tests {
 
     #[tokio::test]
     async fn rest_list_pets() {
-        let client = Client::new(&base_url());
-        let r: types::ListResponse<types::Pet> =
+        let client = RestApiV1::new(&base_url());
+        let r: types::ListPetsResponse =
             client.pets.list(&client, None, None).await.unwrap();
         assert!(r.data.len() >= 2);
         assert!(!r.data[0].name.is_empty());
@@ -66,14 +66,14 @@ mod tests {
 
     #[tokio::test]
     async fn rest_get_pet() {
-        let client = Client::new(&base_url());
+        let client = RestApiV1::new(&base_url());
         let pet: types::Pet = client.pets.get(&client, "pet-1").await.unwrap();
         assert_eq!(pet.name, "Rex");
     }
 
     #[tokio::test]
     async fn rest_create_pet() {
-        let client = Client::new(&base_url());
+        let client = RestApiV1::new(&base_url());
         let pet: types::Pet = client
             .pets
             .create(
@@ -83,26 +83,95 @@ mod tests {
                     species: "bird".into(),
                     breed: None,
                     age: None,
+                    profile_pic: Some(types::FileUpload {
+                        filename: "profile.png".into(),
+                        data: b"pet-avatar".to_vec(),
+                        content_type: "image/png".into(),
+                    }),
+                    attachments: Some(vec![
+                        types::FileUpload {
+                            filename: "record.pdf".into(),
+                            data: b"pdf-file".to_vec(),
+                            content_type: "application/pdf".into(),
+                        },
+                        types::FileUpload {
+                            filename: "notes.txt".into(),
+                            data: b"notes".to_vec(),
+                            content_type: "text/plain".into(),
+                        },
+                    ]),
                 },
             )
             .await
             .unwrap();
         assert_eq!(pet.name, "RustPet");
+        assert_eq!(pet.profile_pic_filename.as_deref(), Some("profile.png"));
+        assert_eq!(pet.profile_pic_size, Some(10));
+        assert_eq!(pet.profile_pic_content_type.as_deref(), Some("image/png"));
+        assert_eq!(pet.attachment_count, Some(2));
+        assert_eq!(pet.attachment_content_types, Some(vec!["application/pdf".into(), "text/plain".into()]));
+
+        let raw: types::UploadResult = client.uploads.upload_file(
+            &client,
+            &types::FileUpload {
+                filename: "raw.pdf".into(),
+                data: b"raw-pdf".to_vec(),
+                content_type: "application/pdf".into(),
+            },
+        ).await.unwrap();
+        assert_eq!(raw.size, 7);
+        assert_eq!(raw.content_type, "application/pdf");
     }
 
     #[tokio::test]
     async fn rest_delete_pet() {
-        let client = Client::new(&base_url());
+        let client = RestApiV1::new(&base_url());
         client.pets.delete(&client, "pet-1").await.unwrap();
     }
 
     #[tokio::test]
     async fn rest_list_owners() {
-        let client = Client::new(&base_url());
-        let r: types::ListResponse<types::Owner> =
+        let client = RestApiV1::new(&base_url());
+        let r: types::ListOwnersResponse =
             client.owners.list(&client, None).await.unwrap();
         assert!(!r.data.is_empty());
         assert!(!r.data[0].email.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rest_chunked_response_stream() {
+        let client = RestApiV1::new_with_timeout(&base_url(), Duration::from_secs(2));
+        let response = client
+            .request_stream("GET", "/pets/stream", None, None)
+            .await
+            .unwrap();
+        let mut stream = response.bytes_stream();
+        let mut chunks = 0;
+        let mut body = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            chunks += 1;
+            body.extend_from_slice(&chunk.unwrap());
+        }
+        let body = String::from_utf8(body).unwrap();
+        assert!(chunks >= 2);
+        assert!(body.contains("Rex"));
+        assert!(body.contains("Whiskers"));
+    }
+
+    #[tokio::test]
+    async fn rest_timeout_override() {
+        let short = RestApiV1::new_with_timeout(&base_url(), Duration::from_millis(40));
+        let timed_out = short
+            .request::<serde_json::Value>("GET", "/transport/slow?delay=250", None, None)
+            .await;
+        assert!(timed_out.is_err());
+
+        let longer = RestApiV1::new_with_timeout(&base_url(), Duration::from_millis(500));
+        let result: serde_json::Value = longer
+            .request("GET", "/transport/slow?delay=100", None, None)
+            .await
+            .unwrap();
+        assert_eq!(result["delayed"], 100);
     }
 
     // ─── GraphQL — Query Builder ──────────────────────────────────────
@@ -111,7 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_query_single_root_field_with_partial_selection() {
-        let gql = GqlClient::new(&gql_url()).with_ws_endpoint(&gql_ws_url());
+        let gql = Graphql::new(&gql_url()).with_ws_endpoint(&gql_ws_url());
         let r: gql_types::PetsQuery = gql
             .query(|q| {
                 q.pets(
@@ -141,7 +210,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_query_multi_entity() {
-        let gql = GqlClient::new(&gql_url());
+        let gql = Graphql::new(&gql_url());
         let r: PetsAndOwnersQuery = gql
             .query(|q| {
                 q.pets(
@@ -186,7 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_query_single_entity_with_required_args() {
-        let gql = GqlClient::new(&gql_url());
+        let gql = Graphql::new(&gql_url());
         let r: gql_types::PetQuery = gql
             .query(|q| {
                 q.pet(
@@ -213,7 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_query_no_args_overload() {
-        let gql = GqlClient::new(&gql_url());
+        let gql = Graphql::new(&gql_url());
         let r: gql_types::PetsQuery = gql
             .query(|q| {
                 q.pets(
@@ -240,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_query_nested_selection() {
-        let gql = GqlClient::new(&gql_url());
+        let gql = Graphql::new(&gql_url());
         let r: gql_types::OwnersQuery = gql
             .query(|q| {
                 q.owners(
@@ -268,7 +337,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_mutate_create_with_input_and_field_selection() {
-        let gql = GqlClient::new(&gql_url());
+        let gql = Graphql::new(&gql_url());
         let r: gql_types::CreatePetMutation = gql
             .mutate(|m| {
                 m.create_pet(
@@ -297,7 +366,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_mutate_scalar_return() {
-        let gql = GqlClient::new(&gql_url());
+        let gql = Graphql::new(&gql_url());
         let r: gql_types::DeletePetMutation = gql
             .mutate(|m| {
                 m.delete_pet(gql_types::DeletePetMutationVariables {
@@ -311,7 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_mutate_multiple_mutations() {
-        let gql = GqlClient::new(&gql_url());
+        let gql = Graphql::new(&gql_url());
         let r: CreatePetAndOwnerMutation = gql
             .mutate(|m| {
                 m.create_pet(
@@ -362,7 +431,15 @@ mod tests {
 
     #[tokio::test]
     async fn gql_subscribe_pet_adopted_receives_event() {
-        let gql = GqlClient::new(&gql_url()).with_ws_endpoint(&gql_ws_url());
+        let gql = Graphql::new_with_options(
+            &gql_url(),
+            Duration::from_secs(15),
+            true,
+            Duration::from_millis(50),
+            5,
+            Duration::from_secs(30),
+            Duration::from_secs(10),
+        ).with_ws_endpoint(&gql_ws_url());
         let (tx, rx) = tokio::sync::oneshot::channel::<gql_types::PetAdoptedSubscription>();
         let tx = std::sync::Mutex::new(Some(tx));
         let handle = gql.subscribe(
@@ -401,7 +478,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_subscribe_owner_activity_receives_event() {
-        let gql = GqlClient::new(&gql_url()).with_ws_endpoint(&gql_ws_url());
+        let gql = Graphql::new(&gql_url()).with_ws_endpoint(&gql_ws_url());
         let (tx, rx) = tokio::sync::oneshot::channel::<gql_types::OwnerActivitySubscription>();
         let tx = std::sync::Mutex::new(Some(tx));
         let handle = gql.subscribe(
@@ -447,7 +524,7 @@ mod tests {
 
     #[tokio::test]
     async fn gql_subscribe_unsubscribe_stops_receiving() {
-        let gql = GqlClient::new(&gql_url()).with_ws_endpoint(&gql_ws_url());
+        let gql = Graphql::new(&gql_url()).with_ws_endpoint(&gql_ws_url());
         let event_count = Arc::new(AtomicUsize::new(0));
         let count_clone = event_count.clone();
         let handle = gql.subscribe(
@@ -472,7 +549,14 @@ mod tests {
 
     #[tokio::test]
     async fn ws_connect_receive_presence() {
-        let ws = WsClient::new(&ws_url());
+        let ws = WebsocketApi::new_with_options(
+            &ws_url(),
+            true,
+            Duration::from_millis(50),
+            5,
+            Duration::from_millis(100),
+            Duration::from_millis(300),
+        );
         let (tx, rx) = tokio::sync::oneshot::channel::<ws_types::ChatPresenceMessage>();
         let tx = std::sync::Mutex::new(Some(tx));
         ws.on_chat_presence(move |msg| {
@@ -499,7 +583,7 @@ mod tests {
 
     #[tokio::test]
     async fn ws_client_has_channel_methods() {
-        let ws = WsClient::new(&ws_url());
+        let ws = WebsocketApi::new(&ws_url());
         ws.on_chat_messages(|_: ws_types::ChatMessagesMessage| {}).await;
         ws.on_chat_typing(|_: ws_types::ChatTypingMessage| {}).await;
         ws.on_chat_presence(|_: ws_types::ChatPresenceMessage| {}).await;
@@ -511,7 +595,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_pet_service_list_pets() {
-        let mut client = grpc::pet_service_client::PetServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         let resp = client
@@ -525,7 +609,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_pet_service_get_pet() {
-        let mut client = grpc::pet_service_client::PetServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         let pet = client
@@ -541,7 +625,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_pet_service_create_pet() {
-        let mut client = grpc::pet_service_client::PetServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         let pet = client
@@ -560,7 +644,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_pet_service_delete_pet() {
-        let mut client = grpc::pet_service_client::PetServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         client
@@ -575,7 +659,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_pet_service_watch_pets() {
-        let mut client = grpc::pet_service_client::PetServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         let resp = client
@@ -597,7 +681,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_owner_service_list_owners() {
-        let mut client = grpc::owner_service_client::OwnerServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         let resp = client
@@ -610,7 +694,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_owner_service_get_owner() {
-        let mut client = grpc::owner_service_client::OwnerServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         let owner = client
@@ -626,7 +710,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_owner_service_create_owner() {
-        let mut client = grpc::owner_service_client::OwnerServiceClient::connect(grpc_addr())
+        let mut client = grpc::Grpc::connect(grpc_addr())
             .await
             .unwrap();
         let owner = client

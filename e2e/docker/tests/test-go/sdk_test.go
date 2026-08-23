@@ -12,7 +12,12 @@ var baseURL = getenv("MOCK_URL", "http://localhost:4010")
 var wsURL = getenv("MOCK_WS_URL", "ws://localhost:4010/ws")
 var gqlURL = getenv("MOCK_GQL_URL", "http://localhost:4010/graphql")
 var grpcAddr = getenv("GRPC_ADDR", "localhost:50051")
-var genDir = getenv("GEN_DIR", "/tmp/cortex-e2e-sdks/generated")
+var genDir = func() string {
+	if _, err := os.Stat(filepath.Join("generated", "go", "client.go")); err == nil {
+		return "generated"
+	}
+	return getenv("GEN_DIR", "/tmp/cortex-e2e-sdks/generated")
+}()
 
 func TestGeneratedGoSDK(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -40,7 +45,7 @@ func TestGeneratedGoSDK(t *testing.T) {
 func prepareRunnerModule(t *testing.T, tmpDir string) {
 	t.Helper()
 
-	goSrc := filepath.Join(genDir, "go", "src")
+	goSrc := filepath.Join(genDir, "go")
 	if _, err := os.Stat(goSrc); err != nil {
 		t.Fatalf("generated Go SDK not found: %s", goSrc)
 	}
@@ -48,21 +53,17 @@ func prepareRunnerModule(t *testing.T, tmpDir string) {
 	copyFile(t, filepath.Join("testdata", "runner", "go.mod"), filepath.Join(tmpDir, "go.mod"))
 	copyFile(t, filepath.Join("testdata", "runner", "sdk_usage_test.go"), filepath.Join(tmpDir, "sdk_usage_test.go"))
 
-	copyGeneratedPackage(t, goSrc, filepath.Join(tmpDir, "generated", "sdk"), []string{
-		"client.go",
-		"errors.go",
-		"index.go",
-		"types.go",
+	copyGeneratedResources(t, goSrc, filepath.Join(tmpDir, "generated", "sdk"))
+	copyGeneratedPackage(t, filepath.Join(goSrc, "src", "websocket"), filepath.Join(tmpDir, "generated", "sdk"), []string{
 		"ws-client.go",
 		"ws-types.go",
 	})
-	copyGeneratedResources(t, filepath.Join(goSrc, "resources"), filepath.Join(tmpDir, "generated", "sdk"))
-	copyGeneratedPackage(t, goSrc, filepath.Join(tmpDir, "generated", "gqlclient"), []string{
+	copyGeneratedPackage(t, filepath.Join(goSrc, "src", "graphql"), filepath.Join(tmpDir, "generated", "gqlclient"), []string{
 		"gql-client.go",
 		"gql-types.go",
 		"gql-query-builder.go",
 	})
-	copyGeneratedPackage(t, goSrc, filepath.Join(tmpDir, "generated", "grpcclient"), []string{
+	copyGeneratedPackage(t, filepath.Join(goSrc, "src", "grpc"), filepath.Join(tmpDir, "generated", "grpcclient"), []string{
 		"grpc-client.go",
 		"grpc-types.go",
 	})

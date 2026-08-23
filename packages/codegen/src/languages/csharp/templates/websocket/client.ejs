@@ -1,41 +1,57 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 public class <%= it.clientClass %> : IDisposable
 {
+    private const string ClientHeartbeat = <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>""<% } %>;
+    private const string ClientHeartbeatResponse = <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>""<% } %>;
+    private const string ServerHeartbeat = <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>""<% } %>;
+    private const string ServerHeartbeatResponse = <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>""<% } %>;
     private readonly string _url;
     private readonly bool _reconnect;
     private readonly TimeSpan _reconnectInterval;
     private readonly int _maxReconnectAttempts;
+    private readonly TimeSpan _heartbeatInterval;
+    private readonly TimeSpan _heartbeatTimeout;
     private readonly Dictionary<string, List<Action<JsonElement>>> _handlers = new();
     private ClientWebSocket? _ws;
     private CancellationTokenSource? _cts;
     private int _reconnectAttempts;
     private bool _shouldReconnect;
+    private DateTimeOffset _lastServerActivity;
 
     public <%= it.clientClass %>(
         string url = "<%= it.serverUrl %>",
         bool reconnect = true,
         TimeSpan? reconnectInterval = null,
-        int maxReconnectAttempts = 10)
+        int maxReconnectAttempts = 10,
+        TimeSpan? heartbeatInterval = null,
+        TimeSpan? heartbeatTimeout = null)
     {
         _url = url;
         _shouldReconnect = reconnect;
         _reconnect = reconnect;
         _reconnectInterval = reconnectInterval ?? TimeSpan.FromSeconds(3);
         _maxReconnectAttempts = maxReconnectAttempts;
+        _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromMilliseconds(<%= it.heartbeat.intervalMs %>);
+        _heartbeatTimeout = heartbeatTimeout ?? TimeSpan.FromMilliseconds(<%= it.heartbeat.timeoutMs %>);
     }
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
+        _shouldReconnect = _reconnect;
         _ws = new ClientWebSocket();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         await _ws.ConnectAsync(new Uri(_url), _cts.Token);
         _reconnectAttempts = 0;
+        _lastServerActivity = DateTimeOffset.UtcNow;
 
         _ = Task.Run(() => ListenAsync(_cts.Token), _cts.Token);
+        if (_heartbeatInterval > TimeSpan.Zero && ClientHeartbeat.Length > 0)
+            _ = Task.Run(() => HeartbeatAsync(_cts.Token), _cts.Token);
     }
 
     public async Task DisconnectAsync()
@@ -144,10 +160,46 @@ public class <%= it.clientClass %> : IDisposable
         HandleClose();
     }
 
+    private async Task HeartbeatAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(_heartbeatInterval, cancellationToken);
+                if (_ws is not { State: WebSocketState.Open }) return;
+                if (_heartbeatTimeout > TimeSpan.Zero && DateTimeOffset.UtcNow - _lastServerActivity > _heartbeatInterval + _heartbeatTimeout)
+                {
+                    _ws.Abort();
+                    return;
+                }
+                var ping = Encoding.UTF8.GetBytes(ClientHeartbeat);
+                await _ws.SendAsync(ping, WebSocketMessageType.Text, true, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (WebSocketException) { }
+    }
+
     private void HandleMessage(string raw)
     {
         try
         {
+            if (HeartbeatMatches(raw, ServerHeartbeat))
+            {
+                _lastServerActivity = DateTimeOffset.UtcNow;
+                if (ServerHeartbeatResponse.Length > 0 && _ws is { State: WebSocketState.Open })
+                {
+                    var response = Encoding.UTF8.GetBytes(ServerHeartbeatResponse);
+                    _ = _ws.SendAsync(response, WebSocketMessageType.Text, true, CancellationToken.None);
+                }
+                return;
+            }
+            if (ClientHeartbeatResponse.Length == 0 || HeartbeatMatches(raw, ClientHeartbeatResponse))
+            {
+                _lastServerActivity = DateTimeOffset.UtcNow;
+                if (ClientHeartbeatResponse.Length > 0) return;
+            }
             using var doc = JsonDocument.Parse(raw);
             var root = doc.RootElement;
 
@@ -172,21 +224,35 @@ public class <%= it.clientClass %> : IDisposable
         }
     }
 
-    private async void HandleClose()
+    private static bool HeartbeatMatches(string actual, string expected)
     {
-        if (!_shouldReconnect || _reconnectAttempts >= _maxReconnectAttempts)
-            return;
-
-        _reconnectAttempts++;
-        await Task.Delay(_reconnectInterval);
-
+        if (expected.Length == 0) return false;
+        if (actual == expected) return true;
         try
         {
-            await ConnectAsync();
+            return JsonNode.DeepEquals(JsonNode.Parse(actual), JsonNode.Parse(expected));
         }
-        catch
+        catch (JsonException)
         {
-            // reconnect failed, will retry on next close
+            return false;
+        }
+    }
+
+    private async void HandleClose()
+    {
+        _cts?.Cancel();
+        _ws?.Dispose();
+        while (_shouldReconnect && _reconnectAttempts < _maxReconnectAttempts)
+        {
+            _reconnectAttempts++;
+            await Task.Delay(_reconnectInterval);
+            if (!_shouldReconnect) return;
+            try
+            {
+                await ConnectAsync();
+                return;
+            }
+            catch { }
         }
     }
 

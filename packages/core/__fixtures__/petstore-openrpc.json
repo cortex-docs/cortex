@@ -1,7 +1,7 @@
 {
   "openrpc": "1.3.2",
   "info": {
-    "title": "Petstore JSON-RPC API",
+    "title": "Petstore OpenRPC API",
     "version": "1.0.0",
     "description": "A sample JSON-RPC API for managing pets and owners."
   },

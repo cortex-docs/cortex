@@ -21,6 +21,7 @@ export class RustPlugin extends TemplateBasedPlugin {
       any: 'serde_json::Value',
       void: '()',
       datetime: 'String',
+      file: 'FileUpload',
       nullable: (type) => `Option<${type}>`,
     },
     naming: {
@@ -31,9 +32,7 @@ export class RustPlugin extends TemplateBasedPlugin {
       enumValue: toPascalCase,
       parameterName: toSnakeCase,
     },
-    packageTemplates: [
-      { template: 'cargo-toml', path: 'Cargo.toml' },
-    ],
+    packageTemplates: [{ template: 'cargo-toml', path: 'Cargo.toml' }],
     packageFiles: () => [],
   };
 }

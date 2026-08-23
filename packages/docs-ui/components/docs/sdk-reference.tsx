@@ -16,7 +16,7 @@ import hljsCpp from 'highlight.js/lib/languages/cpp';
 import hljsC from 'highlight.js/lib/languages/c';
 import hljsJson from 'highlight.js/lib/languages/json';
 import { cn } from '@/lib/utils';
-import { TryNowModal } from './try-now-modal';
+import { TryNowModal, type TryNowConfig } from './try-now-modal';
 import { DocsBreadcrumb } from './docs-breadcrumb';
 
 hljs.registerLanguage('typescript', hljsTypescript);
@@ -33,22 +33,19 @@ hljs.registerLanguage('c', hljsC);
 hljs.registerLanguage('json', hljsJson);
 
 const HLJS_LANG_MAP: Record<string, string> = {
-  typescript: 'typescript', python: 'python', go: 'go', java: 'java',
-  kotlin: 'kotlin', ruby: 'ruby', php: 'php', csharp: 'csharp',
-  rust: 'rust', cpp: 'cpp', c: 'c', json: 'json',
+  typescript: 'typescript',
+  python: 'python',
+  go: 'go',
+  java: 'java',
+  kotlin: 'kotlin',
+  ruby: 'ruby',
+  php: 'php',
+  csharp: 'csharp',
+  rust: 'rust',
+  cpp: 'cpp',
+  c: 'c',
+  json: 'json',
 };
-
-function HighlightedCode({ code, language }: { code: string; language: string }) {
-  const html = useMemo(() => {
-    const lang = HLJS_LANG_MAP[language];
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang }).value;
-    }
-    return hljs.highlightAuto(code).value;
-  }, [code, language]);
-
-  return <code dangerouslySetInnerHTML={{ __html: html }} />;
-}
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
   const lines = code.split('\n');
@@ -72,10 +69,16 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
           <tbody>
             {highlightedLines.map((line, i) => (
               <tr key={i}>
-                <td className="select-none pr-3 text-right text-muted-foreground/40 align-top" style={{ minWidth: `${gutterWidth + 1}ch` }}>
+                <td
+                  className="select-none pr-3 text-right text-muted-foreground/40 align-top"
+                  style={{ minWidth: `${gutterWidth + 1}ch` }}
+                >
                   {i + 1}
                 </td>
-                <td className="whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: line || '&nbsp;' }} />
+                <td
+                  className="whitespace-pre-wrap break-words"
+                  dangerouslySetInnerHTML={{ __html: line || '&nbsp;' }}
+                />
               </tr>
             ))}
           </tbody>
@@ -85,10 +88,7 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   );
 }
 
-import {
-  SUPPORTED_LANGUAGES,
-  LANGUAGE_DISPLAY_NAMES,
-} from '@/lib/snippet-generator';
+import { SUPPORTED_LANGUAGES, LANGUAGE_DISPLAY_NAMES } from '@/lib/snippet-generator';
 import {
   Select,
   SelectContent,
@@ -98,14 +98,30 @@ import {
 } from '@/components/ui/select';
 
 const LANG_COLORS: Record<string, string> = {
-  typescript: 'text-[#3178c6]', python: 'text-[#3776ab]', go: 'text-[#00add8]',
-  java: 'text-[#f89820]', kotlin: 'text-[#7f52ff]', ruby: 'text-[#cc342d]',
-  php: 'text-[#777bb4]', csharp: 'text-[#68217a]', rust: 'text-[#dea584]',
-  cpp: 'text-[#00599c]', c: 'text-[#a8b9cc]',
+  typescript: 'text-[#3178c6]',
+  python: 'text-[#3776ab]',
+  go: 'text-[#00add8]',
+  java: 'text-[#f89820]',
+  kotlin: 'text-[#7f52ff]',
+  ruby: 'text-[#cc342d]',
+  php: 'text-[#777bb4]',
+  csharp: 'text-[#68217a]',
+  rust: 'text-[#dea584]',
+  cpp: 'text-[#00599c]',
+  c: 'text-[#a8b9cc]',
 };
 const LANG_ICONS: Record<string, string> = {
-  typescript: 'TS', python: 'PY', go: 'GO', java: 'JV', kotlin: 'KT',
-  ruby: 'RB', php: 'PHP', csharp: 'C#', rust: 'RS', cpp: 'C++', c: 'C',
+  typescript: 'TS',
+  python: 'PY',
+  go: 'GO',
+  java: 'JV',
+  kotlin: 'KT',
+  ruby: 'RB',
+  php: 'PHP',
+  csharp: 'C#',
+  rust: 'RS',
+  cpp: 'C++',
+  c: 'C',
 };
 
 /* ------------------------------------------------------------------ */
@@ -125,6 +141,7 @@ interface BodyProperty {
   required: boolean;
   description?: string;
   nullable?: boolean;
+  enumValues?: Array<string | number>;
   children?: BodyProperty[];
 }
 
@@ -158,6 +175,8 @@ interface Operation {
   queryParams: QueryParam[];
   headerParams: QueryParam[];
   hasBody: boolean;
+  contentType?: string;
+  isRawBinary: boolean;
   bodyTypeName: string;
   bodyProperties: BodyProperty[];
   responseTypeName: string;
@@ -192,6 +211,7 @@ interface GqlField {
   type: string;
   required: boolean;
   description?: string;
+  enumValues?: string[];
   children?: GqlField[];
 }
 
@@ -200,6 +220,7 @@ interface GqlOperation {
   description?: string;
   args: GqlField[];
   returnType: string;
+  returnFields?: GqlField[];
 }
 
 interface GrpcMethod {
@@ -219,6 +240,66 @@ interface GrpcService {
   methods: GrpcMethod[];
 }
 
+interface OpenRpcMethod {
+  name: string;
+  summary?: string;
+  description?: string;
+  params: Array<{
+    name: string;
+    description?: string;
+    required: boolean;
+    type: string;
+    enumValues?: Array<string | number>;
+  }>;
+  resultName?: string;
+  resultType?: string;
+  resultProperties?: any[];
+  tags: string[];
+  deprecated?: boolean;
+}
+
+interface RestSourceData {
+  title: string;
+  version: string;
+  description: string;
+  baseUrl: string;
+  packageName: string;
+  packageNames?: Record<string, string>;
+  resources: Resource[];
+  securitySchemes?: SecurityScheme[];
+  globalSecurity?: Array<Record<string, string[]>>;
+  intro?: string;
+}
+
+interface WsSourceData {
+  title: string;
+  intro?: string;
+  url: string;
+  channels: WsChannel[];
+}
+
+interface GqlSourceData {
+  title: string;
+  intro?: string;
+  queries: GqlOperation[];
+  mutations: GqlOperation[];
+  subscriptions: GqlOperation[];
+}
+
+interface GrpcSourceData {
+  title: string;
+  intro?: string;
+  services: GrpcService[];
+  bridgeUrl?: string;
+}
+
+interface OpenRpcSourceData {
+  title: string;
+  intro?: string;
+  methods: OpenRpcMethod[];
+  serverUrl?: string;
+}
+
 interface SdkSnippetsData {
   title: string;
   version: string;
@@ -234,6 +315,7 @@ interface SdkSnippetsData {
     websocket: string[];
     graphql: string[];
     grpc: string[];
+    openrpc: string[];
   };
   websocket?: {
     url: string;
@@ -247,14 +329,24 @@ interface SdkSnippetsData {
   grpc?: {
     services: GrpcService[];
   };
+  openrpc?: {
+    methods: OpenRpcMethod[];
+    serverUrl?: string;
+  };
   sourceIntros?: {
     rest?: string;
     websocket?: string;
     graphql?: string;
     grpc?: string;
+    openrpc?: string;
   };
   securitySchemes?: SecurityScheme[];
   globalSecurity?: Array<Record<string, string[]>>;
+  restSources?: RestSourceData[];
+  websocketSources?: WsSourceData[];
+  graphqlSources?: GqlSourceData[];
+  grpcSources?: GrpcSourceData[];
+  openrpcSources?: OpenRpcSourceData[];
 }
 
 interface SecurityScheme {
@@ -266,12 +358,16 @@ interface SecurityScheme {
   in?: string;
   paramName?: string;
   openIdConnectUrl?: string;
-  flows?: Record<string, { authorizationUrl?: string; tokenUrl?: string; scopes?: Record<string, string> }>;
+  flows?: Record<
+    string,
+    { authorizationUrl?: string; tokenUrl?: string; scopes?: Record<string, string> }
+  >;
 }
 
 type VisibleItem = {
   id: string;
-  kind: 'rest' | 'ws' | 'gql' | 'grpc';
+  kind: 'rest' | 'ws' | 'gql' | 'grpc' | 'openrpc';
+  sourceIndex: number;
   label: string;
   displayName: string;
 };
@@ -281,7 +377,43 @@ type VisibleItem = {
 /* ------------------------------------------------------------------ */
 
 function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function localWebSocketUrl(configuredUrl: string, apiBaseUrl: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1') {
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      url.pathname = '/ws';
+      url.search = '';
+      url.hash = '';
+      return url.toString().replace(/\/$/, '');
+    }
+  } catch {}
+  return configuredUrl;
+}
+
+function grpcBridgeBase(configuredUrl: string | undefined, apiBaseUrl: string): string {
+  if (configuredUrl) return configuredUrl.replace(/\/$/, '');
+  try {
+    return new URL(apiBaseUrl).origin;
+  } catch {
+    return apiBaseUrl.replace(/\/$/, '');
+  }
+}
+
+function localJsonRpcUrl(configuredUrl: string, apiBaseUrl: string): string {
+  try {
+    const url = new URL(apiBaseUrl);
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1') {
+      return `${url.origin}/rpc`;
+    }
+  } catch {}
+  return configuredUrl;
 }
 
 const METHOD_COLORS: Record<string, string> = {
@@ -296,7 +428,10 @@ function methodColor(method: string) {
   return METHOD_COLORS[method.toUpperCase()] ?? 'bg-muted text-muted-foreground';
 }
 
-function cardId(kind: string, name: string) {
+function cardId(kind: string, name: string, sourceIndex?: number) {
+  if (sourceIndex != null) {
+    return `sdk-${kind}-${sourceIndex}-${name}`;
+  }
   return `sdk-${kind}-${name}`;
 }
 
@@ -308,7 +443,13 @@ function ParamTable({
   params,
   locationLabel,
 }: {
-  params: Array<{ name: string; type: string; required?: boolean; description?: string; children?: BodyProperty[] }>;
+  params: Array<{
+    name: string;
+    type: string;
+    required?: boolean;
+    description?: string;
+    children?: BodyProperty[];
+  }>;
   locationLabel?: string;
 }) {
   if (params.length === 0) return null;
@@ -326,7 +467,13 @@ function ParamRow({
   locationLabel,
   depth = 0,
 }: {
-  param: { name: string; type: string; required?: boolean; description?: string; children?: BodyProperty[] };
+  param: {
+    name: string;
+    type: string;
+    required?: boolean;
+    description?: string;
+    children?: BodyProperty[];
+  };
   locationLabel?: string;
   depth?: number;
 }) {
@@ -357,7 +504,8 @@ function ParamRow({
             className="mt-1.5 flex cursor-pointer items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground transition-all hover:bg-muted/60 hover:text-foreground hover:border-border"
           >
             <span className="text-[10px]">{expanded ? '−' : '+'}</span>
-            {expanded ? 'Hide' : `Show ${param.children!.length}`} {param.children!.length === 1 ? 'property' : 'properties'}
+            {expanded ? 'Hide' : `Show ${param.children!.length}`}{' '}
+            {param.children!.length === 1 ? 'property' : 'properties'}
           </button>
         )}
       </div>
@@ -411,7 +559,9 @@ function statusColor(code: string) {
 function ResponsePanel({ responses }: { responses: ResponseExample[] }) {
   const [selected, setSelected] = useState(0);
 
-  useEffect(() => { setSelected(0); }, [responses]);
+  useEffect(() => {
+    setSelected(0);
+  }, [responses]);
 
   if (!responses || responses.length === 0) return null;
 
@@ -495,29 +645,38 @@ function OperationResponses({ responses }: { responses: ResponseExample[] }) {
 /* Resize handle                                                       */
 /* ------------------------------------------------------------------ */
 
-function ResizeHandle({ side, onResize }: { side: 'left' | 'right'; onResize: (delta: number) => void }) {
+function ResizeHandle({
+  side,
+  onResize,
+}: {
+  side: 'left' | 'right';
+  onResize: (delta: number) => void;
+}) {
   const dragging = useRef(false);
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    let startX = e.clientX;
-    const onMove = (ev: MouseEvent) => {
-      const delta = ev.clientX - startX;
-      startX = ev.clientX;
-      onResize(side === 'left' ? delta : -delta);
-    };
-    const onUp = () => {
-      dragging.current = false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [side, onResize]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      dragging.current = true;
+      let startX = e.clientX;
+      const onMove = (ev: MouseEvent) => {
+        const delta = ev.clientX - startX;
+        startX = ev.clientX;
+        onResize(side === 'left' ? delta : -delta);
+      };
+      const onUp = () => {
+        dragging.current = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [side, onResize],
+  );
 
   return (
     <div
@@ -568,7 +727,9 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
       .catch(() => setError('Failed to load SDK reference'));
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
   useProjectWatch(fetchData);
 
   /* -- Restore language from localStorage -------------------------- */
@@ -614,8 +775,8 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
         }
         if (isScrollingRef.current) return;
         const container = centerRef.current;
-        const nearBottom = container &&
-          container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+        const nearBottom =
+          container && container.scrollHeight - container.scrollTop - container.clientHeight < 100;
         const cards = document.querySelectorAll('[data-sdk-card]');
 
         if (nearBottom && container) {
@@ -654,32 +815,32 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
     if (!data || !scrollTarget || scrollTarget.length === 0) return;
 
     const sourceSlug = scrollTarget[0];
-    const opSlug = scrollTarget[1];
+    const opSlug = scrollTarget.slice(1).join('/');
 
-    // Determine which kind this source is
-    let kind: string | null = null;
-    for (const t of data.sourceTitles.rest) {
-      if (slugify(t) === sourceSlug) { kind = 'rest'; break; }
-    }
-    if (!kind) for (const t of data.sourceTitles.graphql) {
-      if (slugify(t) === sourceSlug) { kind = 'gql'; break; }
-    }
-    if (!kind) for (const t of data.sourceTitles.websocket) {
-      if (slugify(t) === sourceSlug) { kind = 'ws'; break; }
-    }
-    if (!kind) for (const t of data.sourceTitles.grpc) {
-      if (slugify(t) === sourceSlug) { kind = 'grpc'; break; }
-    }
-
-    if (opSlug && kind) {
-      const id = cardId(kind, opSlug);
-      requestAnimationFrame(() => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          setActiveId(id);
-        }
+    if (opSlug) {
+      const item = allItems.find((i) => {
+        const sourceList =
+          i.kind === 'rest'
+            ? restSourcesList
+            : i.kind === 'gql'
+              ? gqlSourcesList
+              : i.kind === 'ws'
+                ? wsSourcesList
+                : i.kind === 'grpc'
+                  ? grpcSourcesList
+                  : openrpcSourcesList;
+        const src = sourceList[i.sourceIndex];
+        return src && slugify(src.title) === sourceSlug && i.label === opSlug;
       });
+      if (item) {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(item.id);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setActiveId(item.id);
+          }
+        });
+      }
     }
   }, [data, scrollTarget]);
 
@@ -688,23 +849,24 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
   useEffect(() => {
     if (!data || !activeId) return;
 
-    // Build URL from activeId
-    let sourceSlug = '';
-    let opSlug = '';
+    const activeItem = allItems.find((i) => i.id === activeId);
+    if (!activeItem) return;
 
-    if (activeId.startsWith('sdk-rest-')) {
-      opSlug = activeId.replace('sdk-rest-', '');
-      sourceSlug = slugify(data.sourceTitles.rest[0] ?? 'rest');
-    } else if (activeId.startsWith('sdk-gql-')) {
-      opSlug = activeId.replace('sdk-gql-', '');
-      sourceSlug = slugify(data.sourceTitles.graphql[0] ?? 'graphql');
-    } else if (activeId.startsWith('sdk-ws-')) {
-      opSlug = activeId.replace('sdk-ws-', '');
-      sourceSlug = slugify(data.sourceTitles.websocket[0] ?? 'websocket');
-    } else if (activeId.startsWith('sdk-grpc-')) {
-      opSlug = activeId.replace('sdk-grpc-', '');
-      sourceSlug = slugify(data.sourceTitles.grpc[0] ?? 'grpc');
-    }
+    const sourceList =
+      activeItem.kind === 'rest'
+        ? restSourcesList
+        : activeItem.kind === 'gql'
+          ? gqlSourcesList
+          : activeItem.kind === 'ws'
+            ? wsSourcesList
+            : activeItem.kind === 'grpc'
+              ? grpcSourcesList
+              : openrpcSourcesList;
+    const src = sourceList[activeItem.sourceIndex];
+    if (!src) return;
+
+    const sourceSlug = slugify(src.title);
+    const opSlug = activeItem.label;
 
     if (sourceSlug && opSlug) {
       const newPath = `/api-reference/${sourceSlug}/${opSlug}`;
@@ -716,34 +878,163 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
 
   /* -- Build flat list of items for navigation / snippet lookup ----- */
 
+  const restSourcesList =
+    data?.restSources ??
+    (data?.resources?.length
+      ? [
+          {
+            title: data.sourceTitles?.rest?.[0] ?? 'REST',
+            resources: data.resources,
+            baseUrl: data.baseUrl,
+            version: data.version,
+            description: data.description,
+            packageName: data.packageName,
+            packageNames: data.packageNames,
+            securitySchemes: data.securitySchemes,
+            globalSecurity: data.globalSecurity,
+            intro: data.sourceIntros?.rest,
+          },
+        ]
+      : []);
+  const wsSourcesList =
+    data?.websocketSources ??
+    (data?.websocket
+      ? [
+          {
+            title: data.sourceTitles?.websocket?.[0] ?? 'WebSocket',
+            url: data.websocket.url,
+            channels: data.websocket.channels,
+            intro: data.sourceIntros?.websocket,
+          },
+        ]
+      : []);
+  const gqlSourcesList =
+    data?.graphqlSources ??
+    (data?.graphql
+      ? [
+          {
+            title: data.sourceTitles?.graphql?.[0] ?? 'GraphQL',
+            queries: data.graphql.queries,
+            mutations: data.graphql.mutations,
+            subscriptions: data.graphql.subscriptions,
+            intro: data.sourceIntros?.graphql,
+          },
+        ]
+      : []);
+  const grpcSourcesList =
+    data?.grpcSources ??
+    (data?.grpc
+      ? [
+          {
+            title: data.sourceTitles?.grpc?.[0] ?? 'gRPC',
+            services: data.grpc.services,
+            intro: data.sourceIntros?.grpc,
+          },
+        ]
+      : []);
+  const openrpcSourcesList =
+    data?.openrpcSources ??
+    (data?.openrpc
+      ? [
+          {
+            title: data.sourceTitles?.openrpc?.[0] ?? 'OpenRPC',
+            methods: data.openrpc.methods,
+            serverUrl: data.openrpc.serverUrl,
+            intro: data.sourceIntros?.openrpc,
+          },
+        ]
+      : []);
+
+  const multiRest = restSourcesList.length > 1;
+  const multiWs = wsSourcesList.length > 1;
+  const multiGql = gqlSourcesList.length > 1;
+  const multiGrpc = grpcSourcesList.length > 1;
+  const multiOpenRpc = openrpcSourcesList.length > 1;
+
   const allItems: VisibleItem[] = [];
   if (data) {
-    for (const res of data.resources) {
-      for (const op of res.operations) {
-        allItems.push({ id: cardId('rest', op.operationId), kind: 'rest', label: op.operationId, displayName: op.summary ?? op.operationId });
-      }
-    }
-    if (data.graphql) {
-      for (const q of data.graphql.queries) {
-        allItems.push({ id: cardId('gql', q.name), kind: 'gql', label: q.name, displayName: q.name });
-      }
-      for (const m of data.graphql.mutations) {
-        allItems.push({ id: cardId('gql', m.name), kind: 'gql', label: m.name, displayName: m.name });
-      }
-      for (const s of data.graphql.subscriptions) {
-        allItems.push({ id: cardId('gql', s.name), kind: 'gql', label: s.name, displayName: s.name });
-      }
-    }
-    if (data.websocket) {
-      for (const ch of data.websocket.channels) {
-        allItems.push({ id: cardId('ws', ch.name), kind: 'ws', label: ch.name, displayName: ch.name });
-      }
-    }
-    if (data.grpc) {
-      for (const svc of data.grpc.services) {
-        for (const m of svc.methods) {
-          allItems.push({ id: cardId('grpc', `${svc.name}.${m.name}`), kind: 'grpc', label: `${svc.name}.${m.name}`, displayName: m.name });
+    for (let si = 0; si < restSourcesList.length; si++) {
+      const srcIdx = multiRest ? si : undefined;
+      for (const res of restSourcesList[si].resources) {
+        for (const op of res.operations) {
+          allItems.push({
+            id: cardId('rest', op.operationId, srcIdx),
+            kind: 'rest',
+            sourceIndex: si,
+            label: op.operationId,
+            displayName: op.summary ?? op.operationId,
+          });
         }
+      }
+    }
+    for (let si = 0; si < gqlSourcesList.length; si++) {
+      const srcIdx = multiGql ? si : undefined;
+      const gql = gqlSourcesList[si];
+      for (const q of gql.queries) {
+        allItems.push({
+          id: cardId('gql', q.name, srcIdx),
+          kind: 'gql',
+          sourceIndex: si,
+          label: q.name,
+          displayName: q.name,
+        });
+      }
+      for (const m of gql.mutations) {
+        allItems.push({
+          id: cardId('gql', m.name, srcIdx),
+          kind: 'gql',
+          sourceIndex: si,
+          label: m.name,
+          displayName: m.name,
+        });
+      }
+      for (const s of gql.subscriptions) {
+        allItems.push({
+          id: cardId('gql', s.name, srcIdx),
+          kind: 'gql',
+          sourceIndex: si,
+          label: s.name,
+          displayName: s.name,
+        });
+      }
+    }
+    for (let si = 0; si < wsSourcesList.length; si++) {
+      const srcIdx = multiWs ? si : undefined;
+      for (const ch of wsSourcesList[si].channels) {
+        allItems.push({
+          id: cardId('ws', ch.name, srcIdx),
+          kind: 'ws',
+          sourceIndex: si,
+          label: ch.name,
+          displayName: ch.name,
+        });
+      }
+    }
+    for (let si = 0; si < grpcSourcesList.length; si++) {
+      const srcIdx = multiGrpc ? si : undefined;
+      for (const service of grpcSourcesList[si].services) {
+        for (const method of service.methods) {
+          const label = `${service.name}.${method.name}`;
+          allItems.push({
+            id: cardId('grpc', label, srcIdx),
+            kind: 'grpc',
+            sourceIndex: si,
+            label,
+            displayName: method.name,
+          });
+        }
+      }
+    }
+    for (let si = 0; si < openrpcSourcesList.length; si++) {
+      const srcIdx = multiOpenRpc ? si : undefined;
+      for (const m of openrpcSourcesList[si].methods) {
+        allItems.push({
+          id: cardId('openrpc', m.name, srcIdx),
+          kind: 'openrpc',
+          sourceIndex: si,
+          label: m.name,
+          displayName: m.name,
+        });
       }
     }
   }
@@ -756,10 +1047,21 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
     const activeItem = allItems.find((i) => i.id === activeId);
     if (!activeItem) return '// Select an operation to see its SDK snippet';
 
-    // Snippets are rendered server-side from shared EJS templates
     if (data.snippets) {
       const kindPrefix = activeItem.kind === 'gql' ? 'gql' : activeItem.kind;
-      const key = `${kindPrefix}:${activeItem.label}`;
+      const isMulti =
+        activeItem.kind === 'rest'
+          ? multiRest
+          : activeItem.kind === 'ws'
+            ? multiWs
+            : activeItem.kind === 'gql'
+              ? multiGql
+              : activeItem.kind === 'grpc'
+                ? multiGrpc
+                : multiOpenRpc;
+      const key = isMulti
+        ? `${kindPrefix}:${activeItem.sourceIndex}:${activeItem.label}`
+        : `${kindPrefix}:${activeItem.label}`;
       const serverSnippet = data.snippets[key]?.[language];
       if (serverSnippet) return serverSnippet;
     }
@@ -771,10 +1073,130 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
     if (!data) return null;
     const activeItem = allItems.find((i) => i.id === activeId);
     if (!activeItem || activeItem.kind !== 'rest') return null;
-    for (const r of data.resources) {
+    const src = restSourcesList[activeItem.sourceIndex];
+    if (!src) return null;
+    for (const r of src.resources) {
       const op = r.operations.find((o) => o.operationId === activeItem.label);
       if (op) return op;
     }
+    return null;
+  }
+
+  function getTryNowConfig(): TryNowConfig | null {
+    if (!data) return null;
+    const item = allItems.find((i) => i.id === activeId);
+    if (!item) return null;
+
+    if (item.kind === 'rest') {
+      const src = restSourcesList[item.sourceIndex];
+      if (!src) return null;
+      for (const r of src.resources) {
+        const op = r.operations.find((o) => o.operationId === item.label);
+        if (op) {
+          return {
+            kind: 'rest',
+            method: op.method,
+            path: op.path,
+            baseUrl: src.baseUrl ?? data.baseUrl ?? '',
+            summary: op.summary,
+            pathParams: op.pathParams,
+            queryParams: op.queryParams,
+            headerParams: op.headerParams ?? [],
+            securitySchemes: src.securitySchemes ?? data.securitySchemes,
+            hasBody: op.hasBody,
+            contentType: op.contentType,
+            isRawBinary: op.isRawBinary,
+            bodyProperties: op.bodyProperties,
+          };
+        }
+      }
+      return null;
+    }
+
+    if (item.kind === 'ws') {
+      const src = wsSourcesList[item.sourceIndex];
+      if (!src) return null;
+      const ch = src.channels.find((c) => c.name === item.label);
+      if (!ch) return null;
+      const apiBaseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
+      return {
+        kind: 'ws',
+        url: localWebSocketUrl(src.url, apiBaseUrl),
+        channelName: ch.name,
+        hasPublish: ch.hasPublish,
+        publishProperties: ch.publishMessage?.properties?.map((p) => ({
+          name: p.name,
+          type: p.type,
+          required: p.required ?? false,
+          enumValues: p.enumValues,
+          children: p.children,
+        })),
+      };
+    }
+
+    if (item.kind === 'gql') {
+      const src = gqlSourcesList[item.sourceIndex];
+      if (!src) return null;
+      const baseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
+      const endpoint = baseUrl ? `${baseUrl.replace(/\/$/, '')}/graphql` : '/graphql';
+      const wsEndpoint = baseUrl
+        ? endpoint.replace(/^http/, 'ws')
+        : `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost'}/graphql`;
+
+      const isSub = src.subscriptions.some((s) => s.name === item.label);
+      const isMut = src.mutations.some((m) => m.name === item.label);
+      const op = [...src.queries, ...src.mutations, ...src.subscriptions].find(
+        (o) => o.name === item.label,
+      );
+      if (!op) return null;
+      return {
+        kind: 'gql',
+        endpoint,
+        wsEndpoint,
+        operationName: op.name,
+        operationKind: isSub ? 'subscription' : isMut ? 'mutation' : 'query',
+        args: op.args,
+        returnType: op.returnType,
+        returnFields: op.returnFields,
+      };
+    }
+
+    if (item.kind === 'grpc') {
+      const src = grpcSourcesList[item.sourceIndex];
+      if (!src) return null;
+      const [serviceName, methodName] = item.label.split('.', 2);
+      const service = src.services.find((candidate) => candidate.name === serviceName);
+      const method = service?.methods.find((candidate) => candidate.name === methodName);
+      if (!service || !method) return null;
+      const apiBaseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
+      const bridgeBase = grpcBridgeBase(src.bridgeUrl, apiBaseUrl);
+      return {
+        kind: 'grpc',
+        endpoint: `${bridgeBase}/grpc/${service.name}/${method.name}`,
+        serviceName: service.name,
+        methodName: method.name,
+        inputType: method.inputType,
+        outputType: method.outputType,
+        inputFields: method.inputFields ?? [],
+        serverStreaming: method.serverStreaming,
+        clientStreaming: method.clientStreaming,
+      };
+    }
+
+    if (item.kind === 'openrpc') {
+      const src = openrpcSourcesList[item.sourceIndex];
+      if (!src) return null;
+      const method = src.methods.find((m) => m.name === item.label);
+      if (!method) return null;
+      const apiBaseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
+      return {
+        kind: 'openrpc',
+        endpoint: localJsonRpcUrl(src.serverUrl ?? '', apiBaseUrl),
+        methodName: method.name,
+        params: method.params,
+      };
+    }
+
     return null;
   }
 
@@ -787,7 +1209,9 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
       setActiveId(id);
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setSidebarOpen(false);
-      setTimeout(() => { isScrollingRef.current = false; }, 800);
+      setTimeout(() => {
+        isScrollingRef.current = false;
+      }, 800);
     }
   }
 
@@ -814,11 +1238,17 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
   const snippet = getSnippet();
   const activeItem = allItems.find((i) => i.id === activeId);
 
-  const activeSection = activeId.startsWith('sdk-rest-') ? 'rest'
-    : activeId.startsWith('sdk-gql-') ? 'gql'
-    : activeId.startsWith('sdk-ws-') ? 'ws'
-    : activeId.startsWith('sdk-grpc-') ? 'grpc'
-    : 'rest';
+  const activeSection = activeId.startsWith('sdk-rest-')
+    ? 'rest'
+    : activeId.startsWith('sdk-gql-')
+      ? 'gql'
+      : activeId.startsWith('sdk-ws-')
+        ? 'ws'
+        : activeId.startsWith('sdk-grpc-')
+          ? 'grpc'
+          : activeId.startsWith('sdk-openrpc-')
+            ? 'openrpc'
+            : 'rest';
 
   return (
     <div className="relative flex h-[calc(100vh-5.5rem)]">
@@ -828,7 +1258,17 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
         className="fixed bottom-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg lg:hidden"
         aria-label="Toggle navigation"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           {sidebarOpen ? (
             <path d="M18 6 6 18M6 6l12 12" />
           ) : (
@@ -849,52 +1289,55 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
         )}
         style={{ width: leftWidth }}
       >
-
-
-        {/* REST resources */}
-        <NavSection
-          title={data.sourceTitles?.rest?.[0] ?? 'REST'}
-          expanded={activeSection === 'rest'}
-          onClickHeader={() => {
-            const first = allItems.find((i) => i.kind === 'rest');
-            if (first) scrollTo(first.id);
-          }}
-        >
-          {data.resources.map((res) => (
-            <NavGroup key={res.name} label={res.name}>
-              {res.operations.map((op) => {
-                const id = cardId('rest', op.operationId);
-                return (
-                  <NavItem
-                    key={id}
-                    active={activeId === id}
-                    onClick={() => scrollTo(id)}
-                  >
-                    <span className={cn('mr-1.5 inline-block w-9 shrink-0 rounded px-1 py-0.5 text-center text-[10px] font-bold uppercase leading-none', methodColor(op.method))}>
-                      {op.method === 'DELETE' ? 'DEL' : op.method}
-                    </span>
-                    <span className="truncate">{op.summary ?? op.operationId}</span>
-                  </NavItem>
-                );
-              })}
-            </NavGroup>
-          ))}
-        </NavSection>
-
-        {/* GraphQL */}
-        {data.graphql && (
+        {/* REST resources — one NavSection per source */}
+        {restSourcesList.map((restSrc, si) => (
           <NavSection
-            title={data.sourceTitles?.graphql?.[0] ?? 'GraphQL'}
-            expanded={activeSection === 'gql'}
+            key={`rest-${si}`}
+            title={restSrc.title}
+            expanded={activeSection === 'rest'}
             onClickHeader={() => {
-              const first = allItems.find((i) => i.kind === 'gql');
+              const first = allItems.find((i) => i.kind === 'rest' && i.sourceIndex === si);
               if (first) scrollTo(first.id);
             }}
           >
-            {data.graphql.queries.length > 0 && (
+            {restSrc.resources.map((res) => (
+              <NavGroup key={res.name} label={res.name}>
+                {res.operations.map((op) => {
+                  const id = cardId('rest', op.operationId, multiRest ? si : undefined);
+                  return (
+                    <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
+                      <span
+                        className={cn(
+                          'mr-1.5 inline-block w-9 shrink-0 rounded px-1 py-0.5 text-center text-[10px] font-bold uppercase leading-none',
+                          methodColor(op.method),
+                        )}
+                      >
+                        {op.method === 'DELETE' ? 'DEL' : op.method}
+                      </span>
+                      <span className="truncate">{op.summary ?? op.operationId}</span>
+                    </NavItem>
+                  );
+                })}
+              </NavGroup>
+            ))}
+          </NavSection>
+        ))}
+
+        {/* GraphQL — one NavSection per source */}
+        {gqlSourcesList.map((gqlSrc, si) => (
+          <NavSection
+            key={`gql-${si}`}
+            title={gqlSrc.title}
+            expanded={activeSection === 'gql'}
+            onClickHeader={() => {
+              const first = allItems.find((i) => i.kind === 'gql' && i.sourceIndex === si);
+              if (first) scrollTo(first.id);
+            }}
+          >
+            {gqlSrc.queries.length > 0 && (
               <NavGroup label="Queries">
-                {data.graphql.queries.map((q) => {
-                  const id = cardId('gql', q.name);
+                {gqlSrc.queries.map((q) => {
+                  const id = cardId('gql', q.name, multiGql ? si : undefined);
                   return (
                     <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
                       {q.name}
@@ -903,10 +1346,10 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
                 })}
               </NavGroup>
             )}
-            {data.graphql.mutations.length > 0 && (
+            {gqlSrc.mutations.length > 0 && (
               <NavGroup label="Mutations">
-                {data.graphql.mutations.map((m) => {
-                  const id = cardId('gql', m.name);
+                {gqlSrc.mutations.map((m) => {
+                  const id = cardId('gql', m.name, multiGql ? si : undefined);
                   return (
                     <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
                       {m.name}
@@ -915,10 +1358,10 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
                 })}
               </NavGroup>
             )}
-            {data.graphql.subscriptions.length > 0 && (
+            {gqlSrc.subscriptions.length > 0 && (
               <NavGroup label="Subscriptions">
-                {data.graphql.subscriptions.map((s) => {
-                  const id = cardId('gql', s.name);
+                {gqlSrc.subscriptions.map((s) => {
+                  const id = cardId('gql', s.name, multiGql ? si : undefined);
                   return (
                     <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
                       {s.name}
@@ -928,21 +1371,22 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
               </NavGroup>
             )}
           </NavSection>
-        )}
+        ))}
 
-        {/* WebSocket */}
-        {data.websocket && (
+        {/* WebSocket — one NavSection per source */}
+        {wsSourcesList.map((wsSrc, si) => (
           <NavSection
-            title={data.sourceTitles?.websocket?.[0] ?? 'WebSocket'}
+            key={`ws-${si}`}
+            title={wsSrc.title}
             expanded={activeSection === 'ws'}
             onClickHeader={() => {
-              const first = allItems.find((i) => i.kind === 'ws');
+              const first = allItems.find((i) => i.kind === 'ws' && i.sourceIndex === si);
               if (first) scrollTo(first.id);
             }}
           >
             <NavGroup label="Channels">
-              {data.websocket.channels.map((ch) => {
-                const id = cardId('ws', ch.name);
+              {wsSrc.channels.map((ch) => {
+                const id = cardId('ws', ch.name, multiWs ? si : undefined);
                 return (
                   <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
                     {ch.name}
@@ -951,26 +1395,28 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
               })}
             </NavGroup>
           </NavSection>
-        )}
+        ))}
 
-        {/* gRPC */}
-        {data.grpc && (
+        {/* gRPC — one NavSection per source */}
+        {grpcSourcesList.map((grpcSrc, si) => (
           <NavSection
-            title={data.sourceTitles?.grpc?.[0] ?? 'gRPC'}
+            key={`grpc-${si}`}
+            title={grpcSrc.title}
             expanded={activeSection === 'grpc'}
             onClickHeader={() => {
-              const first = allItems.find((i) => i.kind === 'grpc');
+              const first = allItems.find((i) => i.kind === 'grpc' && i.sourceIndex === si);
               if (first) scrollTo(first.id);
             }}
           >
-            {data.grpc.services.map((svc) => (
-              <NavGroup key={svc.name} label={svc.name}>
-                {svc.methods.map((m) => {
-                  const id = cardId('grpc', `${svc.name}.${m.name}`);
+            {grpcSrc.services.map((service) => (
+              <NavGroup key={service.name} label={service.name}>
+                {service.methods.map((method) => {
+                  const label = `${service.name}.${method.name}`;
+                  const id = cardId('grpc', label, multiGrpc ? si : undefined);
                   return (
                     <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
-                      {m.name}
-                      {(m.serverStreaming || m.clientStreaming) && (
+                      {method.name}
+                      {(method.serverStreaming || method.clientStreaming) && (
                         <span className="ml-1 text-[10px] text-muted-foreground">stream</span>
                       )}
                     </NavItem>
@@ -979,368 +1425,605 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
               </NavGroup>
             ))}
           </NavSection>
-        )}
+        ))}
 
+        {/* OpenRPC — one NavSection per source */}
+        {openrpcSourcesList.map((rpcSrc, si) => (
+          <NavSection
+            key={`openrpc-${si}`}
+            title={rpcSrc.title}
+            expanded={activeSection === 'openrpc'}
+            onClickHeader={() => {
+              const first = allItems.find((i) => i.kind === 'openrpc' && i.sourceIndex === si);
+              if (first) scrollTo(first.id);
+            }}
+          >
+            {(() => {
+              const tagGroups = new Map<string, OpenRpcMethod[]>();
+              for (const m of rpcSrc.methods) {
+                const tag = m.tags?.[0] ?? 'Methods';
+                if (!tagGroups.has(tag)) tagGroups.set(tag, []);
+                tagGroups.get(tag)!.push(m);
+              }
+              return Array.from(tagGroups.entries()).map(([tag, methods]) => (
+                <NavGroup key={tag} label={tag}>
+                  {methods.map((m) => {
+                    const id = cardId('openrpc', m.name, multiOpenRpc ? si : undefined);
+                    return (
+                      <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
+                        {m.name}
+                        {m.deprecated && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">deprecated</span>
+                        )}
+                      </NavItem>
+                    );
+                  })}
+                </NavGroup>
+              ));
+            })()}
+          </NavSection>
+        ))}
       </aside>
       <ResizeHandle side="left" onResize={onResizeLeft} />
 
       {/* ---- Center panel ---- */}
       <main ref={centerRef} className="flex-1 min-w-0 overflow-y-auto bg-muted/10">
         <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/30">
-          <DocsBreadcrumb segments={[
-            { label: 'API Reference', href: '/api-reference' },
-            ...(activeSection === 'rest' ? [{ label: data.sourceTitles?.rest?.[0] ?? 'REST' }]
-              : activeSection === 'gql' ? [{ label: data.sourceTitles?.graphql?.[0] ?? 'GraphQL' }]
-              : activeSection === 'ws' ? [{ label: data.sourceTitles?.websocket?.[0] ?? 'WebSocket' }]
-              : activeSection === 'grpc' ? [{ label: data.sourceTitles?.grpc?.[0] ?? 'gRPC' }]
-              : []),
-            ...(activeItem ? [{ label: activeItem.displayName }] : []),
-          ]} />
+          <DocsBreadcrumb
+            segments={[
+              { label: 'API Reference', href: '/api-reference' },
+              ...(() => {
+                if (!activeItem) return [];
+                const sourceList =
+                  activeItem.kind === 'rest'
+                    ? restSourcesList
+                    : activeItem.kind === 'gql'
+                      ? gqlSourcesList
+                      : activeItem.kind === 'ws'
+                        ? wsSourcesList
+                        : activeItem.kind === 'grpc'
+                          ? grpcSourcesList
+                          : openrpcSourcesList;
+                const src = sourceList[activeItem.sourceIndex];
+                return src ? [{ label: src.title }] : [];
+              })(),
+              ...(activeItem ? [{ label: activeItem.displayName }] : []),
+            ]}
+          />
         </div>
         <div className="px-6 py-6 lg:px-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight">{data.sourceTitles?.rest?.[0] ?? data.title}</h1>
-        </div>
+          {/* REST Sources — one section per source */}
+          {restSourcesList.map((restSrc, si) => (
+            <div key={`rest-${si}`}>
+              <div className="mb-6">
+                <h1 className="text-3xl font-bold tracking-tight">{restSrc.title}</h1>
+              </div>
 
-        {/* REST intro */}
-        {data.sourceIntros?.rest && (
-          <div className="mb-8 docs-content" dangerouslySetInnerHTML={{ __html: data.sourceIntros.rest }} />
-        )}
+              {restSrc.intro && (
+                <div
+                  className="mb-8 docs-content"
+                  dangerouslySetInnerHTML={{ __html: restSrc.intro }}
+                />
+              )}
 
-        {/* Security Schemes */}
-        {data.securitySchemes && data.securitySchemes.length > 0 && (
-          <div className="mb-8">
-            <h2 className="mb-4 text-xl font-semibold">Authentication</h2>
-            <div className="space-y-3">
-              {data.securitySchemes.map((s) => (
-                <div key={s.name} className="glass-card rounded-xl px-4 py-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <code className="font-mono text-sm font-semibold">{s.name}</code>
-                    <span className={cn(
-                      'rounded px-2 py-0.5 text-[10px] font-bold uppercase',
-                      s.type === 'http' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                        : s.type === 'apiKey' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
-                        : s.type === 'oauth2' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                        : 'bg-muted text-muted-foreground',
-                    )}>
-                      {s.type === 'http' ? `${s.scheme}${s.bearerFormat ? ` (${s.bearerFormat})` : ''}` : s.type}
-                    </span>
-                    {s.in && s.paramName && (
-                      <span className="text-xs text-muted-foreground">in {s.in}: <code className="font-mono">{s.paramName}</code></span>
-                    )}
-                    {data.globalSecurity?.some((g) => s.name in g) && (
-                      <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Global</span>
-                    )}
+              {restSrc.securitySchemes && restSrc.securitySchemes.length > 0 && (
+                <div className="mb-8">
+                  <h2 className="mb-4 text-xl font-semibold">Authentication</h2>
+                  <div className="space-y-3">
+                    {restSrc.securitySchemes.map((s) => (
+                      <div key={s.name} className="glass-card rounded-xl px-4 py-4 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <code className="font-mono text-sm font-semibold">{s.name}</code>
+                          <span
+                            className={cn(
+                              'rounded px-2 py-0.5 text-[10px] font-bold uppercase',
+                              s.type === 'http'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                : s.type === 'apiKey'
+                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                                  : s.type === 'oauth2'
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
+                                    : 'bg-muted text-muted-foreground',
+                            )}
+                          >
+                            {s.type === 'http'
+                              ? `${s.scheme}${s.bearerFormat ? ` (${s.bearerFormat})` : ''}`
+                              : s.type}
+                          </span>
+                          {s.in && s.paramName && (
+                            <span className="text-xs text-muted-foreground">
+                              in {s.in}: <code className="font-mono">{s.paramName}</code>
+                            </span>
+                          )}
+                          {restSrc.globalSecurity?.some((g) => s.name in g) && (
+                            <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              Global
+                            </span>
+                          )}
+                        </div>
+                        {s.description && (
+                          <p className="text-sm text-muted-foreground">{s.description}</p>
+                        )}
+                        {s.type === 'http' && s.scheme === 'bearer' && (
+                          <p className="text-xs text-muted-foreground">
+                            Send as:{' '}
+                            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+                              Authorization: Bearer {'<token>'}
+                            </code>
+                          </p>
+                        )}
+                        {s.type === 'apiKey' && (
+                          <p className="text-xs text-muted-foreground">
+                            Send as:{' '}
+                            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+                              {s.paramName}: {'<value>'}
+                            </code>{' '}
+                            in {s.in}
+                          </p>
+                        )}
+                        {s.flows &&
+                          Object.entries(s.flows).map(([flowName, flow]) => (
+                            <div key={flowName} className="text-xs text-muted-foreground space-y-1">
+                              <span className="font-medium capitalize">{flowName} flow</span>
+                              {flow.authorizationUrl && (
+                                <div>
+                                  Authorization:{' '}
+                                  <code className="font-mono">{flow.authorizationUrl}</code>
+                                </div>
+                              )}
+                              {flow.tokenUrl && (
+                                <div>
+                                  Token: <code className="font-mono">{flow.tokenUrl}</code>
+                                </div>
+                              )}
+                              {flow.scopes && Object.keys(flow.scopes).length > 0 && (
+                                <div>
+                                  Scopes:{' '}
+                                  {Object.keys(flow.scopes).map((sc) => (
+                                    <code key={sc} className="font-mono mr-1">
+                                      {sc}
+                                    </code>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    ))}
                   </div>
-                  {s.description && <p className="text-sm text-muted-foreground">{s.description}</p>}
-                  {s.type === 'http' && s.scheme === 'bearer' && (
-                    <p className="text-xs text-muted-foreground">
-                      Send as: <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">Authorization: Bearer {'<token>'}</code>
-                    </p>
-                  )}
-                  {s.type === 'apiKey' && (
-                    <p className="text-xs text-muted-foreground">
-                      Send as: <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">{s.paramName}: {'<value>'}</code> in {s.in}
-                    </p>
-                  )}
-                  {s.flows && Object.entries(s.flows).map(([flowName, flow]) => (
-                    <div key={flowName} className="text-xs text-muted-foreground space-y-1">
-                      <span className="font-medium capitalize">{flowName} flow</span>
-                      {flow.authorizationUrl && <div>Authorization: <code className="font-mono">{flow.authorizationUrl}</code></div>}
-                      {flow.tokenUrl && <div>Token: <code className="font-mono">{flow.tokenUrl}</code></div>}
-                      {flow.scopes && Object.keys(flow.scopes).length > 0 && (
-                        <div>Scopes: {Object.keys(flow.scopes).map((sc) => <code key={sc} className="font-mono mr-1">{sc}</code>)}</div>
+                </div>
+              )}
+
+              {restSrc.resources.map((resource) => (
+                <div key={resource.name} className="mb-8">
+                  <h2 className="mb-4 text-xl font-semibold">{resource.name}</h2>
+                  <div className="space-y-4">
+                    {resource.operations.map((op) => (
+                      <div
+                        key={op.operationId}
+                        id={cardId('rest', op.operationId, multiRest ? si : undefined)}
+                        data-sdk-card
+                        className="glass-card rounded-xl"
+                      >
+                        <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
+                          <span
+                            className={cn(
+                              'rounded px-2 py-0.5 text-xs font-bold uppercase',
+                              methodColor(op.method),
+                            )}
+                          >
+                            {op.method}
+                          </span>
+                          <code className="font-mono text-sm text-muted-foreground">{op.path}</code>
+                        </div>
+
+                        <div className="px-4 py-4 space-y-4">
+                          {op.summary && (
+                            <p className="text-sm text-muted-foreground">{op.summary}</p>
+                          )}
+
+                          {op.pathParams.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                Path Parameters
+                              </h4>
+                              <ParamTable
+                                params={op.pathParams.map((p) => ({ ...p, required: true }))}
+                                locationLabel="path"
+                              />
+                            </div>
+                          )}
+
+                          {op.queryParams.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                Query Parameters
+                              </h4>
+                              <ParamTable params={op.queryParams} locationLabel="query" />
+                            </div>
+                          )}
+
+                          {op.headerParams?.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                Header Parameters
+                              </h4>
+                              <ParamTable params={op.headerParams} locationLabel="header" />
+                            </div>
+                          )}
+
+                          {op.hasBody && op.bodyProperties.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                Request Body
+                                {op.bodyTypeName && (
+                                  <code className="ml-2 font-normal normal-case text-foreground">
+                                    {op.bodyTypeName}
+                                  </code>
+                                )}
+                              </h4>
+                              <ParamTable params={op.bodyProperties} />
+                            </div>
+                          )}
+
+                          {op.responses && op.responses.length > 0 && (
+                            <OperationResponses responses={op.responses} />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {/* GraphQL — one section per source */}
+          {gqlSourcesList.map((gqlSrc, si) => (
+            <div key={`gql-${si}`} className="mb-8">
+              <h2 className="mb-4 text-xl font-semibold">{gqlSrc.title}</h2>
+
+              {gqlSrc.intro && (
+                <div
+                  className="mb-6 docs-content"
+                  dangerouslySetInnerHTML={{ __html: gqlSrc.intro }}
+                />
+              )}
+
+              {(
+                [
+                  [
+                    'Queries',
+                    gqlSrc.queries,
+                    'QUERY',
+                    'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+                  ] as const,
+                  [
+                    'Mutations',
+                    gqlSrc.mutations,
+                    'MUTATION',
+                    'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+                  ] as const,
+                  [
+                    'Subscriptions',
+                    gqlSrc.subscriptions,
+                    'SUBSCRIPTION',
+                    'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+                  ] as const,
+                ] as const
+              ).map(
+                ([heading, ops, badge, badgeColor]) =>
+                  ops.length > 0 && (
+                    <div key={heading} className="mb-6">
+                      <h3 className="mb-3 text-lg font-medium text-muted-foreground">{heading}</h3>
+                      <div className="space-y-4">
+                        {ops.map((op) => (
+                          <div
+                            key={op.name}
+                            id={cardId('gql', op.name, multiGql ? si : undefined)}
+                            data-sdk-card
+                            className="glass-card rounded-xl"
+                          >
+                            <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
+                              <span
+                                className={cn('rounded px-2 py-0.5 text-xs font-bold', badgeColor)}
+                              >
+                                {badge}
+                              </span>
+                              <code className="font-mono text-sm">{op.name}</code>
+                              {op.returnType && (
+                                <code className="ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                                  → {op.returnType}
+                                </code>
+                              )}
+                            </div>
+                            <div className="px-4 py-4 space-y-4">
+                              {op.description && (
+                                <p className="text-sm text-muted-foreground">{op.description}</p>
+                              )}
+                              {op.args.length > 0 && (
+                                <div>
+                                  <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                    Arguments
+                                  </h4>
+                                  <ParamTable params={op.args} />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ),
+              )}
+            </div>
+          ))}
+
+          {/* WebSocket Channels — one section per source */}
+          {wsSourcesList.map((wsSrc, si) => (
+            <div key={`ws-${si}`} className="mb-8">
+              <h2 className="mb-4 text-xl font-semibold">{wsSrc.title}</h2>
+              <p className="mb-3 text-sm text-muted-foreground">
+                <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{wsSrc.url}</code>
+              </p>
+              {wsSrc.intro && (
+                <div
+                  className="mb-6 docs-content"
+                  dangerouslySetInnerHTML={{ __html: wsSrc.intro }}
+                />
+              )}
+              <div className="space-y-4">
+                {wsSrc.channels.map((ch) => (
+                  <div
+                    key={ch.name}
+                    id={cardId('ws', ch.name, multiWs ? si : undefined)}
+                    data-sdk-card
+                    className="glass-card rounded-xl"
+                  >
+                    <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
+                      <code className="font-mono text-sm font-semibold">{ch.name}</code>
+                      {ch.hasSubscribe && (
+                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                          subscribe
+                        </span>
+                      )}
+                      {ch.hasPublish && (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                          publish
+                        </span>
                       )}
                     </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* REST Operations */}
-        {data.resources.map((resource) => (
-          <div key={resource.name} className="mb-8">
-            <h2 className="mb-4 text-xl font-semibold">{resource.name}</h2>
-            <div className="space-y-4">
-              {resource.operations.map((op) => (
-                <div
-                  key={op.operationId}
-                  id={cardId('rest', op.operationId)}
-                  data-sdk-card
-                  className="glass-card rounded-xl"
-                >
-                  {/* Header */}
-                  <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
-                    <span className={cn('rounded px-2 py-0.5 text-xs font-bold uppercase', methodColor(op.method))}>
-                      {op.method}
-                    </span>
-                    <code className="font-mono text-sm text-muted-foreground">{op.path}</code>
-                  </div>
-
-                  <div className="px-4 py-4 space-y-4">
-                    {/* Summary */}
-                    {op.summary && (
-                      <p className="text-sm text-muted-foreground">{op.summary}</p>
-                    )}
-
-                    {/* Path Parameters */}
-                    {op.pathParams.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Path Parameters</h4>
-                        <ParamTable
-                          params={op.pathParams.map((p) => ({ ...p, required: true }))}
-                          locationLabel="path"
-                        />
-                      </div>
-                    )}
-
-                    {/* Query Parameters */}
-                    {op.queryParams.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Query Parameters</h4>
-                        <ParamTable params={op.queryParams} locationLabel="query" />
-                      </div>
-                    )}
-
-                    {/* Header Parameters */}
-                    {op.headerParams?.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Header Parameters</h4>
-                        <ParamTable params={op.headerParams} locationLabel="header" />
-                      </div>
-                    )}
-
-                    {/* Request Body */}
-                    {op.hasBody && op.bodyProperties.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                          Request Body
-                          {op.bodyTypeName && (
-                            <code className="ml-2 font-normal normal-case text-foreground">{op.bodyTypeName}</code>
+                    <div className="px-4 py-4 space-y-4">
+                      {ch.description && (
+                        <p className="text-sm text-muted-foreground">{ch.description}</p>
+                      )}
+                      {ch.subscribeMessage && (
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                            Receive
+                            {ch.subscribeMessage.name && (
+                              <code className="ml-2 font-normal normal-case text-foreground">
+                                {ch.subscribeMessage.name}
+                              </code>
+                            )}
+                          </h4>
+                          {ch.subscribeMessage.description && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {ch.subscribeMessage.description}
+                            </p>
                           )}
-                        </h4>
-                        <ParamTable params={op.bodyProperties} />
-                      </div>
-                    )}
-
-                    {/* Response */}
-                    {op.responses && op.responses.length > 0 && (
-                      <OperationResponses responses={op.responses} />
-                    )}
-
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-
-        {/* GraphQL */}
-        {data.graphql && (
-          <div className="mb-8">
-            <h2 className="mb-4 text-xl font-semibold">{data.sourceTitles?.graphql?.[0] ?? 'GraphQL'}</h2>
-
-            {data.sourceIntros?.graphql && (
-              <div className="mb-6 docs-content" dangerouslySetInnerHTML={{ __html: data.sourceIntros.graphql }} />
-            )}
-
-            {([
-              ['Queries', data.graphql.queries, 'QUERY', 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'] as const,
-              ['Mutations', data.graphql.mutations, 'MUTATION', 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'] as const,
-              ['Subscriptions', data.graphql.subscriptions, 'SUBSCRIPTION', 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'] as const,
-            ] as const).map(([heading, ops, badge, badgeColor]) => ops.length > 0 && (
-              <div key={heading} className="mb-6">
-                <h3 className="mb-3 text-lg font-medium text-muted-foreground">{heading}</h3>
-                <div className="space-y-4">
-                  {ops.map((op) => (
-                    <div
-                      key={op.name}
-                      id={cardId('gql', op.name)}
-                      data-sdk-card
-                      className="glass-card rounded-xl"
-                    >
-                      <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
-                        <span className={cn('rounded px-2 py-0.5 text-xs font-bold', badgeColor)}>
-                          {badge}
-                        </span>
-                        <code className="font-mono text-sm">{op.name}</code>
-                        {op.returnType && (
-                          <code className="ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-                            → {op.returnType}
-                          </code>
-                        )}
-                      </div>
-                      <div className="px-4 py-4 space-y-4">
-                        {op.description && (
-                          <p className="text-sm text-muted-foreground">{op.description}</p>
-                        )}
-                        {op.args.length > 0 && (
-                          <div>
-                            <h4 className="text-xs font-semibold uppercase text-muted-foreground">Arguments</h4>
-                            <ParamTable params={op.args} />
-                          </div>
-                        )}
-                      </div>
+                          {ch.subscribeMessage.properties && (
+                            <ParamTable params={ch.subscribeMessage.properties} />
+                          )}
+                        </div>
+                      )}
+                      {ch.publishMessage && (
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                            Send
+                            {ch.publishMessage.name && (
+                              <code className="ml-2 font-normal normal-case text-foreground">
+                                {ch.publishMessage.name}
+                              </code>
+                            )}
+                          </h4>
+                          {ch.publishMessage.description && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {ch.publishMessage.description}
+                            </p>
+                          )}
+                          {ch.publishMessage.properties && (
+                            <ParamTable params={ch.publishMessage.properties} />
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* WebSocket Channels */}
-        {data.websocket && (
-          <div className="mb-8">
-            <h2 className="mb-4 text-xl font-semibold">{data.sourceTitles?.websocket?.[0] ?? 'WebSocket'}</h2>
-            <p className="mb-3 text-sm text-muted-foreground">
-              <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{data.websocket.url}</code>
-            </p>
-            {data.sourceIntros?.websocket && (
-              <div className="mb-6 docs-content" dangerouslySetInnerHTML={{ __html: data.sourceIntros.websocket }} />
-            )}
-            <div className="space-y-4">
-              {data.websocket.channels.map((ch) => (
-                <div
-                  key={ch.name}
-                  id={cardId('ws', ch.name)}
-                  data-sdk-card
-                  className="glass-card rounded-xl"
-                >
-                  <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
-                    <code className="font-mono text-sm font-semibold">{ch.name}</code>
-                    {ch.hasSubscribe && (
-                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                        subscribe
-                      </span>
-                    )}
-                    {ch.hasPublish && (
-                      <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-                        publish
-                      </span>
-                    )}
                   </div>
-                  <div className="px-4 py-4 space-y-4">
-                    {ch.description && (
-                      <p className="text-sm text-muted-foreground">{ch.description}</p>
-                    )}
-                    {ch.subscribeMessage && (
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                          Receive
-                          {ch.subscribeMessage.name && (
-                            <code className="ml-2 font-normal normal-case text-foreground">{ch.subscribeMessage.name}</code>
-                          )}
-                        </h4>
-                        {ch.subscribeMessage.description && (
-                          <p className="mt-1 text-xs text-muted-foreground">{ch.subscribeMessage.description}</p>
-                        )}
-                        {ch.subscribeMessage.properties && <ParamTable params={ch.subscribeMessage.properties} />}
-                      </div>
-                    )}
-                    {ch.publishMessage && (
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                          Send
-                          {ch.publishMessage.name && (
-                            <code className="ml-2 font-normal normal-case text-foreground">{ch.publishMessage.name}</code>
-                          )}
-                        </h4>
-                        {ch.publishMessage.description && (
-                          <p className="mt-1 text-xs text-muted-foreground">{ch.publishMessage.description}</p>
-                        )}
-                        {ch.publishMessage.properties && <ParamTable params={ch.publishMessage.properties} />}
-                      </div>
-                    )}
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* gRPC Services — one section per source */}
+          {grpcSourcesList.map((grpcSrc, si) => (
+            <div key={`grpc-${si}`} className="mb-8">
+              <h2 className="mb-4 text-xl font-semibold">{grpcSrc.title}</h2>
+              {grpcSrc.intro && (
+                <div
+                  className="mb-6 docs-content"
+                  dangerouslySetInnerHTML={{ __html: grpcSrc.intro }}
+                />
+              )}
+              {grpcSrc.services.map((service) => (
+                <div key={service.name} className="mb-6">
+                  <h3 className="mb-3 text-lg font-medium">{service.name}</h3>
+                  {service.description && (
+                    <p className="mb-3 text-sm text-muted-foreground">{service.description}</p>
+                  )}
+                  <div className="space-y-4">
+                    {service.methods.map((method) => {
+                      const label = `${service.name}.${method.name}`;
+                      return (
+                        <div
+                          key={label}
+                          id={cardId('grpc', label, multiGrpc ? si : undefined)}
+                          data-sdk-card
+                          className="glass-card rounded-xl"
+                        >
+                          <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
+                            <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
+                              RPC
+                            </span>
+                            <code className="font-mono text-sm font-semibold">{method.name}</code>
+                            {method.clientStreaming && (
+                              <span className="rounded bg-cyan-100 px-2 py-0.5 text-[10px] font-bold uppercase text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400">
+                                client stream
+                              </span>
+                            )}
+                            {method.serverStreaming && (
+                              <span className="rounded bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-800 dark:bg-violet-900/30 dark:text-violet-400">
+                                server stream
+                              </span>
+                            )}
+                            <code className="ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                              {method.inputType} → {method.outputType}
+                            </code>
+                          </div>
+                          <div className="px-4 py-4 space-y-4">
+                            {method.description && (
+                              <p className="text-sm text-muted-foreground">{method.description}</p>
+                            )}
+                            {method.inputFields && method.inputFields.length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                  Input
+                                  <code className="ml-2 font-normal normal-case text-foreground">
+                                    {method.inputType}
+                                  </code>
+                                </h4>
+                                <ParamTable params={method.inputFields} />
+                              </div>
+                            )}
+                            {method.outputFields && method.outputFields.length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                                  Output
+                                  <code className="ml-2 font-normal normal-case text-foreground">
+                                    {method.outputType}
+                                  </code>
+                                </h4>
+                                <ParamTable params={method.outputFields} />
+                              </div>
+                            )}
+                            {!method.inputFields?.length && !method.outputFields?.length && (
+                              <div className="flex gap-6 text-xs text-muted-foreground">
+                                <span>
+                                  Input: <code className="font-mono">{method.inputType}</code>
+                                </span>
+                                <span>
+                                  Output: <code className="font-mono">{method.outputType}</code>
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ))}
 
-        {/* gRPC Services */}
-        {data.grpc && (
-          <div className="mb-8">
-            <h2 className="mb-4 text-xl font-semibold">{data.sourceTitles?.grpc?.[0] ?? 'gRPC'}</h2>
-            {data.sourceIntros?.grpc && (
-              <div className="mb-6 docs-content" dangerouslySetInnerHTML={{ __html: data.sourceIntros.grpc }} />
-            )}
-            {data.grpc.services.map((svc) => (
-              <div key={svc.name} className="mb-6">
-                <h3 className="mb-3 text-lg font-medium">{svc.name}</h3>
-                {svc.description && <p className="mb-3 text-sm text-muted-foreground">{svc.description}</p>}
-                <div className="space-y-4">
-                  {svc.methods.map((m) => (
-                    <div
-                      key={`${svc.name}.${m.name}`}
-                      id={cardId('grpc', `${svc.name}.${m.name}`)}
-                      data-sdk-card
-                      className="glass-card rounded-xl"
-                    >
-                      <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
-                        <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
-                          RPC
+          {/* OpenRPC — one section per source */}
+          {openrpcSourcesList.map((rpcSrc, si) => (
+            <div key={`openrpc-${si}`} className="mb-8">
+              <h2 className="mb-4 text-xl font-semibold">{rpcSrc.title}</h2>
+              {rpcSrc.intro && (
+                <div
+                  className="mb-6 docs-content"
+                  dangerouslySetInnerHTML={{ __html: rpcSrc.intro }}
+                />
+              )}
+              {rpcSrc.serverUrl && (
+                <p className="mb-3 text-sm text-muted-foreground">
+                  <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">
+                    {rpcSrc.serverUrl}
+                  </code>
+                </p>
+              )}
+              <div className="space-y-4">
+                {rpcSrc.methods.map((m) => (
+                  <div
+                    key={m.name}
+                    id={cardId('openrpc', m.name, multiOpenRpc ? si : undefined)}
+                    data-sdk-card
+                    className="glass-card rounded-xl"
+                  >
+                    <div className="flex items-center gap-3 border-b border-border/40 bg-muted/20 px-4 py-3">
+                      <span className="rounded bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
+                        OpenRPC
+                      </span>
+                      <code className="font-mono text-sm font-semibold">{m.name}</code>
+                      {m.deprecated && (
+                        <span className="rounded bg-yellow-100 px-2 py-0.5 text-[10px] font-bold uppercase text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                          deprecated
                         </span>
-                        <code className="font-mono text-sm font-semibold">{m.name}</code>
-                        {m.clientStreaming && (
-                          <span className="rounded bg-cyan-100 px-2 py-0.5 text-[10px] font-bold uppercase text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400">
-                            client stream
-                          </span>
-                        )}
-                        {m.serverStreaming && (
-                          <span className="rounded bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-800 dark:bg-violet-900/30 dark:text-violet-400">
-                            server stream
-                          </span>
-                        )}
-                      </div>
-                      <div className="px-4 py-4 space-y-4">
-                        {m.description && (
-                          <p className="text-sm text-muted-foreground">{m.description}</p>
-                        )}
-                        {m.inputFields && m.inputFields.length > 0 && (
-                          <div>
-                            <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                              Input
-                              <code className="ml-2 font-normal normal-case text-foreground">{m.inputType}</code>
-                            </h4>
-                            <ParamTable params={m.inputFields} />
-                          </div>
-                        )}
-                        {m.outputFields && m.outputFields.length > 0 && (
-                          <div>
-                            <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                              Output
-                              <code className="ml-2 font-normal normal-case text-foreground">{m.outputType}</code>
-                            </h4>
-                            <ParamTable params={m.outputFields} />
-                          </div>
-                        )}
-                        {(!m.inputFields || m.inputFields.length === 0) && (!m.outputFields || m.outputFields.length === 0) && (
-                          <div className="flex gap-6 text-xs text-muted-foreground">
-                            <span>Input: <code className="font-mono">{m.inputType}</code></span>
-                            <span>Output: <code className="font-mono">{m.outputType}</code></span>
-                          </div>
-                        )}
-                      </div>
+                      )}
+                      {m.resultType && (
+                        <code className="ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                          → {m.resultType}
+                        </code>
+                      )}
                     </div>
-                  ))}
-                </div>
+                    <div className="px-4 py-4 space-y-4">
+                      {(m.summary || m.description) && (
+                        <p className="text-sm text-muted-foreground">
+                          {m.summary ?? m.description}
+                        </p>
+                      )}
+                      {m.summary && m.description && m.description !== m.summary && (
+                        <p className="text-xs text-muted-foreground">{m.description}</p>
+                      )}
+                      {m.params.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                            Parameters
+                          </h4>
+                          <ParamTable params={m.params} />
+                        </div>
+                      )}
+                      {m.resultProperties && m.resultProperties.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+                            Result
+                            {m.resultName && (
+                              <code className="ml-2 font-normal normal-case text-foreground">
+                                {m.resultName}
+                              </code>
+                            )}
+                          </h4>
+                          <ParamTable params={m.resultProperties} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
 
-        {/* Spacer so the last sections can scroll into the observation zone */}
-        <div className="h-[40vh]" aria-hidden="true" />
+          {/* Spacer so the last sections can scroll into the observation zone */}
+          <div className="h-[40vh]" aria-hidden="true" />
         </div>
       </main>
 
       {/* ---- Right sidebar (code snippets) ---- */}
       <ResizeHandle side="right" onResize={onResizeRight} />
-      <aside className="hidden shrink-0 border-l border-border/50 bg-muted/10 xl:block" style={{ width: rightWidth }}>
+      <aside
+        className="hidden shrink-0 border-l border-border/50 bg-muted/10 xl:block"
+        style={{ width: rightWidth }}
+      >
         <div className="sticky top-22 flex max-h-[calc(100vh-5.5rem)] flex-col overflow-y-auto p-3 gap-3">
           {/* Request card */}
           <div className="group/code glass-card rounded-xl">
@@ -1350,10 +2033,17 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
                 <SelectTrigger className="h-8 w-full cursor-pointer">
                   <SelectValue>
                     <span className="flex items-center gap-2">
-                      <span className={cn('inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold', LANG_COLORS[language])}>
+                      <span
+                        className={cn(
+                          'inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold',
+                          LANG_COLORS[language],
+                        )}
+                      >
                         {LANG_ICONS[language] ?? language}
                       </span>
-                      <span className="text-sm">{LANGUAGE_DISPLAY_NAMES[language] ?? language}</span>
+                      <span className="text-sm">
+                        {LANGUAGE_DISPLAY_NAMES[language] ?? language}
+                      </span>
                     </span>
                   </SelectValue>
                 </SelectTrigger>
@@ -1361,7 +2051,12 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
                   {(data?.languages ?? SUPPORTED_LANGUAGES).map((lang) => (
                     <SelectItem key={lang} value={lang} className="cursor-pointer">
                       <span className="flex items-center gap-2">
-                        <span className={cn('inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold', LANG_COLORS[lang])}>
+                        <span
+                          className={cn(
+                            'inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold',
+                            LANG_COLORS[lang],
+                          )}
+                        >
                           {LANG_ICONS[lang] ?? lang}
                         </span>
                         {LANGUAGE_DISPLAY_NAMES[lang] ?? lang}
@@ -1381,12 +2076,14 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
                 <div className="opacity-0 group-hover/code:opacity-100 transition-opacity">
                   <CopyButton text={snippet} />
                 </div>
-                {activeItem?.kind === 'rest' && (
+                {activeItem && (
                   <button
                     onClick={() => setTryNowOpen(true)}
                     className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow transition-all"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
                     Try now
                   </button>
                 )}
@@ -1402,9 +2099,9 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
           {/* Response card */}
           {(() => {
             const op = getActiveOperation();
-            return op?.responses && op.responses.length > 0
-              ? <ResponsePanel responses={op.responses} />
-              : null;
+            return op?.responses && op.responses.length > 0 ? (
+              <ResponsePanel responses={op.responses} />
+            ) : null;
           })()}
         </div>
       </aside>
@@ -1420,25 +2117,11 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
       />
 
       {/* Try Now modal — rendered at root level for full-viewport blur */}
-      {(() => {
-        const op = getActiveOperation();
-        return op ? (
-          <TryNowModal
-            open={tryNowOpen}
-            onClose={() => setTryNowOpen(false)}
-            method={op.method}
-            path={op.path}
-            baseUrl={data?.baseUrl ?? ''}
-            summary={op.summary}
-            pathParams={op.pathParams}
-            queryParams={op.queryParams}
-            headerParams={op.headerParams ?? []}
-            securitySchemes={data?.securitySchemes}
-            hasBody={op.hasBody}
-            bodyProperties={op.bodyProperties}
-          />
-        ) : null;
-      })()}
+      <TryNowModal
+        open={tryNowOpen}
+        onClose={() => setTryNowOpen(false)}
+        config={getTryNowConfig()}
+      />
     </div>
   );
 }
@@ -1447,7 +2130,17 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
 /* Navigation sub-components                                           */
 /* ------------------------------------------------------------------ */
 
-function NavSection({ title, expanded, onClickHeader, children }: { title: string; expanded: boolean; onClickHeader: () => void; children: React.ReactNode }) {
+function NavSection({
+  title,
+  expanded,
+  onClickHeader,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onClickHeader: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <div className="mb-2">
       <button
@@ -1567,10 +2260,17 @@ function MobileCodePanel({
               <SelectTrigger className="h-8 w-full cursor-pointer">
                 <SelectValue>
                   <span className="flex items-center gap-2">
-                    <span className={cn('inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold', LANG_COLORS[selectedLanguage])}>
+                    <span
+                      className={cn(
+                        'inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold',
+                        LANG_COLORS[selectedLanguage],
+                      )}
+                    >
                       {LANG_ICONS[selectedLanguage] ?? selectedLanguage}
                     </span>
-                    <span className="text-sm">{LANGUAGE_DISPLAY_NAMES[selectedLanguage] ?? selectedLanguage}</span>
+                    <span className="text-sm">
+                      {LANGUAGE_DISPLAY_NAMES[selectedLanguage] ?? selectedLanguage}
+                    </span>
                   </span>
                 </SelectValue>
               </SelectTrigger>
@@ -1578,7 +2278,12 @@ function MobileCodePanel({
                 {languages.map((lang) => (
                   <SelectItem key={lang} value={lang} className="cursor-pointer">
                     <span className="flex items-center gap-2">
-                      <span className={cn('inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold', LANG_COLORS[lang])}>
+                      <span
+                        className={cn(
+                          'inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold',
+                          LANG_COLORS[lang],
+                        )}
+                      >
                         {LANG_ICONS[lang] ?? lang}
                       </span>
                       {LANGUAGE_DISPLAY_NAMES[lang] ?? lang}

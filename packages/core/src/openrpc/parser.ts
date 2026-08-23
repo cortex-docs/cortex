@@ -19,7 +19,7 @@ export class OpenRpcParser {
 
   private async loadContent(specPath: string): Promise<string> {
     if (specPath.startsWith('http://') || specPath.startsWith('https://')) {
-      const res = await fetch(specPath);
+      const res = await fetch(specPath, { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(`Failed to fetch ${specPath}: ${res.status}`);
       return res.text();
     }
@@ -35,11 +35,11 @@ export class OpenRpcParser {
 
     return {
       openrpc: openrpcVersion,
-      title: raw.info?.title ?? 'JSON-RPC API',
+      title: raw.info?.title ?? 'OpenRPC API',
       version: raw.info?.version ?? '1.0.0',
       description: raw.info?.description,
       servers: this.extractServers(raw),
-      methods: this.extractMethods(raw, schemas),
+      methods: this.extractMethods(raw),
       schemas,
       errors,
       sourceContent,
@@ -63,12 +63,12 @@ export class OpenRpcParser {
     }));
   }
 
-  private extractMethods(raw: any, schemas: Map<string, OpenRpcSchema>): OpenRpcMethod[] {
+  private extractMethods(raw: any): OpenRpcMethod[] {
     if (!raw.methods || !Array.isArray(raw.methods)) return [];
-    return raw.methods.map((m: any) => this.parseMethod(m, raw, schemas));
+    return raw.methods.map((m: any) => this.parseMethod(m, raw));
   }
 
-  private parseMethod(m: any, raw: any, schemas: Map<string, OpenRpcSchema>): OpenRpcMethod {
+  private parseMethod(m: any, raw: any): OpenRpcMethod {
     const params: OpenRpcParam[] = (m.params ?? []).map((p: any) => {
       const resolved = this.resolveContentDescriptor(p, raw);
       return {
@@ -90,7 +90,7 @@ export class OpenRpcParser {
     }
 
     const tags: string[] = (m.tags ?? []).map((t: any) =>
-      typeof t === 'string' ? t : t.name ?? '',
+      typeof t === 'string' ? t : (t.name ?? ''),
     );
 
     const errors: OpenRpcErrorRef[] = (m.errors ?? []).map((e: any) => {

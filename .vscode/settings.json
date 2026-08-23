@@ -3,5 +3,52 @@
   "markdown.preview.doubleClickToSwitchToEditor": false,
   "markdown.preview.markEditorSelection": true,
   "rust-analyzer.linkedProjects": ["e2e/docker/tests/test-rust/Cargo.toml"],
-  "rust-analyzer.cargo.cfgs": ["test"]
+  "rust-analyzer.cargo.cfgs": ["test"],
+  "circleci.persistedProjectSelection": [],
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/.hg/store/**": true,
+    "./out/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true,
+    "**/.turbo/**": true,
+    "**/.next/**": true,
+    "**/.cache/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true,
+    "**/.turbo": true,
+    "**/.next": true,
+    "**/.cache": true
+  },
+  // "autoimport.filesToScan": "packages/*/**/*.{ts,tsx}",
+  "terminal.integrated.enablePersistentSessions": true,
+  // Hard cap TypeScript language service memory (adjust up/down as needed)
+  "typescript.tsserver.maxTsServerMemory": 2048,
+
+  // Stop auto-downloading @types and scanning the world
+  "typescript.disableAutomaticTypeAcquisition": true,
+
+  // Separate syntax server keeps the main server lighter
+  "typescript.tsserver.useSyntaxServer": "auto",
+
+  // Reduce file watching overhead (large repos)
+  "typescript.tsserver.watchOptions": {
+    "watchFile": "useFsEventsOnParentDirectory",
+    "watchDirectory": "useFsEvents",
+    "fallbackPolling": "dynamicPriorityPolling"
+  },
+
+  // Cut semantic tokens (surprisingly costly on huge workspaces)
+  "editor.semanticHighlighting.enabled": false,
+  "[typescript]": { "editor.semanticHighlighting.enabled": false },
+  "[typescriptreact]": { "editor.semanticHighlighting.enabled": false },
+
+  // Trim suggestions workload
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "javascript.suggest.completeFunctionCalls": false
 }

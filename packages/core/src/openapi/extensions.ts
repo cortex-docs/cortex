@@ -37,7 +37,9 @@ export function extractExtensions(spec: Record<string, unknown>): CortexExtensio
   return { resources };
 }
 
-export function getOperationExtensions(operation: Record<string, unknown>): Record<string, unknown> {
+export function getOperationExtensions(
+  operation: Record<string, unknown>,
+): Record<string, unknown> {
   const extensions: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(operation)) {

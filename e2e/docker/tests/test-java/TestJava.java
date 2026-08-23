@@ -1,12 +1,14 @@
-package com.test.project;
+package com.test.project.sdk;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.test.project.grpc.*;
+import com.test.project.sdk.grpc.*;
+import java.time.Duration;
 import java.util.Map;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -23,24 +25,21 @@ public class TestJava {
             ? System.getenv("MOCK_WS_URL")
             : "ws://localhost:4010/ws";
 
-    static TestProjectClient rest;
-    static GqlClient gql;
-    static PetServiceClient petGrpc;
-    static OwnerServiceClient ownerGrpc;
+    static RestApiV1 rest;
+    static Graphql gql;
+    static Grpc grpc;
 
     @BeforeAll
     static void setUp() {
-        rest = new TestProjectClient(BASE_URL, null, null);
-        gql = new GqlClient(GQL_URL, GQL_WS_URL);
-        petGrpc = new PetServiceClient(BASE_URL);
-        ownerGrpc = new OwnerServiceClient(BASE_URL);
+        rest = new RestApiV1(BASE_URL, null, null);
+        gql = new Graphql(GQL_URL, GQL_WS_URL, null, Duration.ofSeconds(15), true, Duration.ofMillis(50), 5);
+        grpc = new Grpc(BASE_URL);
     }
 
     @AfterAll
     static void tearDown() throws Exception {
         gql.dispose();
-        petGrpc.close();
-        ownerGrpc.close();
+        grpc.close();
     }
 
     // ─── REST ─────────────────────────────────────────────────────────
@@ -60,8 +59,25 @@ public class TestJava {
 
     @Test
     void restPetsCreate() throws Exception {
-        var r = rest.getPets().create(new com.test.project.models.CreatePetRequest().name("JavaPet").species("bird"));
+        var r = rest.getPets().create(new com.test.project.sdk.models.CreatePetRequest()
+            .name("JavaPet")
+            .species("bird")
+            .profilePic(new com.test.project.sdk.models.FileUpload("profile.png", "pet-avatar".getBytes(), "image/png"))
+            .attachments(List.of(
+                new com.test.project.sdk.models.FileUpload("record.pdf", "pdf-file".getBytes(), "application/pdf"),
+                new com.test.project.sdk.models.FileUpload("notes.txt", "notes".getBytes(), "text/plain")
+            )));
         assertEquals("JavaPet", r.getName(), "expected name JavaPet");
+        assertEquals("profile.png", r.getProfilePicFilename());
+        assertEquals(10, r.getProfilePicSize());
+        assertEquals("image/png", r.getProfilePicContentType());
+        assertEquals(2, r.getAttachmentCount());
+        assertEquals(List.of("application/pdf", "text/plain"), r.getAttachmentContentTypes());
+
+        var raw = rest.getUploads().uploadFile(
+            new com.test.project.sdk.models.FileUpload("raw.pdf", "raw-pdf".getBytes(), "application/pdf"));
+        assertEquals(7, raw.getSize());
+        assertEquals("application/pdf", raw.getContentType());
     }
 
     @Test
@@ -84,8 +100,29 @@ public class TestJava {
 
     @Test
     void restOwnersCreate() throws Exception {
-        var r = rest.getOwners().create(new com.test.project.models.CreateOwnerRequest().name("SDK Owner").email("sdk@test.com"));
+        var r = rest.getOwners().create(new com.test.project.sdk.models.CreateOwnerRequest().name("SDK Owner").email("sdk@test.com"));
         assertNotNull(r.getName(), "owner should have name");
+    }
+
+    @Test
+    void restChunkedResponseStream() throws Exception {
+        try (var stream = rest.requestStream("GET", "/pets/stream", null, null)) {
+            var body = new String(stream.readAllBytes());
+            assertTrue(body.contains("Rex"));
+            assertTrue(body.contains("Whiskers"));
+            assertTrue(body.lines().count() >= 2);
+        }
+    }
+
+    @Test
+    void restTimeoutOverride() throws Exception {
+        var shortClient = new RestApiV1(BASE_URL, null, null, Duration.ofMillis(40));
+        assertThrows(ApiException.class,
+            () -> shortClient.request("GET", "/transport/slow?delay=250", null, null));
+
+        var longerClient = new RestApiV1(BASE_URL, null, null, Duration.ofMillis(500));
+        var body = longerClient.request("GET", "/transport/slow?delay=100", null, null);
+        assertTrue(body.contains("\"delayed\":100"));
     }
 
     // ─── GraphQL — Query Builder ──────────────────────────────────────
@@ -214,7 +251,7 @@ public class TestJava {
 
     @Test
     void wsConnectAndReceivePresence() throws Exception {
-        WsClient ws = new WsClient(WS_URL, true, 3000, 3);
+        WebsocketApi ws = new WebsocketApi(WS_URL, true, 50, 5);
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<String> receivedMsg = new AtomicReference<>();
 
@@ -231,7 +268,7 @@ public class TestJava {
 
     @Test
     void wsClientHasChannelMethods() {
-        WsClient ws = new WsClient(WS_URL);
+        WebsocketApi ws = new WebsocketApi(WS_URL);
         assertNotNull(ws);
         ws.onChatMessages(msg -> {
         });
@@ -242,55 +279,95 @@ public class TestJava {
     }
 
     @Test
-    void wsSendMessage() throws Exception {
-        WsClient ws = new WsClient(WS_URL, true, 3000, 3);
-        ws.connect().get(5, TimeUnit.SECONDS);
-        ws.sendChatMessages(Map.of("text", "hello from Java SDK"));
-        ws.disconnect();
+    void wsReconnectsAfterUnexpectedDisconnectAndSends() throws Exception {
+        WebsocketApi ws = new WebsocketApi(WS_URL, true, 50, 5);
+        AtomicInteger connected = new AtomicInteger();
+        AtomicInteger disconnected = new AtomicInteger();
+        AtomicInteger presenceEvents = new AtomicInteger();
+        CountDownLatch initialPresence = new CountDownLatch(1);
+
+        ws.on("connected", ignored -> connected.incrementAndGet());
+        ws.on("disconnected", ignored -> disconnected.incrementAndGet());
+        ws.onChatPresence(ignored -> {
+            presenceEvents.incrementAndGet();
+            initialPresence.countDown();
+        });
+
+        try {
+            ws.connect().get(5, TimeUnit.SECONDS);
+            assertTrue(initialPresence.await(5, TimeUnit.SECONDS), "initial WebSocket presence was not received");
+
+            int connectionsBeforeDisconnect = connected.get();
+            int disconnectsBeforeDisconnect = disconnected.get();
+            int presenceBeforeDisconnect = presenceEvents.get();
+            ws.send("__control__/disconnect", Map.of()).get(5, TimeUnit.SECONDS);
+
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (System.nanoTime() < deadline
+                    && (connected.get() <= connectionsBeforeDisconnect
+                        || disconnected.get() <= disconnectsBeforeDisconnect
+                        || presenceEvents.get() <= presenceBeforeDisconnect)) {
+                Thread.sleep(20);
+            }
+
+            assertTrue(connected.get() > connectionsBeforeDisconnect, "WebSocket did not reconnect");
+            assertTrue(disconnected.get() > disconnectsBeforeDisconnect, "WebSocket disconnect was not observed");
+            assertTrue(presenceEvents.get() > presenceBeforeDisconnect, "presence did not resume after reconnect");
+            ws.sendChatMessages(Map.of("text", "hello from Java SDK")).get(5, TimeUnit.SECONDS);
+        } finally {
+            ws.disconnect();
+        }
     }
 
     // ─── gRPC ──────────────────────────────────────────────────────────
 
     @Test
     void grpcPetServiceListPets() throws Exception {
-        var r = petGrpc.listPets(new ListPetsRequest());
+        var r = grpc.listPets(new ListPetsRequest());
         assertTrue(r.getData().size() >= 2, "should have at least 2 pets");
         assertNotNull(r.getData().get(0).getName(), "first pet should have name");
     }
 
     @Test
     void grpcPetServiceGetPet() throws Exception {
-        var r = petGrpc.getPet(new GetPetRequest().id("pet-1"));
+        var r = grpc.getPet(new GetPetRequest().id("pet-1"));
         assertEquals("Rex", r.getName(), "expected name Rex");
     }
 
     @Test
     void grpcPetServiceCreatePet() throws Exception {
-        var r = petGrpc.createPet(new CreatePetRequest().name("GrpcJavaPet"));
+        var r = grpc.createPet(new CreatePetRequest().name("GrpcJavaPet"));
         assertNotNull(r.getId(), "created pet should have id");
     }
 
     @Test
     void grpcPetServiceDeletePet() throws Exception {
-        petGrpc.deletePet(new DeletePetRequest().id("pet-1"));
+        grpc.deletePet(new DeletePetRequest().id("pet-1"));
+    }
+
+    @Test
+    void grpcPetServiceWatchPetsStreamsMultipleItems() throws Exception {
+        var pets = grpc.watchPets(new WatchPetsRequest());
+        assertTrue(pets.size() >= 2, "expected multiple streamed pets");
+        assertNotNull(pets.get(0).getName());
     }
 
     @Test
     void grpcOwnerServiceListOwners() throws Exception {
-        var r = ownerGrpc.listOwners(new ListOwnersRequest());
+        var r = grpc.listOwners(new ListOwnersRequest());
         assertTrue(r.getData().size() >= 1, "should have at least 1 owner");
     }
 
     @Test
     void grpcOwnerServiceGetOwner() throws Exception {
-        var r = ownerGrpc.getOwner(new GetOwnerRequest().id("owner-1"));
+        var r = grpc.getOwner(new GetOwnerRequest().id("owner-1"));
         assertEquals("Alice", r.getName(), "expected name Alice");
         assertEquals("alice@example.com", r.getEmail(), "expected email");
     }
 
     @Test
     void grpcOwnerServiceCreateOwner() throws Exception {
-        var r = ownerGrpc.createOwner(new CreateOwnerRequest().name("GrpcOwner").email("grpc@test.com"));
+        var r = grpc.createOwner(new CreateOwnerRequest().name("GrpcOwner").email("grpc@test.com"));
         assertNotNull(r.getId(), "created owner should have id");
     }
 }

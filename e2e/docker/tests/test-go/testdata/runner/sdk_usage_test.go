@@ -14,7 +14,7 @@ import (
 )
 
 func TestRESTGeneratedClient(t *testing.T) {
-	client := sdk.NewClient(sdk.WithBaseURL(baseURL()))
+	client := sdk.NewRestApiV1(sdk.WithBaseURL(baseURL()))
 
 	pets, err := client.PetResource.List(ptr(10), nil)
 	if err != nil {
@@ -35,9 +35,17 @@ func TestRESTGeneratedClient(t *testing.T) {
 		t.Fatalf("expected Rex, got %s", pet.Name)
 	}
 
+	attachments := []sdk.FileUpload{
+		{Filename: "record.pdf", Data: []byte("pdf-file"), ContentType: "application/pdf"},
+		{Filename: "notes.txt", Data: []byte("notes"), ContentType: "text/plain"},
+	}
 	created, err := client.PetResource.Create(sdk.CreatePetRequest{
 		Name:    "GoPet",
 		Species: "bird",
+		ProfilePic: &sdk.FileUpload{
+			Filename: "profile.png", Data: []byte("pet-avatar"), ContentType: "image/png",
+		},
+		Attachments: &attachments,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +53,14 @@ func TestRESTGeneratedClient(t *testing.T) {
 	if created.Name != "GoPet" {
 		t.Fatalf("expected GoPet, got %s", created.Name)
 	}
+	if created.ProfilePicFilename == nil || *created.ProfilePicFilename != "profile.png" || created.ProfilePicSize == nil || *created.ProfilePicSize != 10 {
+		t.Fatalf("expected uploaded profile picture metadata, got %#v", created)
+	}
+	if created.ProfilePicContentType == nil || *created.ProfilePicContentType != "image/png" || created.AttachmentCount == nil || *created.AttachmentCount != 2 {
+		t.Fatalf("expected uploaded MIME metadata, got %#v", created)
+	}
+	raw, err := client.UploadResource.UploadFile(sdk.FileUpload{Filename: "raw.pdf", Data: []byte("raw-pdf"), ContentType: "application/pdf"})
+	if err != nil || raw.Size != 7 || raw.ContentType != "application/pdf" { t.Fatalf("raw upload failed: %#v %v", raw, err) }
 
 	if err := client.PetResource.Delete("pet-1"); err != nil {
 		t.Fatal(err)
@@ -59,10 +75,40 @@ func TestRESTGeneratedClient(t *testing.T) {
 	}
 }
 
+func TestRESTStreamingAndTimeoutOverride(t *testing.T) {
+	client := sdk.NewRestApiV1(sdk.WithBaseURL(baseURL()), sdk.WithTimeout(2*time.Second))
+	stream, err := client.RequestStream("GET", "/pets/stream", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(stream)
+	_ = stream.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(body), "\n") < 2 || !strings.Contains(string(body), "Rex") || !strings.Contains(string(body), "Whiskers") {
+		t.Fatalf("expected both streamed records, got %q", body)
+	}
+
+	short := sdk.NewRestApiV1(sdk.WithBaseURL(baseURL()), sdk.WithTimeout(40*time.Millisecond))
+	if err := short.Request("GET", "/transport/slow?delay=250", nil, nil, nil); err == nil {
+		t.Fatal("expected the short client timeout to cancel the request")
+	}
+	longer := sdk.NewRestApiV1(sdk.WithBaseURL(baseURL()), sdk.WithTimeout(500*time.Millisecond))
+	var result map[string]int
+	if err := longer.Request("GET", "/transport/slow?delay=100", nil, nil, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["delayed"] != 100 {
+		t.Fatalf("expected delayed=100, got %#v", result)
+	}
+}
+
 func TestGraphQLGeneratedClient(t *testing.T) {
-	gql := gqlclient.NewGqlClient(
+	gql := gqlclient.NewGraphql(
 		gqlclient.WithEndpoint(gqlURL()),
 		gqlclient.WithWsEndpoint(gqlWsURL()),
+		gqlclient.WithSubscriptionReconnect(true, 50*time.Millisecond, 5),
 	)
 	defer gql.Dispose()
 
@@ -277,7 +323,7 @@ func TestGraphQLGeneratedClient(t *testing.T) {
 }
 
 func TestWebSocketGeneratedClient(t *testing.T) {
-	client := sdk.NewWsClient(wsURL())
+	client := sdk.NewWebsocketApi(wsURL(), sdk.WithWsReconnectInterval(50*time.Millisecond))
 	received := make(chan sdk.ChatPresenceMessage, 1)
 	client.OnChatPresence(func(message sdk.ChatPresenceMessage) {
 		received <- message
@@ -304,7 +350,7 @@ func TestWebSocketGeneratedClient(t *testing.T) {
 
 func TestGRPCGeneratedClient(t *testing.T) {
 	ctx := context.Background()
-	petsClient, err := grpcclient.NewPetServiceClient(
+	petsClient, err := grpcclient.NewGrpc(
 		grpcclient.WithTarget(grpcAddr()),
 		grpcclient.WithBaseURL(baseURL()),
 	)
@@ -352,16 +398,7 @@ func TestGRPCGeneratedClient(t *testing.T) {
 		t.Fatalf("expected streamed pet, got %#v", streamed)
 	}
 
-	ownersClient, err := grpcclient.NewOwnerServiceClient(
-		grpcclient.WithTarget(grpcAddr()),
-		grpcclient.WithBaseURL(baseURL()),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ownersClient.Close()
-
-	owners, err := ownersClient.ListOwners(ctx, &grpcclient.ListOwnersRequest{})
+	owners, err := petsClient.ListOwners(ctx, &grpcclient.ListOwnersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

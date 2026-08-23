@@ -1,6 +1,8 @@
 # Getting Started
 
-Cortex generates typed SDKs, WebSocket clients, interactive documentation, and MCP servers from your OpenAPI and AsyncAPI specifications.
+Cortex generates typed SDKs from OpenAPI, AsyncAPI, GraphQL, OpenRPC, and Protocol Buffer specifications.
+
+Generated SDKs include HTTP timeouts, chunked-response streams, connection recovery, WebSocket heartbeats, and gRPC streams.
 
 ## Installation
 
@@ -19,7 +21,7 @@ cortex init my-project
 This scaffolds a new project with starter files:
 
 - `cortex.config.yml` — project configuration
-- `specs/` — sample API spec files (OpenAPI, AsyncAPI, GraphQL, OpenRPC)
+- `specs/` — sample API spec files (OpenAPI, AsyncAPI, GraphQL, OpenRPC, and Protocol Buffers)
 - `docs/quickstart.md` — starter documentation page
 - `docs/REST_INTRO.md` — starter intro document (rendered at the top of the API Reference)
 - `assets/` — logos, favicon, and section icons
@@ -47,9 +49,22 @@ Opens a local server with interactive documentation for your project. Watches fo
 ## How It Works
 
 1. **Parse** — Your API specs are parsed and validated (from file or URL)
-2. **Resolve** — All `$ref` references are resolved and schemas are flattened
+2. **Resolve** — Local component references are resolved where generation needs their values
 3. **Transform** — Operations are grouped into resources based on tags or `x-cortex-resource`
 4. **Generate** — Each language plugin produces native code with proper types and naming conventions
+
+## Connection and Stream Behavior
+
+The generated SDK controls transport behavior at runtime. You do not need to regenerate an SDK to change these options.
+
+| Protocol  | Behavior                                                                             | Default values                                      |
+| --------- | ------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| HTTP      | Request timeout and incremental chunked-response consumption                         | 15-second timeout                                   |
+| WebSocket | Reconnection, retry limit, and project-specific heartbeat messages                   | Heartbeat disabled until configured on the source   |
+| GraphQL   | Subscription reconnection, active-operation restoration, keepalive, and HTTP timeout | 3-second retry, 10 attempts, 15-second HTTP timeout |
+| gRPC      | Server streams plus runtime-supported client and bidirectional streams               | Behavior from the Protocol Buffer RPC declaration   |
+
+The exact option names follow the conventions of each generated language. The SDK Generation guides contain examples for each protocol.
 
 ## CLI Usage
 
@@ -64,7 +79,8 @@ Opens a local server with interactive documentation for your project. Watches fo
 | `cortex publish --dry-run`              | Preview publish commands                                            |
 | `cortex validate`                       | Validate your spec and config                                       |
 | `cortex docs serve`                     | Preview docs locally (auto-regenerates SDKs on spec/config changes) |
-| `cortex docs build`                     | Build static documentation site                                     |
+| `cortex docs build`                     | Build a production Node.js documentation server                     |
+| `cortex docs start`                     | Start a production documentation build                              |
 | `cortex mcp generate`                   | Generate an MCP server standalone                                   |
 
 ## Supported Languages
@@ -106,10 +122,11 @@ Cortex follows each language's idiomatic conventions:
 ## What's Next
 
 - [Configuration](/docs/configuration) — Full config reference
-- [OpenAPI](/docs/sdk-generation) — REST SDK generation from OpenAPI specs
+- [OpenAPI](/docs/sdk-generation) — HTTP timeouts and chunked responses
 - [WebSocket SDKs](/docs/websocket-sdks) — AsyncAPI and real-time clients
 - [GraphQL](/docs/graphql) — Generate GraphQL client SDKs
-- [OpenRPC / JSON-RPC](/docs/openrpc) — Generate JSON-RPC clients from OpenRPC specifications
+- [gRPC](/docs/grpc) — Generate unary and streaming RPC clients
+- [OpenRPC](/docs/openrpc) — Generate JSON-RPC clients from OpenRPC specifications
 - [Documentation](/docs/api-docs) — REST, WebSocket, and MCP docs
 - [MCP Servers](/docs/mcp-servers) — Generate AI agent tools
-- [Publishing](/docs/publishing) — Publish SDKs to registries
+- [Publishing](/docs/publishing) — Publish SDK and MCP packages to registries

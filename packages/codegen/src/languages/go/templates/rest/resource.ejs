@@ -2,12 +2,20 @@
 <% const r = it.resource; %>
 <% const parts = it.config.languageConfig.package_name.split('/'); %>
 <% const pkgName = parts[parts.length - 1].replace(/-/g, ''); %>
+<% const needsFmt = r.operations.some(op => op.pathParams.length > 0 || op.queryParams.length > 0 || (op.isMultipart && op.multipartFields.some(field => !field.isFile && !field.isFileArray))); -%>
+<% const needsUrl = r.operations.some(op => op.queryParams.length > 0); -%>
 package <%= pkgName %>
 
+<% if (needsFmt || needsUrl) { -%>
 import (
+<% if (needsFmt) { -%>
 	"fmt"
+<% } -%>
+<% if (needsUrl) { -%>
 	"net/url"
+<% } -%>
 )
+<% } -%>
 
 // <%= r.className %> provides access to the <%= r.name %> API endpoints.
 type <%= r.className %> struct {
@@ -48,7 +56,34 @@ func (r *<%= r.className %>) <%= goMethodName %>(<%= allParams.join(', ') %>) er
 <% } -%>
 <% } -%>
 <% } -%>
-	err := r.client.Request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'nil' %>, <%= bodyArg %>, <%= op.responseType ? '&result' : 'nil' %>)
+<% if (op.isMultipart) { -%>
+	fields := map[string]string{}
+	files := map[string][]FileUpload{}
+<% for (const field of op.multipartFields) { -%>
+<% if (field.isFile) { -%>
+<% if (field.required) { -%>
+	files["<%= field.originalName %>"] = []FileUpload{body.<%= field.name %>}
+<% } else { -%>
+	if body.<%= field.name %> != nil { files["<%= field.originalName %>"] = []FileUpload{*body.<%= field.name %>} }
+<% } -%>
+<% } else if (field.isFileArray) { -%>
+<% if (field.required) { -%>
+	files["<%= field.originalName %>"] = body.<%= field.name %>
+<% } else { -%>
+	if body.<%= field.name %> != nil { files["<%= field.originalName %>"] = *body.<%= field.name %> }
+<% } -%>
+<% } else if (field.required) { -%>
+	fields["<%= field.originalName %>"] = fmt.Sprint(body.<%= field.name %>)
+<% } else { -%>
+	if body.<%= field.name %> != nil { fields["<%= field.originalName %>"] = fmt.Sprint(*body.<%= field.name %>) }
+<% } -%>
+<% } -%>
+<% } -%>
+<% if (op.isRawBinary) { -%>
+	err := r.client.RequestFile("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'nil' %>, body, "<%= op.contentType %>", <%= op.responseType ? '&result' : 'nil' %>)
+<% } else { -%>
+	err := r.client.<%= op.isMultipart ? 'RequestMultipart' : 'Request' %>("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'nil' %>, <%= op.isMultipart ? 'fields, files' : bodyArg %>, <%= op.responseType ? '&result' : 'nil' %>)
+<% } -%>
 <% if (op.responseType) { -%>
 	return &result, err
 <% } else { -%>

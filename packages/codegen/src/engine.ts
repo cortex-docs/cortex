@@ -1,8 +1,17 @@
-import type { ParsedSpec, CortexConfig, GraphQLSpec, AsyncApiSpec, GrpcSpec } from '@cortex/core';
+import type {
+  ParsedSpec,
+  CortexConfig,
+  GraphQLSpec,
+  AsyncApiSpec,
+  GrpcSpec,
+  OpenRpcSpec,
+} from '@cortex/core';
+import { getSourceLanguageTemplateDir, resolveGeneratorTemplateRoot } from '@cortex/core';
 import { FileEmitter, type EmitResult } from './emitter';
-import type { CodegenContext, GeneratedFile, NamingConventions } from './plugin';
+import type { CodegenContext, GeneratedFile } from './plugin';
 import { PluginRegistry } from './plugin';
 import { getLanguageNaming } from './naming';
+import type { TemplateRenderOptions } from './template-renderer';
 
 export interface GenerationResult {
   languages: LanguageResult[];
@@ -15,10 +24,13 @@ export interface LanguageResult {
   emit: EmitResult;
 }
 
-export interface GenerateOptions {
+export interface GenerateOptions extends TemplateRenderOptions {
+  /** Path to cortex.config.yml. Relative source template paths use this directory. */
+  configPath?: string;
   gqlSpec?: GraphQLSpec;
   asyncSpec?: AsyncApiSpec;
   grpcSpec?: GrpcSpec;
+  openRpcSpec?: OpenRpcSpec;
 }
 
 export class CodegenEngine {
@@ -27,8 +39,13 @@ export class CodegenEngine {
     private emitter: FileEmitter,
   ) {}
 
-  async generate(spec: ParsedSpec, config: CortexConfig, options?: GenerateOptions): Promise<GenerationResult> {
+  async generate(
+    spec: ParsedSpec,
+    config: CortexConfig,
+    options?: GenerateOptions,
+  ): Promise<GenerationResult> {
     const result: GenerationResult = { languages: [], errors: [] };
+    const templateRoot = options?.templateRoot ?? resolveGeneratorTemplateRoot(config);
 
     for (const langConfig of config.languages) {
       const plugin = this.registry.get(langConfig.language);
@@ -48,6 +65,17 @@ export class CodegenEngine {
         gqlSpec: options?.gqlSpec,
         asyncSpec: options?.asyncSpec,
         grpcSpec: options?.grpcSpec,
+        openRpcSpec: options?.openRpcSpec,
+        templateRoot,
+        templateDir:
+          options?.templateDir ??
+          getSourceLanguageTemplateDir(
+            config,
+            'openapi-spec',
+            langConfig.language,
+            langConfig.package_name,
+            options?.configPath,
+          ),
       };
 
       try {

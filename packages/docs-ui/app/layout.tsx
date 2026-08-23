@@ -3,9 +3,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
+import type { Metadata } from 'next';
 import { ThemeProvider } from '@/components/docs/theme-provider';
 import { SiteConfigProvider, type HomeSection } from '@/components/docs/site-config-provider';
 import { SearchProvider } from '@/components/docs/search-provider';
+import { sanitizeSvg } from '@/lib/sanitize-svg';
 
 function adj(r: number, g: number, b: number, mul: number) {
   return `rgb(${Math.min(255, Math.round(r * mul))},${Math.min(255, Math.round(g * mul))},${Math.min(255, Math.round(b * mul))})`;
@@ -18,7 +20,8 @@ function parsePrimary(hex: string) {
   const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   const lightBgMul = lum < 0.15 ? 1.8 : lum < 0.3 ? 1.3 : 1;
   const darkBgMul = lum < 0.15 ? 4 : lum < 0.3 ? 2.2 : lum < 0.4 ? 1.4 : 1;
-  const textMul = lum > 0.9 ? 0.45 : lum > 0.7 ? 0.88 : lum > 0.5 ? 0.92 : lum < 0.15 ? 3.5 : lum < 0.3 ? 2 : 1;
+  const textMul =
+    lum > 0.9 ? 0.45 : lum > 0.7 ? 0.88 : lum > 0.5 ? 0.92 : lum < 0.15 ? 3.5 : lum < 0.3 ? 2 : 1;
   const lightColor = adj(r, g, b, lightBgMul);
   const darkColor = adj(r, g, b, darkBgMul);
   const lightText = adj(r, g, b, textMul);
@@ -34,28 +37,44 @@ function parsePrimary(hex: string) {
 }
 
 function readSiteConfig() {
-  const specPath = process.env.CORTEX_SPEC_PATH;
-  if (!specPath) return { title: '', project: '', hasLogo: false };
-
-  const dir = path.dirname(specPath);
   let configFile: string | null = null;
-  for (const name of ['cortex.config.yml', 'cortex.config.yaml', 'cortex.yml']) {
-    const candidate = path.join(dir, name);
-    if (fs.existsSync(candidate)) { configFile = candidate; break; }
+  let dir: string | null = null;
+
+  const explicitConfig = process.env.CORTEX_CONFIG_PATH;
+  if (explicitConfig && fs.existsSync(explicitConfig)) {
+    configFile = explicitConfig;
+    dir = path.dirname(explicitConfig);
   }
-  if (!configFile) return { title: '', project: '', hasLogo: false };
+
+  if (!configFile) {
+    const specPath = process.env.CORTEX_SPEC_PATH;
+    if (!specPath) return { title: '', project: '', hasLogo: false };
+    dir = path.dirname(specPath);
+    for (const name of ['cortex.config.yml', 'cortex.config.yaml', 'cortex.yml']) {
+      const candidate = path.join(dir, name);
+      if (fs.existsSync(candidate)) {
+        configFile = candidate;
+        break;
+      }
+    }
+  }
+
+  if (!configFile || !dir) return { title: '', project: '', hasLogo: false };
 
   try {
     const yaml = require('js-yaml');
     const raw = yaml.load(fs.readFileSync(configFile, 'utf-8')) as Record<string, unknown>;
     const readSvg = (p: string): string | undefined => {
       if (p && p.endsWith('.svg') && fs.existsSync(p)) {
-        try { return fs.readFileSync(p, 'utf-8'); } catch {}
+        try {
+          return sanitizeSvg(fs.readFileSync(p, 'utf-8'));
+        } catch {}
       }
       return undefined;
     };
 
-    const logoPath = process.env.CORTEX_LOGO_PATH ?? (raw?.logo ? path.resolve(dir, raw.logo as string) : '');
+    const logoPath =
+      process.env.CORTEX_LOGO_PATH ?? (raw?.logo ? path.resolve(dir, raw.logo as string) : '');
     const hasLogo = !!logoPath && fs.existsSync(logoPath);
     const logoSvg = readSvg(logoPath);
 
@@ -74,7 +93,7 @@ function readSiteConfig() {
         if (s.icon && typeof s.icon === 'string' && !s.icon.startsWith('<')) {
           const iconPath = path.resolve(cfgDir, s.icon);
           if (fs.existsSync(iconPath)) {
-            return { ...s, iconSvg: fs.readFileSync(iconPath, 'utf-8') };
+            return { ...s, iconSvg: sanitizeSvg(fs.readFileSync(iconPath, 'utf-8')) };
           }
         }
         return s;
@@ -82,6 +101,9 @@ function readSiteConfig() {
     }
     const primaryColor = (raw?.primaryColor as string) ?? undefined;
     const theme = (raw?.theme as 'light' | 'dark' | 'system') ?? 'system';
+    const sources = raw?.sources as Array<unknown> | undefined;
+    const docs = raw?.docs as Array<unknown> | undefined;
+    const mcp = raw?.mcp as Record<string, unknown> | undefined;
     return {
       title: (raw?.title as string) ?? '',
       project: (raw?.project as string) ?? '',
@@ -94,12 +116,17 @@ function readSiteConfig() {
       favicon,
       primaryColor,
       theme,
-      home: home ? {
-        title: home.title as string | undefined,
-        description: home.description as string | undefined,
-        cta: home.cta as { label: string; href: string } | undefined,
-        sections: homeSections,
-      } : undefined,
+      hasSources: Array.isArray(sources) && sources.length > 0,
+      hasDocs: Array.isArray(docs) && docs.length > 0,
+      hasMcp: !!mcp || (Array.isArray(sources) && sources.length > 0),
+      home: home
+        ? {
+            title: home.title as string | undefined,
+            description: home.description as string | undefined,
+            cta: home.cta as { label: string; href: string } | undefined,
+            sections: homeSections,
+          }
+        : undefined,
     };
   } catch {
     return { title: '', project: '', hasLogo: false };
@@ -108,32 +135,43 @@ function readSiteConfig() {
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = {
-  title: 'API Reference — Cortex',
-  description: 'API documentation powered by Cortex',
-};
+export function generateMetadata(): Metadata {
+  const siteConfig = readSiteConfig();
+  const title = siteConfig.title || siteConfig.project || 'Cortex Docs';
+  return {
+    title,
+    description: siteConfig.home?.description || `API documentation for ${title}`,
+  };
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const siteConfig = readSiteConfig();
 
   const pc = siteConfig.primaryColor;
-  const primaryCss = pc ? (() => {
-    const p = parsePrimary(pc);
-    return `html{--color-primary:${p.lightColor}!important;--color-primary-foreground:${p.lightFg}!important;--primary-text:${p.lightText};--primary-card-tint:${p.cardTint}}html.dark{--color-primary:${p.darkColor}!important;--color-primary-foreground:${p.darkFg}!important;--primary-text:${p.darkText};--primary-card-tint:${p.cardTint}}@media(prefers-color-scheme:dark){html:not(.light){--color-primary:${p.darkColor}!important;--color-primary-foreground:${p.darkFg}!important;--primary-text:${p.darkText};--primary-card-tint:${p.cardTint}}}`;
-  })() : '';
+  const primaryCss = pc
+    ? (() => {
+        const p = parsePrimary(pc);
+        return `html{--color-primary:${p.lightColor}!important;--color-primary-foreground:${p.lightFg}!important;--primary-text:${p.lightText};--primary-card-tint:${p.cardTint}}html.dark{--color-primary:${p.darkColor}!important;--color-primary-foreground:${p.darkFg}!important;--primary-text:${p.darkText};--primary-card-tint:${p.cardTint}}@media(prefers-color-scheme:dark){html:not(.light){--color-primary:${p.darkColor}!important;--color-primary-foreground:${p.darkFg}!important;--primary-text:${p.darkText};--primary-card-tint:${p.cardTint}}}`;
+      })()
+    : '';
 
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
-      <head>
-        {siteConfig.favicon && <link rel="icon" href={siteConfig.favicon} />}
-      </head>
+    <html
+      lang="en"
+      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>{siteConfig.favicon && <link rel="icon" href={siteConfig.favicon} />}</head>
       <body suppressHydrationWarning>
         {primaryCss && <style data-primary="" dangerouslySetInnerHTML={{ __html: primaryCss }} />}
         <SiteConfigProvider config={siteConfig}>
-          <ThemeProvider attribute="class" defaultTheme={siteConfig.theme ?? 'system'} enableSystem disableTransitionOnChange>
-            <SearchProvider>
-              {children}
-            </SearchProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme={siteConfig.theme ?? 'system'}
+            enableSystem
+            disableTransitionOnChange
+          >
+            <SearchProvider>{children}</SearchProvider>
           </ThemeProvider>
         </SiteConfigProvider>
       </body>

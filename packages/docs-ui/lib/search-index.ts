@@ -46,11 +46,7 @@ export function createSearchIndex(documents: SearchDocument[]): MiniSearch {
   return index;
 }
 
-export function searchIndex(
-  index: MiniSearch,
-  query: string,
-  limit = 50,
-): SearchDocument[] {
+export function searchIndex(index: MiniSearch, query: string, limit = 50): SearchDocument[] {
   if (!query.trim()) return [];
   return index
     .search(query, {
@@ -62,14 +58,13 @@ export function searchIndex(
 }
 
 function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-export function buildSearchDocuments(
-  sdkData: any,
-  mcpData: any,
-  docsData: any,
-): SearchDocument[] {
+export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any): SearchDocument[] {
   const docs: SearchDocument[] = [];
 
   if (sdkData) {
@@ -105,8 +100,7 @@ export function buildSearchDocuments(
       for (const q of sdkData.graphql.queries ?? []) {
         const name = typeof q === 'string' ? q : q.name;
         const desc = typeof q === 'string' ? '' : (q.description ?? '');
-        const args =
-          typeof q === 'string' ? '' : (q.args?.map((a: any) => a.name).join(' ') ?? '');
+        const args = typeof q === 'string' ? '' : (q.args?.map((a: any) => a.name).join(' ') ?? '');
         docs.push({
           id: `gql-q-${name}`,
           title: name,
@@ -122,8 +116,7 @@ export function buildSearchDocuments(
       for (const m of sdkData.graphql.mutations ?? []) {
         const name = typeof m === 'string' ? m : m.name;
         const desc = typeof m === 'string' ? '' : (m.description ?? '');
-        const args =
-          typeof m === 'string' ? '' : (m.args?.map((a: any) => a.name).join(' ') ?? '');
+        const args = typeof m === 'string' ? '' : (m.args?.map((a: any) => a.name).join(' ') ?? '');
         docs.push({
           id: `gql-m-${name}`,
           title: name,
@@ -159,9 +152,7 @@ export function buildSearchDocuments(
           id: `ws-${ch.name}`,
           title: ch.name,
           description: ch.description ?? '',
-          keywords: [ch.subscribeMessageName, ch.publishMessageName]
-            .filter(Boolean)
-            .join(' '),
+          keywords: [ch.subscribeMessageName, ch.publishMessageName].filter(Boolean).join(' '),
           group: 'WebSocket',
           breadcrumb: `WebSocket`,
           resultType: 'Channel',
@@ -170,24 +161,24 @@ export function buildSearchDocuments(
       }
     }
 
-    if (sdkData.grpc) {
-      for (const svc of sdkData.grpc.services ?? []) {
-        for (const m of svc.methods ?? []) {
-          docs.push({
-            id: `grpc-${svc.name}.${m.name}`,
-            title: `${svc.name}.${m.name}`,
-            description: m.description ?? '',
-            keywords: [m.inputType, m.outputType].filter(Boolean).join(' '),
-            group: 'gRPC',
-            breadcrumb: `gRPC › ${svc.name}`,
-            resultType: 'Method',
-            source: 'gRPC',
-          });
-        }
+    if (sdkData.openrpc) {
+      for (const m of sdkData.openrpc.methods ?? []) {
+        const tag = m.tags?.[0] ?? 'OpenRPC';
+        docs.push({
+          id: `openrpc-${m.name}`,
+          title: m.name,
+          description: m.summary ?? m.description ?? '',
+          keywords: [...(m.params?.map((p: any) => p.name) ?? []), m.resultType, ...m.tags]
+            .filter(Boolean)
+            .join(' '),
+          group: 'OpenRPC',
+          breadcrumb: `OpenRPC › ${tag}`,
+          resultType: 'Method',
+          source: 'OpenRPC',
+        });
       }
     }
   }
-
 
   if (docsData) {
     for (const section of docsData.sections ?? []) {

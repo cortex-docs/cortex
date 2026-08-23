@@ -2,6 +2,7 @@
 <% const r = it.resource; %>
 use serde_json::Value;
 use std::collections::HashMap;
+use reqwest::multipart::{Form, Part};
 use super::client::<%= clientClass %>;
 
 pub struct <%= r.className %>;
@@ -55,9 +56,60 @@ impl <%= r.className %> {
 <% } %>
 <% } %>
 <% if (typedBody) { %>
+<% if (!op.isMultipart && !op.isRawBinary) { %>
         let body_value = serde_json::to_value(body)?;
 <% } %>
+<% } %>
+<% if (op.isMultipart) { %>
+        let mut form = Form::new();
+<% for (const field of op.multipartFields) { %>
+<% if (field.isFile) { %>
+<% if (field.required) { %>
+        {
+            let file = &body.<%= field.name %>;
+            let mut part = Part::bytes(file.data.clone()).file_name(file.filename.clone());
+            if !file.content_type.is_empty() { part = part.mime_str(&file.content_type)?; }
+            form = form.part("<%= field.originalName %>", part);
+        }
+<% } else { %>
+        if let Some(file) = &body.<%= field.name %> {
+            let mut part = Part::bytes(file.data.clone()).file_name(file.filename.clone());
+            if !file.content_type.is_empty() { part = part.mime_str(&file.content_type)?; }
+            form = form.part("<%= field.originalName %>", part);
+        }
+<% } %>
+<% } else if (field.isFileArray) { %>
+<% if (field.required) { %>
+        for file in &body.<%= field.name %> {
+            let mut part = Part::bytes(file.data.clone()).file_name(file.filename.clone());
+            if !file.content_type.is_empty() { part = part.mime_str(&file.content_type)?; }
+            form = form.part("<%= field.originalName %>", part);
+        }
+<% } else { %>
+        if let Some(files) = &body.<%= field.name %> {
+            for file in files {
+                let mut part = Part::bytes(file.data.clone()).file_name(file.filename.clone());
+                if !file.content_type.is_empty() { part = part.mime_str(&file.content_type)?; }
+                form = form.part("<%= field.originalName %>", part);
+            }
+        }
+<% } %>
+<% } else if (field.required) { %>
+        form = form.text("<%= field.originalName %>", body.<%= field.name %>.to_string());
+<% } else { %>
+        if let Some(value) = &body.<%= field.name %> {
+            form = form.text("<%= field.originalName %>", value.to_string());
+        }
+<% } %>
+<% } %>
+        client.request_multipart("<%= op.method %>", <%= pathRef %>, <%= queryRef %>, form).await
+<% } else { %>
+<% if (op.isRawBinary) { %>
+        client.request_file("<%= op.method %>", <%= pathRef %>, <%= queryRef %>, body, "<%= op.contentType %>").await
+<% } else { %>
         client.request("<%= op.method %>", <%= pathRef %>, <%= queryRef %>, <%= bodyRef %>).await
+<% } %>
+<% } %>
     }
 
 <% } %>

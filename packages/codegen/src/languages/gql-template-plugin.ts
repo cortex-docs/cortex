@@ -1,9 +1,25 @@
-import * as path from 'node:path';
-import * as fs from 'node:fs';
-import { Eta } from 'eta';
-import type { GraphQLSpec, GraphQLOperation, GraphQLType, GraphQLField, GraphQLEnum, GraphQLInput } from '@cortex/core';
-import { toPascalCase, titleToPascalCase, toCamelCase, toSnakeCase, toKebabCase, toUpperSnakeCase } from '@cortex/core';
+import type {
+  GraphQLSpec,
+  GraphQLOperation,
+  GraphQLType,
+  GraphQLField,
+  GraphQLEnum,
+  GraphQLInput,
+} from '@cortex/core';
+import {
+  toPascalCase,
+  titleToPascalCase,
+  toCamelCase,
+  toSnakeCase,
+  toKebabCase,
+  toUpperSnakeCase,
+} from '@cortex/core';
 import type { GeneratedFile, NamingConventions } from '../plugin';
+import {
+  applyFileTemplateOverrides,
+  createLanguageTemplateRenderer,
+  type TemplateRenderOptions,
+} from '../template-renderer';
 import type { LanguageTypeMap } from './template-plugin';
 
 export interface OperationMeta {
@@ -66,26 +82,24 @@ const GQL_SCALARS = new Set(['ID', 'String', 'Int', 'Float', 'Boolean']);
 const SCALAR_ORDER = ['ID', 'String', 'Boolean', 'Int', 'Float'];
 
 export class GqlTemplateEngine {
-  private eta = new Eta({ autoEscape: false, autoTrim: false });
-
   async generate(
     spec: GraphQLSpec,
     packageName: string,
     version: string,
     langConfig: GqlLanguageConfig,
     sourceTitle?: string,
+    options?: TemplateRenderOptions,
   ): Promise<GeneratedFile[]> {
     const files: GeneratedFile[] = [];
-    const templateDir = this.getTemplateDir(langConfig.language);
+    const renderer = createLanguageTemplateRenderer(langConfig.language, options);
 
-    const enumNames = new Set(spec.enums.map(e => e.name));
-    const inputNames = new Set(spec.inputs.map(i => i.name));
-    const typesByName = new Map(spec.types.map(t => [t.name, t]));
+    const enumNames = new Set(spec.enums.map((e) => e.name));
+    const inputNames = new Set(spec.inputs.map((i) => i.name));
+    const typesByName = new Map(spec.types.map((t) => [t.name, t]));
 
     const isScalarType = (name: string): boolean => GQL_SCALARS.has(name);
 
-    const resolveType = (gqlType: string): string =>
-      langConfig.gqlTypeMap[gqlType] ?? gqlType;
+    const resolveType = (gqlType: string): string => langConfig.gqlTypeMap[gqlType] ?? gqlType;
 
     const nullable = langConfig.nullableWrapper ?? langConfig.typeMap.nullable;
     const inputNullable = langConfig.inputNullableWrapper ?? nullable;
@@ -132,7 +146,11 @@ export class GqlTemplateEngine {
       return required ? base : nullable(base);
     };
 
-    const buildFieldSelection = (typeName: string, indent: number, visited: Set<string> = new Set()): string => {
+    const buildFieldSelection = (
+      typeName: string,
+      indent: number,
+      visited: Set<string> = new Set(),
+    ): string => {
       const type = typesByName.get(typeName);
       if (!type || visited.has(typeName)) return '';
       visited.add(typeName);
@@ -155,8 +173,8 @@ export class GqlTemplateEngine {
 
     const buildDocument = (op: GraphQLOperation, kind: string): string => {
       const name = toPascalCase(op.name);
-      const vars = op.args.map(a => `$${a.name}: ${a.typeRaw}`).join(', ');
-      const passArgs = op.args.map(a => `${a.name}: $${a.name}`).join(', ');
+      const vars = op.args.map((a) => `$${a.name}: ${a.typeRaw}`).join(', ');
+      const passArgs = op.args.map((a) => `${a.name}: $${a.name}`).join(', ');
       const varsPart = vars ? `(${vars})` : '';
       const argsPart = passArgs ? `(${passArgs})` : '';
       const returnType = op.returnType;
@@ -174,7 +192,10 @@ export class GqlTemplateEngine {
 
     const buildOperations = (): OperationMeta[] => {
       const ops: OperationMeta[] = [];
-      const process = (operations: GraphQLOperation[], kind: 'Query' | 'Mutation' | 'Subscription') => {
+      const process = (
+        operations: GraphQLOperation[],
+        kind: 'Query' | 'Mutation' | 'Subscription',
+      ) => {
         for (const op of operations) {
           const typeName = toPascalCase(op.name);
           const returnRequired = op.returnTypeRaw.trim().endsWith('!');
@@ -190,7 +211,7 @@ export class GqlTemplateEngine {
             documentConstName: docName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase(),
             document: doc,
             documentEscaped: doc.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n'),
-            allArgsOptional: op.args.length === 0 || op.args.every(a => !a.required),
+            allArgsOptional: op.args.length === 0 || op.args.every((a) => !a.required),
             hasArgs: op.args.length > 0,
             returnTypeName: op.returnType,
             returnTypeStr: mapReturnType(op),
@@ -205,9 +226,9 @@ export class GqlTemplateEngine {
       return ops;
     };
 
-    const scalarEntries = SCALAR_ORDER
-      .filter(s => s in langConfig.gqlTypeMap)
-      .map(s => [s, langConfig.gqlTypeMap[s]] as [string, string]);
+    const scalarEntries = SCALAR_ORDER.filter((s) => s in langConfig.gqlTypeMap).map(
+      (s) => [s, langConfig.gqlTypeMap[s]] as [string, string],
+    );
 
     const data: GqlTemplateData = {
       spec,
@@ -234,138 +255,442 @@ export class GqlTemplateEngine {
       isScalarType,
       scalarEntries,
     };
+    const sourceDir = langConfig.language === 'go' ? 'src/graphql' : 'src';
 
-    const clientTemplate = this.loadTemplate(templateDir, 'graphql/client') ?? this.loadTemplate(templateDir, 'gql-client');
-    if (clientTemplate) {
+    const clientContent =
+      renderer.render('graphql/client', data) ?? renderer.render('gql-client', data);
+    if (clientContent !== null) {
       files.push({
-        path: `src/gql-client${langConfig.fileExtension}`,
-        content: this.eta.renderString(clientTemplate, data),
+        path: `${sourceDir}/gql-client${langConfig.fileExtension}`,
+        content: clientContent,
         overwrite: true,
       });
     }
 
-    const typesTemplate = this.loadTemplate(templateDir, 'graphql/types') ?? this.loadTemplate(templateDir, 'gql-types');
-    if (typesTemplate) {
+    const typesContent =
+      renderer.render('graphql/types', data) ?? renderer.render('gql-types', data);
+    if (typesContent !== null) {
       files.push({
-        path: `src/gql-types${langConfig.fileExtension}`,
-        content: this.eta.renderString(typesTemplate, data),
+        path: `${sourceDir}/gql-types${langConfig.fileExtension}`,
+        content: typesContent,
         overwrite: true,
       });
     }
 
-    const queryBuilderTemplate = this.loadTemplate(templateDir, 'graphql/query-builder') ?? this.loadTemplate(templateDir, 'gql-query-builder');
-    if (queryBuilderTemplate) {
+    const queryBuilderContent =
+      renderer.render('graphql/query-builder', data) ?? renderer.render('gql-query-builder', data);
+    if (queryBuilderContent !== null) {
       files.push({
-        path: `src/gql-query-builder${langConfig.fileExtension}`,
-        content: this.eta.renderString(queryBuilderTemplate, data),
+        path: `${sourceDir}/gql-query-builder${langConfig.fileExtension}`,
+        content: queryBuilderContent,
         overwrite: true,
       });
     }
 
     files.push(...langConfig.packageFiles(data));
-    return files;
-  }
-
-  private getTemplateDir(language: string): string {
-    const fromDist = path.resolve(__dirname, language, 'templates');
-    if (fs.existsSync(fromDist)) return fromDist;
-    const fromSrc = path.resolve(__dirname, '../../src/languages', language, 'templates');
-    if (fs.existsSync(fromSrc)) return fromSrc;
-    return fromDist;
-  }
-
-  private loadTemplate(dir: string, name: string): string | null {
-    const candidate = path.join(dir, `${name}.ejs`);
-    if (fs.existsSync(candidate)) return fs.readFileSync(candidate, 'utf-8');
-    return null;
+    return applyFileTemplateOverrides(files, renderer, data, 'graphql');
   }
 }
-
-const gqlScalarMap = { ID: 'string', String: 'string', Int: 'integer', Float: 'number', Boolean: 'boolean' };
 
 export function createGqlPluginForLanguage(language: string): GqlLanguageConfig | null {
   const configs: Record<string, () => GqlLanguageConfig> = {
     typescript: () => ({
-      language: 'typescript', fileExtension: '.ts',
-      typeMap: { string: 'string', integer: 'number', number: 'number', boolean: 'boolean', array: (i) => `${i}[]`, object: 'Record<string, unknown>', map: (v) => `Record<string, ${v}>`, any: 'unknown', void: 'void', datetime: 'string', nullable: (t) => `${t} | null` },
-      naming: { className: toPascalCase, methodName: toCamelCase, fileName: toKebabCase, propertyName: toCamelCase, enumValue: toPascalCase, parameterName: toCamelCase },
-      gqlTypeMap: { ID: 'string', String: 'string', Int: 'number', Float: 'number', Boolean: 'boolean' },
+      language: 'typescript',
+      fileExtension: '.ts',
+      typeMap: {
+        string: 'string',
+        integer: 'number',
+        number: 'number',
+        boolean: 'boolean',
+        array: (i) => `${i}[]`,
+        object: 'Record<string, unknown>',
+        map: (v) => `Record<string, ${v}>`,
+        any: 'unknown',
+        void: 'void',
+        datetime: 'string',
+        nullable: (t) => `${t} | null`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toCamelCase,
+        fileName: toKebabCase,
+        propertyName: toCamelCase,
+        enumValue: toPascalCase,
+        parameterName: toCamelCase,
+      },
+      gqlTypeMap: {
+        ID: 'string',
+        String: 'string',
+        Int: 'number',
+        Float: 'number',
+        Boolean: 'boolean',
+      },
       nullableWrapper: (t) => `Maybe<${t}>`,
       inputNullableWrapper: (t) => `InputMaybe<${t}>`,
       listWrapper: (t) => `Array<${t}>`,
-      packageFiles: (data) => [{ path: 'package.json', content: JSON.stringify({ name: data.packageName, version: data.version, type: 'module', main: './dist/gql-client.js', devDependencies: { typescript: '^5.8.0' } }, null, 2) + '\n', overwrite: true }],
+      packageFiles: (data) => [
+        {
+          path: 'package.json',
+          content:
+            JSON.stringify(
+              {
+                name: data.packageName,
+                version: data.version,
+                type: 'module',
+                main: './dist/gql-client.js',
+                devDependencies: { typescript: '^5.8.0' },
+              },
+              null,
+              2,
+            ) + '\n',
+          overwrite: true,
+        },
+      ],
     }),
     python: () => ({
-      language: 'python', fileExtension: '.py',
-      typeMap: { string: 'str', integer: 'int', number: 'float', boolean: 'bool', array: (i) => `list[${i}]`, object: 'dict[str, Any]', map: (v) => `dict[str, ${v}]`, any: 'Any', void: 'None', datetime: 'str', nullable: (t) => `Optional[${t}]` },
-      naming: { className: toPascalCase, methodName: toSnakeCase, fileName: toSnakeCase, propertyName: toSnakeCase, enumValue: toUpperSnakeCase, parameterName: toSnakeCase },
+      language: 'python',
+      fileExtension: '.py',
+      typeMap: {
+        string: 'str',
+        integer: 'int',
+        number: 'float',
+        boolean: 'bool',
+        array: (i) => `list[${i}]`,
+        object: 'dict[str, Any]',
+        map: (v) => `dict[str, ${v}]`,
+        any: 'Any',
+        void: 'None',
+        datetime: 'str',
+        nullable: (t) => `Optional[${t}]`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toSnakeCase,
+        fileName: toSnakeCase,
+        propertyName: toSnakeCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toSnakeCase,
+      },
       gqlTypeMap: { ID: 'str', String: 'str', Int: 'int', Float: 'float', Boolean: 'bool' },
       packageFiles: (data) => {
         const deps = ['"httpx>=0.27.0"'];
         if (data.subscriptions.length > 0) deps.push('"websockets>=12.0"');
-        return [{ path: 'setup.py', content: `from setuptools import setup\nsetup(name="${data.packageName}", version="${data.version}", install_requires=[${deps.join(', ')}])\n`, overwrite: true }];
+        return [
+          {
+            path: 'setup.py',
+            content: `from setuptools import setup\nsetup(name="${data.packageName}", version="${data.version}", install_requires=[${deps.join(', ')}])\n`,
+            overwrite: true,
+          },
+        ];
       },
     }),
     go: () => ({
-      language: 'go', fileExtension: '.go',
-      typeMap: { string: 'string', integer: 'int', number: 'float64', boolean: 'bool', array: (i) => `[]${i}`, object: 'map[string]interface{}', map: (v) => `map[string]${v}`, any: 'interface{}', void: '', datetime: 'string', nullable: (t) => `*${t}` },
-      naming: { className: toPascalCase, methodName: toPascalCase, fileName: toSnakeCase, propertyName: toPascalCase, enumValue: toUpperSnakeCase, parameterName: toCamelCase },
+      language: 'go',
+      fileExtension: '.go',
+      typeMap: {
+        string: 'string',
+        integer: 'int',
+        number: 'float64',
+        boolean: 'bool',
+        array: (i) => `[]${i}`,
+        object: 'map[string]interface{}',
+        map: (v) => `map[string]${v}`,
+        any: 'interface{}',
+        void: '',
+        datetime: 'string',
+        nullable: (t) => `*${t}`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toPascalCase,
+        fileName: toSnakeCase,
+        propertyName: toPascalCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toCamelCase,
+      },
       gqlTypeMap: { ID: 'string', String: 'string', Int: 'int', Float: 'float64', Boolean: 'bool' },
-      packageFiles: (data) => [{ path: 'go.mod', content: `module ${data.packageName}\n\ngo 1.21\n`, overwrite: true }],
+      packageFiles: (data) => [
+        { path: 'go.mod', content: `module ${data.packageName}\n\ngo 1.21\n`, overwrite: true },
+      ],
     }),
     java: () => ({
-      language: 'java', fileExtension: '.java',
-      typeMap: { string: 'String', integer: 'Integer', number: 'Double', boolean: 'Boolean', array: (i) => `List<${i}>`, object: 'Map<String, Object>', map: (v) => `Map<String, ${v}>`, any: 'Object', void: 'void', datetime: 'String', nullable: (t) => t },
-      naming: { className: toPascalCase, methodName: toCamelCase, fileName: toPascalCase, propertyName: toCamelCase, enumValue: toUpperSnakeCase, parameterName: toCamelCase },
-      gqlTypeMap: { ID: 'String', String: 'String', Int: 'Integer', Float: 'Double', Boolean: 'Boolean' },
-      packageFiles: (data) => [{ path: 'pom.xml', content: `<project><modelVersion>4.0.0</modelVersion><groupId>${data.packageName}</groupId><artifactId>${data.packageName}-gql</artifactId><version>${data.version}</version><dependencies><dependency><groupId>com.google.code.gson</groupId><artifactId>gson</artifactId><version>2.11.0</version></dependency></dependencies></project>\n`, overwrite: true }],
+      language: 'java',
+      fileExtension: '.java',
+      typeMap: {
+        string: 'String',
+        integer: 'Integer',
+        number: 'Double',
+        boolean: 'Boolean',
+        array: (i) => `List<${i}>`,
+        object: 'Map<String, Object>',
+        map: (v) => `Map<String, ${v}>`,
+        any: 'Object',
+        void: 'void',
+        datetime: 'String',
+        nullable: (t) => t,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toCamelCase,
+        fileName: toPascalCase,
+        propertyName: toCamelCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toCamelCase,
+      },
+      gqlTypeMap: {
+        ID: 'String',
+        String: 'String',
+        Int: 'Integer',
+        Float: 'Double',
+        Boolean: 'Boolean',
+      },
+      packageFiles: (data) => [
+        {
+          path: 'pom.xml',
+          content: `<project><modelVersion>4.0.0</modelVersion><groupId>${data.packageName}</groupId><artifactId>${data.packageName}-gql</artifactId><version>${data.version}</version><dependencies><dependency><groupId>com.google.code.gson</groupId><artifactId>gson</artifactId><version>2.11.0</version></dependency></dependencies></project>\n`,
+          overwrite: true,
+        },
+      ],
     }),
     kotlin: () => ({
-      language: 'kotlin', fileExtension: '.kt',
-      typeMap: { string: 'String', integer: 'Int', number: 'Double', boolean: 'Boolean', array: (i) => `List<${i}>`, object: 'Map<String, kotlinx.serialization.json.JsonElement>', map: (v) => `Map<String, ${v}>`, any: 'kotlinx.serialization.json.JsonElement', void: 'Unit', datetime: 'String', nullable: (t) => `${t}?` },
-      naming: { className: toPascalCase, methodName: toCamelCase, fileName: toPascalCase, propertyName: toCamelCase, enumValue: toUpperSnakeCase, parameterName: toCamelCase },
-      gqlTypeMap: { ID: 'String', String: 'String', Int: 'Int', Float: 'Double', Boolean: 'Boolean' },
-      packageFiles: (data) => [{ path: 'build.gradle.kts', content: `plugins { kotlin("jvm") version "2.1.0" }\nversion = "${data.version}"\nrepositories { mavenCentral() }\n`, overwrite: true }],
+      language: 'kotlin',
+      fileExtension: '.kt',
+      typeMap: {
+        string: 'String',
+        integer: 'Int',
+        number: 'Double',
+        boolean: 'Boolean',
+        array: (i) => `List<${i}>`,
+        object: 'Map<String, kotlinx.serialization.json.JsonElement>',
+        map: (v) => `Map<String, ${v}>`,
+        any: 'kotlinx.serialization.json.JsonElement',
+        void: 'Unit',
+        datetime: 'String',
+        nullable: (t) => `${t}?`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toCamelCase,
+        fileName: toPascalCase,
+        propertyName: toCamelCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toCamelCase,
+      },
+      gqlTypeMap: {
+        ID: 'String',
+        String: 'String',
+        Int: 'Int',
+        Float: 'Double',
+        Boolean: 'Boolean',
+      },
+      packageFiles: (data) => [
+        {
+          path: 'build.gradle.kts',
+          content: `plugins { kotlin("jvm") version "2.1.0" }\nversion = "${data.version}"\nrepositories { mavenCentral() }\n`,
+          overwrite: true,
+        },
+      ],
     }),
     ruby: () => ({
-      language: 'ruby', fileExtension: '.rb',
-      typeMap: { string: 'String', integer: 'Integer', number: 'Float', boolean: 'Boolean', array: (i) => `Array`, object: 'Hash', map: () => `Hash`, any: 'Object', void: 'nil', datetime: 'String', nullable: (t) => t },
-      naming: { className: toPascalCase, methodName: toSnakeCase, fileName: toSnakeCase, propertyName: toSnakeCase, enumValue: toUpperSnakeCase, parameterName: toSnakeCase },
-      gqlTypeMap: { ID: 'String', String: 'String', Int: 'Integer', Float: 'Float', Boolean: 'Boolean' },
-      packageFiles: (data) => [{ path: 'Gemfile', content: `source "https://rubygems.org"\ngem "faraday"\n`, overwrite: true }],
+      language: 'ruby',
+      fileExtension: '.rb',
+      typeMap: {
+        string: 'String',
+        integer: 'Integer',
+        number: 'Float',
+        boolean: 'Boolean',
+        array: () => `Array`,
+        object: 'Hash',
+        map: () => `Hash`,
+        any: 'Object',
+        void: 'nil',
+        datetime: 'String',
+        nullable: (t) => t,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toSnakeCase,
+        fileName: toSnakeCase,
+        propertyName: toSnakeCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toSnakeCase,
+      },
+      gqlTypeMap: {
+        ID: 'String',
+        String: 'String',
+        Int: 'Integer',
+        Float: 'Float',
+        Boolean: 'Boolean',
+      },
+      packageFiles: () => [
+        {
+          path: 'Gemfile',
+          content: `source "https://rubygems.org"\ngem "faraday"\n`,
+          overwrite: true,
+        },
+      ],
     }),
     php: () => ({
-      language: 'php', fileExtension: '.php',
-      typeMap: { string: 'string', integer: 'int', number: 'float', boolean: 'bool', array: () => 'array', object: 'array', map: () => 'array', any: 'mixed', void: 'void', datetime: 'string', nullable: (t) => `?${t}` },
-      naming: { className: toPascalCase, methodName: toCamelCase, fileName: toPascalCase, propertyName: toCamelCase, enumValue: toUpperSnakeCase, parameterName: toCamelCase },
+      language: 'php',
+      fileExtension: '.php',
+      typeMap: {
+        string: 'string',
+        integer: 'int',
+        number: 'float',
+        boolean: 'bool',
+        array: () => 'array',
+        object: 'array',
+        map: () => 'array',
+        any: 'mixed',
+        void: 'void',
+        datetime: 'string',
+        nullable: (t) => `?${t}`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toCamelCase,
+        fileName: toPascalCase,
+        propertyName: toCamelCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toCamelCase,
+      },
       gqlTypeMap: { ID: 'string', String: 'string', Int: 'int', Float: 'float', Boolean: 'bool' },
-      packageFiles: (data) => [{ path: 'composer.json', content: JSON.stringify({ name: data.packageName, require: { php: '>=8.1', 'guzzlehttp/guzzle': '^7.0' } }, null, 4) + '\n', overwrite: true }],
+      packageFiles: (data) => [
+        {
+          path: 'composer.json',
+          content:
+            JSON.stringify(
+              { name: data.packageName, require: { php: '>=8.1', 'guzzlehttp/guzzle': '^7.0' } },
+              null,
+              4,
+            ) + '\n',
+          overwrite: true,
+        },
+      ],
     }),
     csharp: () => ({
-      language: 'csharp', fileExtension: '.cs',
-      typeMap: { string: 'string', integer: 'int', number: 'double', boolean: 'bool', array: (i) => `List<${i}>`, object: 'Dictionary<string, object>', map: (v) => `Dictionary<string, ${v}>`, any: 'object', void: 'void', datetime: 'DateTimeOffset', nullable: (t) => `${t}?` },
-      naming: { className: toPascalCase, methodName: toPascalCase, fileName: toPascalCase, propertyName: toPascalCase, enumValue: toUpperSnakeCase, parameterName: toPascalCase },
+      language: 'csharp',
+      fileExtension: '.cs',
+      typeMap: {
+        string: 'string',
+        integer: 'int',
+        number: 'double',
+        boolean: 'bool',
+        array: (i) => `List<${i}>`,
+        object: 'Dictionary<string, object>',
+        map: (v) => `Dictionary<string, ${v}>`,
+        any: 'object',
+        void: 'void',
+        datetime: 'DateTimeOffset',
+        nullable: (t) => `${t}?`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toPascalCase,
+        fileName: toPascalCase,
+        propertyName: toPascalCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toPascalCase,
+      },
       gqlTypeMap: { ID: 'string', String: 'string', Int: 'int', Float: 'double', Boolean: 'bool' },
-      packageFiles: (data) => [{ path: `${toPascalCase(data.packageName)}.csproj`, content: `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework><Version>${data.version}</Version></PropertyGroup><ItemGroup><PackageReference Include="System.Text.Json" Version="9.0.0" /></ItemGroup></Project>\n`, overwrite: true }],
+      packageFiles: (data) => [
+        {
+          path: `${toPascalCase(data.packageName)}.csproj`,
+          content: `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework><Version>${data.version}</Version></PropertyGroup><ItemGroup><PackageReference Include="System.Text.Json" Version="9.0.0" /></ItemGroup></Project>\n`,
+          overwrite: true,
+        },
+      ],
     }),
     rust: () => ({
-      language: 'rust', fileExtension: '.rs',
-      typeMap: { string: 'String', integer: 'i64', number: 'f64', boolean: 'bool', array: (i) => `Vec<${i}>`, object: 'serde_json::Value', map: (v) => `std::collections::HashMap<String, ${v}>`, any: 'serde_json::Value', void: '()', datetime: 'String', nullable: (t) => `Option<${t}>` },
-      naming: { className: toPascalCase, methodName: toSnakeCase, fileName: toSnakeCase, propertyName: toSnakeCase, enumValue: toPascalCase, parameterName: toSnakeCase },
+      language: 'rust',
+      fileExtension: '.rs',
+      typeMap: {
+        string: 'String',
+        integer: 'i64',
+        number: 'f64',
+        boolean: 'bool',
+        array: (i) => `Vec<${i}>`,
+        object: 'serde_json::Value',
+        map: (v) => `std::collections::HashMap<String, ${v}>`,
+        any: 'serde_json::Value',
+        void: '()',
+        datetime: 'String',
+        nullable: (t) => `Option<${t}>`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toSnakeCase,
+        fileName: toSnakeCase,
+        propertyName: toSnakeCase,
+        enumValue: toPascalCase,
+        parameterName: toSnakeCase,
+      },
       gqlTypeMap: { ID: 'String', String: 'String', Int: 'i64', Float: 'f64', Boolean: 'bool' },
-      packageFiles: (data) => [{ path: 'Cargo.toml', content: `[package]\nname = "${data.packageName}"\nversion = "${data.version}"\nedition = "2021"\n\n[dependencies]\nreqwest = { version = "0.12", features = ["json"] }\nserde = { version = "1", features = ["derive"] }\nserde_json = "1"\ntokio = { version = "1", features = ["full"] }\n`, overwrite: true }],
+      packageFiles: (data) => [
+        {
+          path: 'Cargo.toml',
+          content: `[package]\nname = "${data.packageName}"\nversion = "${data.version}"\nedition = "2021"\n\n[dependencies]\nreqwest = { version = "0.12", features = ["json"] }\nserde = { version = "1", features = ["derive"] }\nserde_json = "1"\ntokio = { version = "1", features = ["full"] }\n`,
+          overwrite: true,
+        },
+      ],
     }),
     cpp: () => ({
-      language: 'cpp', fileExtension: '.hpp',
-      typeMap: { string: 'std::string', integer: 'int64_t', number: 'double', boolean: 'bool', array: (i) => `std::vector<${i}>`, object: 'nlohmann::json', map: (v) => `std::map<std::string, ${v}>`, any: 'nlohmann::json', void: 'void', datetime: 'std::string', nullable: (t) => `std::optional<${t}>` },
-      naming: { className: toPascalCase, methodName: toSnakeCase, fileName: toSnakeCase, propertyName: toSnakeCase, enumValue: toUpperSnakeCase, parameterName: toSnakeCase },
-      gqlTypeMap: { ID: 'std::string', String: 'std::string', Int: 'int64_t', Float: 'double', Boolean: 'bool' },
+      language: 'cpp',
+      fileExtension: '.hpp',
+      typeMap: {
+        string: 'std::string',
+        integer: 'int64_t',
+        number: 'double',
+        boolean: 'bool',
+        array: (i) => `std::vector<${i}>`,
+        object: 'nlohmann::json',
+        map: (v) => `std::map<std::string, ${v}>`,
+        any: 'nlohmann::json',
+        void: 'void',
+        datetime: 'std::string',
+        nullable: (t) => `std::optional<${t}>`,
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toSnakeCase,
+        fileName: toSnakeCase,
+        propertyName: toSnakeCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toSnakeCase,
+      },
+      gqlTypeMap: {
+        ID: 'std::string',
+        String: 'std::string',
+        Int: 'int64_t',
+        Float: 'double',
+        Boolean: 'bool',
+      },
       packageFiles: () => [],
     }),
     c: () => ({
-      language: 'c', fileExtension: '.h',
-      typeMap: { string: 'char*', integer: 'int64_t', number: 'double', boolean: 'int', array: () => 'cJSON*', object: 'cJSON*', map: () => 'cJSON*', any: 'cJSON*', void: 'void', datetime: 'char*', nullable: (t) => t.endsWith('*') ? t : `${t}` },
-      naming: { className: toPascalCase, methodName: toSnakeCase, fileName: toSnakeCase, propertyName: toSnakeCase, enumValue: toUpperSnakeCase, parameterName: toSnakeCase },
+      language: 'c',
+      fileExtension: '.h',
+      typeMap: {
+        string: 'char*',
+        integer: 'int64_t',
+        number: 'double',
+        boolean: 'int',
+        array: () => 'cJSON*',
+        object: 'cJSON*',
+        map: () => 'cJSON*',
+        any: 'cJSON*',
+        void: 'void',
+        datetime: 'char*',
+        nullable: (t) => (t.endsWith('*') ? t : `${t}`),
+      },
+      naming: {
+        className: toPascalCase,
+        methodName: toSnakeCase,
+        fileName: toSnakeCase,
+        propertyName: toSnakeCase,
+        enumValue: toUpperSnakeCase,
+        parameterName: toSnakeCase,
+      },
       gqlTypeMap: { ID: 'char*', String: 'char*', Int: 'int64_t', Float: 'double', Boolean: 'int' },
       packageFiles: () => [],
     }),

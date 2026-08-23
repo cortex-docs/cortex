@@ -1,0 +1,12 @@
+.git
+.next
+.turbo
+.vscode
+coverage
+generated
+node_modules
+tmp
+**/.next
+**/coverage
+**/dist
+**/node_modules

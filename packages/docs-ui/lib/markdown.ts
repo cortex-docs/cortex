@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
 
 const processor = unified()
@@ -11,7 +12,8 @@ const processor = unified()
   .use(remarkGfm)
   .use(remarkRehype)
   .use(rehypeSlug)
-  .use(rehypeHighlight, { detect: true })
+  .use(rehypeSanitize)
+  .use(rehypeHighlight, { detect: false })
   .use(rehypeStringify);
 
 export async function renderMarkdown(markdown: string): Promise<string> {

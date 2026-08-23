@@ -1,6 +1,6 @@
 <?php
 
-namespace <%= it.packageName.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('\\') %>;
+namespace <%= it.naming.className(it.packageName.replace(/[\/.]+/g, '-')) %>;
 
 <% for (const [name, schema] of Array.from(it.schemas.entries())) { -%>
 <% const className = it.naming.className(name); -%>

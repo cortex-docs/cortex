@@ -21,6 +21,7 @@ export class KotlinPlugin extends TemplateBasedPlugin {
       any: 'kotlinx.serialization.json.JsonElement',
       void: 'Unit',
       datetime: 'String',
+      file: 'FileUpload',
       nullable: (type) => `${type}?`,
     },
     naming: {
@@ -31,9 +32,7 @@ export class KotlinPlugin extends TemplateBasedPlugin {
       enumValue: toUpperSnakeCase,
       parameterName: toCamelCase,
     },
-    packageTemplates: [
-      { template: 'build-gradle-kts', path: 'build.gradle.kts' },
-    ],
+    packageTemplates: [{ template: 'build-gradle-kts', path: 'build.gradle.kts' }],
     packageFiles: () => [],
   };
 }

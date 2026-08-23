@@ -1,12 +1,7 @@
 import * as fs from 'node:fs';
 import * as yaml from 'js-yaml';
 import type { SchemaObject } from '../openapi/types';
-import type {
-  AsyncApiSpec,
-  AsyncApiServer,
-  AsyncApiChannel,
-  AsyncApiOperation,
-} from './types';
+import type { AsyncApiSpec, AsyncApiServer, AsyncApiChannel, AsyncApiOperation } from './types';
 
 /** Raw parsed AsyncAPI document before transformation. */
 interface RawAsyncApiDocument {
@@ -100,7 +95,7 @@ export class AsyncAPIParser {
 
   private async loadContent(specPath: string): Promise<string> {
     if (specPath.startsWith('http://') || specPath.startsWith('https://')) {
-      const res = await fetch(specPath);
+      const res = await fetch(specPath, { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(`Failed to fetch ${specPath}: ${res.status}`);
       return res.text();
     }
@@ -158,14 +153,14 @@ export class AsyncAPIParser {
       for (const [, op] of Object.entries(operations)) {
         const action = op.action;
         const channelField = op.channel;
-        const channelRef = typeof channelField === 'object' && channelField !== null
-          ? channelField.$ref ?? undefined
-          : typeof channelField === 'string'
-            ? channelField
-            : undefined;
-        const channelKey = typeof channelRef === 'string'
-          ? channelRef.replace('#/channels/', '')
-          : undefined;
+        const channelRef =
+          typeof channelField === 'object' && channelField !== null
+            ? (channelField.$ref ?? undefined)
+            : typeof channelField === 'string'
+              ? channelField
+              : undefined;
+        const channelKey =
+          typeof channelRef === 'string' ? channelRef.replace('#/channels/', '') : undefined;
 
         if (!channelKey || !channelMap.has(channelKey)) continue;
 
@@ -186,9 +181,7 @@ export class AsyncAPIParser {
   private extractOperation(op: RawAsyncApiOperation): AsyncApiOperation {
     const message = op.message ?? op.messages?.[Object.keys(op.messages ?? {})[0]];
     const rawPayload = message?.payload;
-    const schemaInput = rawPayload?.type
-      ? rawPayload
-      : rawPayload?.payload ?? undefined;
+    const schemaInput = rawPayload?.type ? rawPayload : (rawPayload?.payload ?? undefined);
     return {
       operationId: op.operationId,
       summary: op.summary ?? op.title,

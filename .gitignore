@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .next/
+.next-build/
 .turbo/
 *.tsbuildinfo
 coverage/
@@ -12,6 +13,9 @@ playwright-report/
 generated/
 .cortex/
 .playwright-mcp
+.pytest_cache/
+__pycache__/
+*.pyc
 test-project/
 e2e/docker/tests/test-rust/target/
 e2e/docker/tests/test-csharp/bin/

@@ -16,6 +16,9 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
+#include <chrono>
+#include <memory>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -29,9 +32,13 @@ struct <%= it.clientClass %>Options {
   std::string endpoint = "<%= it.endpoint %>";
 <% if (hasSubscriptions) { -%>
   std::string ws_endpoint;
+  bool reconnect = true;
+  int reconnect_interval_ms = 3000;
+  int max_reconnect_attempts = 10;
 <% } -%>
   std::map<std::string, std::string> headers;
   std::string bearer_token;
+  int timeout = 15;
 };
 
 class GqlError : public std::runtime_error {
@@ -43,16 +50,34 @@ public:
 <% if (hasSubscriptions) { %>
 
 struct SubscriptionHandle {
-  std::atomic<bool>* cancelled;
+  std::shared_ptr<std::atomic<bool>> cancelled;
+  std::shared_ptr<std::atomic<int>> socket_fd;
   std::thread worker;
+
+  SubscriptionHandle(
+      std::shared_ptr<std::atomic<bool>> cancelled_value,
+      std::shared_ptr<std::atomic<int>> socket_value,
+      std::thread worker_value)
+    : cancelled(std::move(cancelled_value)),
+      socket_fd(std::move(socket_value)),
+      worker(std::move(worker_value)) {}
+
+  SubscriptionHandle(const SubscriptionHandle&) = delete;
+  SubscriptionHandle& operator=(const SubscriptionHandle&) = delete;
+  SubscriptionHandle(SubscriptionHandle&&) noexcept = default;
+  SubscriptionHandle& operator=(SubscriptionHandle&&) = delete;
 
   void unsubscribe() {
     if (cancelled) cancelled->store(true);
-    if (worker.joinable()) worker.detach();
+    if (socket_fd) {
+      int fd = socket_fd->load();
+      if (fd >= 0) ::shutdown(fd, SHUT_RDWR);
+    }
+    if (worker.joinable()) worker.join();
   }
 
   ~SubscriptionHandle() {
-    if (worker.joinable()) worker.detach();
+    unsubscribe();
   }
 };
 <% } %>
@@ -61,8 +86,12 @@ class <%= it.clientClass %> {
   std::string endpoint_;
 <% if (hasSubscriptions) { -%>
   std::string ws_endpoint_;
+  bool reconnect_;
+  int reconnect_interval_ms_;
+  int max_reconnect_attempts_;
 <% } -%>
   std::map<std::string, std::string> headers_;
+  int timeout_;
 
   nlohmann::json execute(const std::string& query, const nlohmann::json& variables) {
     std::string base_url = endpoint_;
@@ -76,6 +105,8 @@ class <%= it.clientClass %> {
       }
     }
     httplib::Client cli(base_url);
+    cli.set_connection_timeout(timeout_);
+    cli.set_read_timeout(timeout_);
     nlohmann::json req_body = {{"query", query}};
     if (!variables.empty() && !variables.is_null()) {
       req_body["variables"] = variables;
@@ -103,11 +134,14 @@ class <%= it.clientClass %> {
 
 public:
   explicit <%= it.clientClass %>(const <%= it.clientClass %>Options& opts = {})
-    : endpoint_(opts.endpoint)
+    : endpoint_(opts.endpoint), timeout_(opts.timeout)
 <% if (hasSubscriptions) { -%>
     , ws_endpoint_(opts.ws_endpoint.empty()
         ? [](std::string e) { if (e.substr(0, 5) == "https") return "wss" + e.substr(5); if (e.substr(0, 4) == "http") return "ws" + e.substr(4); return e; }(opts.endpoint)
         : opts.ws_endpoint)
+    , reconnect_(opts.reconnect)
+    , reconnect_interval_ms_(opts.reconnect_interval_ms)
+    , max_reconnect_attempts_(opts.max_reconnect_attempts)
 <% } -%>
   {
     headers_["Content-Type"] = "application/json";
@@ -152,10 +186,15 @@ public:
     std::string query = doc.first;
     nlohmann::json variables = doc.second;
     std::string ws_url = ws_endpoint_;
+    bool reconnect = reconnect_;
+    int reconnect_interval_ms = reconnect_interval_ms_;
+    int max_reconnect_attempts = max_reconnect_attempts_;
 
-    auto cancelled = new std::atomic<bool>(false);
+    auto cancelled = std::make_shared<std::atomic<bool>>(false);
+    auto socket_fd = std::make_shared<std::atomic<int>>(-1);
 
-    auto worker = std::thread([query, variables, ws_url, on_data, cancelled]() {
+    auto worker = std::thread([query, variables, ws_url, on_data, cancelled, socket_fd,
+                               reconnect, reconnect_interval_ms, max_reconnect_attempts]() {
       // Parse ws_url
       std::string host, path = "/graphql";
       int port = 80;
@@ -175,15 +214,26 @@ public:
         host = url;
       }
 
+      int reconnect_attempts = 0;
+      while (!cancelled->load()) {
+      bool connection_lost = false;
+      bool completed = false;
       struct addrinfo hints{}, *res;
       hints.ai_family = AF_INET;
       hints.ai_socktype = SOCK_STREAM;
-      if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) return;
+      if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) {
+        connection_lost = true;
+      }
 
-      int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-      if (sock < 0) { freeaddrinfo(res); return; }
-      if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) { close(sock); freeaddrinfo(res); return; }
-      freeaddrinfo(res);
+      int sock = -1;
+      if (!connection_lost) {
+        sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        socket_fd->store(sock);
+        if (sock < 0 || connect(sock, res->ai_addr, res->ai_addrlen) < 0) connection_lost = true;
+        freeaddrinfo(res);
+      }
+
+      if (!connection_lost) {
 
       // WebSocket handshake
       std::string key = "dGhlIHNhbXBsZSBub25jZQ==";
@@ -195,13 +245,13 @@ public:
         "Sec-WebSocket-Version: 13\r\n"
         "Sec-WebSocket-Protocol: graphql-transport-ws\r\n"
         "\r\n";
-      ::send(sock, handshake.c_str(), handshake.size(), 0);
+      ::send(sock, handshake.c_str(), handshake.size(), MSG_NOSIGNAL);
 
       // Read handshake response
       char buf[4096];
       int n = recv(sock, buf, sizeof(buf) - 1, 0);
-      if (n <= 0) { close(sock); return; }
-      buf[n] = 0;
+      if (n <= 0) connection_lost = true;
+      else buf[n] = 0;
 
       auto ws_send = [&](const std::string& data) {
         std::vector<uint8_t> frame;
@@ -222,12 +272,13 @@ public:
         for (size_t i = 0; i < data.size(); ++i) {
           frame.push_back(data[i] ^ mask[i % 4]);
         }
-        ::send(sock, frame.data(), frame.size(), 0);
+        ::send(sock, frame.data(), frame.size(), MSG_NOSIGNAL);
       };
 
       auto ws_recv = [&]() -> std::string {
         uint8_t header[2];
         if (recv(sock, header, 2, MSG_WAITALL) != 2) return "";
+        uint8_t opcode = header[0] & 0x0F;
         uint64_t len = header[1] & 0x7F;
         bool masked = header[1] & 0x80;
         if (len == 126) {
@@ -250,31 +301,32 @@ public:
           received += r;
         }
         if (masked) for (size_t i = 0; i < len; ++i) data[i] ^= mask[i % 4];
+        if (opcode == 0x8) return "";
         return data;
       };
 
       // connection_init
-      ws_send(nlohmann::json{{"type", "connection_init"}}.dump());
+      if (!connection_lost) ws_send(nlohmann::json{{"type", "connection_init"}}.dump());
 
       // Wait for connection_ack
-      while (true) {
+      while (!connection_lost) {
         auto msg = ws_recv();
-        if (msg.empty()) { close(sock); return; }
+        if (msg.empty()) { connection_lost = true; break; }
         auto parsed = nlohmann::json::parse(msg, nullptr, false);
         if (!parsed.is_discarded() && parsed.value("type", "") == "connection_ack") break;
       }
 
       // subscribe
-      ws_send(nlohmann::json{
+      if (!connection_lost) ws_send(nlohmann::json{
         {"id", "1"},
         {"type", "subscribe"},
         {"payload", {{"query", query}, {"variables", variables}}}
       }.dump());
 
       // Read events
-      while (!cancelled->load()) {
+      while (!connection_lost && !cancelled->load()) {
         auto msg = ws_recv();
-        if (msg.empty()) break;
+        if (msg.empty()) { connection_lost = true; break; }
         auto parsed = nlohmann::json::parse(msg, nullptr, false);
         if (parsed.is_discarded()) continue;
         auto type = parsed.value("type", "");
@@ -282,15 +334,24 @@ public:
           auto data = parsed.value("payload", nlohmann::json{}).value("data", nlohmann::json{});
           on_data(data);
         } else if (type == "complete") {
+          completed = true;
           break;
         }
       }
 
-      ws_send(nlohmann::json{{"id", "1"}, {"type", "complete"}}.dump());
-      close(sock);
+      if (!connection_lost) ws_send(nlohmann::json{{"id", "1"}, {"type", "complete"}}.dump());
+      }
+      if (sock >= 0) close(sock);
+      socket_fd->store(-1);
+
+      if (cancelled->load() || completed || !connection_lost) break;
+      if (!reconnect || reconnect_attempts >= max_reconnect_attempts) break;
+      reconnect_attempts++;
+      std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_interval_ms));
+      }
     });
 
-    return SubscriptionHandle{cancelled, std::move(worker)};
+    return SubscriptionHandle{cancelled, socket_fd, std::move(worker)};
   }
 
   template<typename T = nlohmann::json, typename Fn>
@@ -309,14 +370,19 @@ public:
       }
     });
 
+    bool completed_in_time = false;
     {
       std::unique_lock<std::mutex> lock(mtx);
-      if (!cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&] { return received; })) {
-        handle.unsubscribe();
-        throw GqlError("subscription timeout");
-      }
+      completed_in_time = cv.wait_for(
+        lock,
+        std::chrono::milliseconds(timeout_ms),
+        [&] { return received; });
     }
 
+    if (!completed_in_time) {
+      handle.unsubscribe();
+      throw GqlError("subscription timeout");
+    }
     handle.unsubscribe();
     if constexpr (std::is_same_v<T, nlohmann::json>) return result;
     else return result.get<T>();

@@ -1,5 +1,5 @@
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
-<% const ns = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const ns = it.naming.className(it.config.languageConfig.package_name.replace(/[\/.]+/g, '-')); -%>
 <% const pkgName = it.config.languageConfig.package_name; -%>
 <% const hasWs = it.config.config.sources.some(s => s.type === 'asyncapi-spec'); -%>
 <% const hasGql = it.config.config.sources.some(s => s.type === 'graphql-spec'); -%>

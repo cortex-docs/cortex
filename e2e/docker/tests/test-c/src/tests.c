@@ -18,6 +18,7 @@
 #include "types.h"
 #include "resources/pets.h"
 #include "resources/owners.h"
+#include "resources/uploads.h"
 #include "gql_client.h"
 #include "gql_types.h"
 #include "gql_query_builder.h"
@@ -82,6 +83,23 @@ static pthread_mutex_t ws_mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t ws_cv = PTHREAD_COND_INITIALIZER;
 static volatile int ws_got_msg = 0;
 
+typedef struct {
+  char data[8192];
+  size_t size;
+  int chunks;
+} rest_stream_result_t;
+
+static int on_rest_chunk(const unsigned char* data, size_t size, void* user_data) {
+  rest_stream_result_t* result = (rest_stream_result_t*)user_data;
+  size_t available = sizeof(result->data) - result->size - 1;
+  size_t copied = size < available ? size : available;
+  memcpy(result->data + result->size, data, copied);
+  result->size += copied;
+  result->data[result->size] = '\0';
+  result->chunks++;
+  return 1;
+}
+
 static void on_presence(const ws_ChatPresence_message_t* msg) {
   pthread_mutex_lock(&ws_mtx);
   if (!ws_got_msg) {
@@ -102,10 +120,10 @@ int main(void) {
   TEST("rest.pets.list()")
     sdk_client_t rest;
     sdk_client_init(&rest, MOCK_URL);
-    cJSON* r = sdk_pets_list(&rest, NULL, NULL);
-    ASSERT_TRUE(r != NULL);
-    ASSERT_TRUE(cJSON_GetArraySize(cJSON_GetObjectItem(r, "data")) >= 2);
-    cJSON_Delete(r);
+    sdk_list_pets_response_t r = sdk_pets_list(&rest, NULL, NULL);
+    ASSERT_TRUE(r.data != NULL);
+    ASSERT_TRUE(cJSON_GetArraySize(r.data) >= 2);
+    sdk_list_pets_response_free(&r);
     sdk_client_free(&rest);
   END_TEST
 
@@ -122,9 +140,39 @@ int main(void) {
   TEST("rest.pets.create()")
     sdk_client_t rest;
     sdk_client_init(&rest, MOCK_URL);
-    sdk_create_pet_request_t body = {.name = "CPet", .species = "bird"};
+    const unsigned char profile_pic[] = "pet-avatar";
+    const unsigned char record_pdf[] = "pdf-file";
+    const unsigned char notes_txt[] = "notes";
+    const sdk_file_upload_t attachments[] = {
+      {.filename = "record.pdf", .data = record_pdf, .size = sizeof(record_pdf) - 1, .content_type = "application/pdf"},
+      {.filename = "notes.txt", .data = notes_txt, .size = sizeof(notes_txt) - 1, .content_type = "text/plain"},
+    };
+    sdk_create_pet_request_t body = {
+      .name = "CPet",
+      .species = "bird",
+      .profile_pic = {
+        .filename = "profile.png",
+        .data = profile_pic,
+        .size = sizeof(profile_pic) - 1,
+        .content_type = "image/png",
+      },
+      .attachments = {.items = attachments, .count = 2},
+    };
     sdk_pet_t pet = sdk_pets_create(&rest, &body);
     ASSERT_STR_EQ(pet.name, "CPet");
+    ASSERT_STR_EQ(pet.profile_pic_filename, "profile.png");
+    ASSERT_TRUE(pet.profile_pic_size == 10);
+    ASSERT_STR_EQ(pet.profile_pic_content_type, "image/png");
+    ASSERT_TRUE(pet.attachment_count == 2);
+
+    const unsigned char raw_pdf[] = "raw-pdf";
+    const sdk_file_upload_t raw_body = {
+      .filename = "raw.pdf", .data = raw_pdf, .size = sizeof(raw_pdf) - 1, .content_type = "application/pdf",
+    };
+    sdk_upload_result_t raw = sdk_uploads_upload_file(&rest, &raw_body);
+    ASSERT_TRUE(raw.size == 7);
+    ASSERT_STR_EQ(raw.content_type, "application/pdf");
+    sdk_upload_result_free(&raw);
     sdk_pet_free(&pet);
     sdk_client_free(&rest);
   END_TEST
@@ -139,18 +187,49 @@ int main(void) {
   TEST("rest.owners.list()")
     sdk_client_t rest;
     sdk_client_init(&rest, MOCK_URL);
-    cJSON* r = sdk_owners_list(&rest, NULL);
-    ASSERT_TRUE(r != NULL);
-    ASSERT_TRUE(cJSON_GetArraySize(cJSON_GetObjectItem(r, "data")) >= 1);
-    cJSON_Delete(r);
+    sdk_list_owners_response_t r = sdk_owners_list(&rest, NULL);
+    ASSERT_TRUE(r.data != NULL);
+    ASSERT_TRUE(cJSON_GetArraySize(r.data) >= 1);
+    sdk_list_owners_response_free(&r);
     sdk_client_free(&rest);
+  END_TEST
+
+  TEST("REST chunked response streaming")
+    sdk_client_t rest;
+    sdk_client_init(&rest, MOCK_URL);
+    rest_stream_result_t result = {{0}, 0, 0};
+    int status = sdk_request_stream(&rest, "GET", "/pets/stream", NULL, on_rest_chunk, &result);
+    ASSERT_TRUE(status == 200);
+    ASSERT_TRUE(result.chunks >= 2);
+    ASSERT_TRUE(strstr(result.data, "Rex") != NULL);
+    ASSERT_TRUE(strstr(result.data, "Whiskers") != NULL);
+    sdk_client_free(&rest);
+  END_TEST
+
+  TEST("REST timeout override")
+    sdk_client_t short_client;
+    sdk_client_init(&short_client, MOCK_URL);
+    short_client.timeout = 1;
+    cJSON* timed_out = sdk_request(&short_client, "GET", "/transport/slow?delay=2000", NULL);
+    ASSERT_TRUE(timed_out == NULL);
+    sdk_client_free(&short_client);
+
+    sdk_client_t longer_client;
+    sdk_client_init(&longer_client, MOCK_URL);
+    longer_client.timeout = 3;
+    cJSON* result = sdk_request(&longer_client, "GET", "/transport/slow?delay=100", NULL);
+    ASSERT_TRUE(result != NULL);
+    ASSERT_TRUE(cJSON_GetObjectItem(result, "delayed")->valueint == 100);
+    cJSON_Delete(result);
+    sdk_client_free(&longer_client);
   END_TEST
 
   /* ─── GraphQL — Query ──────────────────────────────────── */
   printf("\n  GraphQL — Query Builder:\n");
 
   TEST("query — pets with partial selection")
-    gql_client_options_t opts = {.endpoint = MOCK_GQL_URL, .ws_endpoint = MOCK_GQL_WS_URL};
+    gql_client_options_t opts = {.endpoint = MOCK_GQL_URL, .ws_endpoint = MOCK_GQL_WS_URL,
+      .reconnect = 1, .reconnect_interval_ms = 50, .max_reconnect_attempts = 5};
     gql_client_t gql;
     gql_client_init(&gql, &opts);
 
@@ -312,7 +391,8 @@ int main(void) {
   /* ─── Subscription (real WebSocket via graphql-ws) ──────── */
 
   TEST("subscribe — petAdopted via WebSocket")
-    gql_client_options_t opts = {.endpoint = MOCK_GQL_URL, .ws_endpoint = MOCK_GQL_WS_URL};
+    gql_client_options_t opts = {.endpoint = MOCK_GQL_URL, .ws_endpoint = MOCK_GQL_WS_URL,
+      .reconnect = 1, .reconnect_interval_ms = 50, .max_reconnect_attempts = 5};
     gql_client_t gql;
     gql_client_init(&gql, &opts);
 
@@ -369,7 +449,8 @@ int main(void) {
   printf("\n  WebSocket:\n");
 
   TEST("connect + receive presence (typed)")
-    ws_client_options_t wopts = {.url = MOCK_WS_URL, .reconnect = 0};
+    ws_client_options_t wopts = {.url = MOCK_WS_URL, .reconnect = 1,
+      .reconnect_interval_ms = 50, .max_reconnect_attempts = 5};
     ws_client_t ws;
     ws_client_init(&ws, &wopts);
     ws_got_msg = 0;
@@ -396,96 +477,96 @@ int main(void) {
   printf("\n  gRPC:\n");
 
   TEST("PetService.listPets — typed array")
-    grpc_pet_service_client_t client;
-    grpc_pet_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_list_pets_request_t req = {0};
-    grpc_list_pets_response_t resp = grpc_pet_service_list_pets(&client, &req);
+    grpc_list_pets_response_t resp = grpc_grpc_list_pets(&client, &req);
     ASSERT_TRUE(resp.data_count >= 2);
     ASSERT_TRUE(resp.data[0].name != NULL);
     grpc_list_pets_response_free(&resp);
-    grpc_pet_service_client_free(&client);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   TEST("PetService.getPet")
-    grpc_pet_service_client_t client;
-    grpc_pet_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_get_pet_request_t req = {.id = "pet-1"};
-    grpc_pet_t pet = grpc_pet_service_get_pet(&client, &req);
+    grpc_pet_t pet = grpc_grpc_get_pet(&client, &req);
     ASSERT_STR_EQ(pet.name, "Rex");
     ASSERT_STR_EQ(pet.id, "pet-1");
     grpc_pet_free(&pet);
-    grpc_pet_service_client_free(&client);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   TEST("PetService.createPet")
-    grpc_pet_service_client_t client;
-    grpc_pet_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_create_pet_request_t req = {.name = "GrpcCPet"};
-    grpc_pet_t pet = grpc_pet_service_create_pet(&client, &req);
+    grpc_pet_t pet = grpc_grpc_create_pet(&client, &req);
     ASSERT_STR_EQ(pet.name, "GrpcCPet");
     ASSERT_TRUE(pet.id != NULL);
     grpc_pet_free(&pet);
-    grpc_pet_service_client_free(&client);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   TEST("PetService.deletePet")
-    grpc_pet_service_client_t client;
-    grpc_pet_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_delete_pet_request_t req = {.id = "pet-1"};
-    grpc_delete_pet_response_t resp = grpc_pet_service_delete_pet(&client, &req);
+    grpc_delete_pet_response_t resp = grpc_grpc_delete_pet(&client, &req);
     (void)resp;
-    grpc_pet_service_client_free(&client);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   TEST("PetService.watchPets — typed stream")
-    grpc_pet_service_client_t client;
-    grpc_pet_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_watch_pets_request_t req = {0};
-    grpc_pet_service_watch_pets_stream_t stream = grpc_pet_service_watch_pets(&client, &req);
+    grpc_grpc_watch_pets_stream_t stream = grpc_grpc_watch_pets(&client, &req);
     int count = 0;
     char first[128] = "";
     grpc_pet_t pet;
-    while (grpc_pet_service_watch_pets_next(&stream, &pet)) {
+    while (grpc_grpc_watch_pets_next(&stream, &pet)) {
       count++;
       if (!first[0] && pet.name) strncpy(first, pet.name, sizeof(first) - 1);
     }
     ASSERT_TRUE(count >= 2);
     ASSERT_TRUE(first[0] != '\0');
-    grpc_pet_service_watch_pets_stream_free(&stream);
-    grpc_pet_service_client_free(&client);
+    grpc_grpc_watch_pets_stream_free(&stream);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   TEST("OwnerService.listOwners — typed array")
-    grpc_owner_service_client_t client;
-    grpc_owner_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_list_owners_request_t req = {0};
-    grpc_list_owners_response_t resp = grpc_owner_service_list_owners(&client, &req);
+    grpc_list_owners_response_t resp = grpc_grpc_list_owners(&client, &req);
     ASSERT_TRUE(resp.data_count >= 1);
     grpc_list_owners_response_free(&resp);
-    grpc_owner_service_client_free(&client);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   TEST("OwnerService.getOwner")
-    grpc_owner_service_client_t client;
-    grpc_owner_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_get_owner_request_t req = {.id = "owner-1"};
-    grpc_owner_t owner = grpc_owner_service_get_owner(&client, &req);
+    grpc_owner_t owner = grpc_grpc_get_owner(&client, &req);
     ASSERT_STR_EQ(owner.name, "Alice");
     ASSERT_STR_EQ(owner.email, "alice@example.com");
     grpc_owner_free(&owner);
-    grpc_owner_service_client_free(&client);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   TEST("OwnerService.createOwner")
-    grpc_owner_service_client_t client;
-    grpc_owner_service_client_init(&client, GRPC_ADDR);
+    grpc_grpc_client_t client;
+    grpc_grpc_client_init(&client, GRPC_ADDR);
     grpc_create_owner_request_t req = {.name = "GrpcOwner", .email = "grpc@test.com"};
-    grpc_owner_t owner = grpc_owner_service_create_owner(&client, &req);
+    grpc_owner_t owner = grpc_grpc_create_owner(&client, &req);
     ASSERT_STR_EQ(owner.name, "GrpcOwner");
     ASSERT_STR_EQ(owner.email, "grpc@test.com");
     ASSERT_TRUE(owner.id != NULL);
     grpc_owner_free(&owner);
-    grpc_owner_service_client_free(&client);
+    grpc_grpc_client_free(&client);
   END_TEST
 
   printf("\n  %d passed, %d failed\n\n", tests_passed, tests_failed);

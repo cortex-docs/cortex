@@ -4,6 +4,7 @@ package <%= pkg %>
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.WebSocket
+import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.ConcurrentHashMap
@@ -14,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -27,10 +29,16 @@ typealias EventListener = (data: Any?) -> Unit
 
 class <%= it.clientClass %>(
     private val url: String = "<%= it.serverUrl %>",
-    private var reconnect: Boolean = true,
+    private val reconnect: Boolean = true,
     private val reconnectInterval: Long = 3000L,
-    private val maxReconnectAttempts: Int = 10
+    private val maxReconnectAttempts: Int = 10,
+    private val heartbeatInterval: Long = <%= it.heartbeat.intervalMs %>L,
+    private val heartbeatTimeout: Long = <%= it.heartbeat.timeoutMs %>L,
 ) {
+    private val clientHeartbeat = <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>""<% } %>
+    private val clientHeartbeatResponse = <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>""<% } %>
+    private val serverHeartbeat = <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>""<% } %>
+    private val serverHeartbeatResponse = <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>""<% } %>
     private var webSocket: WebSocket? = null
     private val httpClient: HttpClient = HttpClient.newHttpClient()
     private val handlers = ConcurrentHashMap<String, CopyOnWriteArraySet<MessageHandler>>()
@@ -38,6 +46,10 @@ class <%= it.clientClass %>(
     private var reconnectAttempts = 0
     private val messageBuffer = StringBuilder()
     private val scope = CoroutineScope(Dispatchers.IO)
+    private var heartbeatJob: Job? = null
+    private var reconnectJob: Job? = null
+    @Volatile private var lastServerActivity: Long = 0
+    @Volatile private var manuallyClosed: Boolean = false
 
     val json: Json = Json { ignoreUnknownKeys = true }
 
@@ -45,6 +57,7 @@ class <%= it.clientClass %>(
         get() = webSocket != null
 
     suspend fun connect() {
+        manuallyClosed = false
         val deferred = CompletableDeferred<Unit>()
 
         httpClient.newWebSocketBuilder()
@@ -53,6 +66,8 @@ class <%= it.clientClass %>(
                 override fun onOpen(ws: WebSocket) {
                     reconnectAttempts = 0
                     webSocket = ws
+                    lastServerActivity = System.currentTimeMillis()
+                    startHeartbeat(ws)
                     emit("connected", null)
                     ws.request(1)
                     deferred.complete(Unit)
@@ -69,16 +84,17 @@ class <%= it.clientClass %>(
                     return null
                 }
 
+                override fun onPong(ws: WebSocket, message: ByteBuffer): CompletionStage<*>? {
+                    lastServerActivity = System.currentTimeMillis()
+                    ws.request(1)
+                    return null
+                }
+
                 override fun onClose(ws: WebSocket, statusCode: Int, reason: String?): CompletionStage<*>? {
+                    heartbeatJob?.cancel()
                     webSocket = null
                     emit("disconnected", mapOf("code" to statusCode, "reason" to (reason ?: "")))
-                    if (reconnect && reconnectAttempts < maxReconnectAttempts) {
-                        reconnectAttempts++
-                        scope.launch {
-                            delay(reconnectInterval)
-                            connect()
-                        }
-                    }
+                    scheduleReconnect()
                     return null
                 }
 
@@ -87,6 +103,7 @@ class <%= it.clientClass %>(
                     if (!deferred.isCompleted) {
                         deferred.completeExceptionally(error)
                     }
+                    scheduleReconnect()
                 }
             })
             .whenComplete { _, ex ->
@@ -99,9 +116,41 @@ class <%= it.clientClass %>(
     }
 
     fun disconnect() {
-        reconnect = false
+        manuallyClosed = true
+        heartbeatJob?.cancel()
+        reconnectJob?.cancel()
         webSocket?.sendClose(WebSocket.NORMAL_CLOSURE, "")
         webSocket = null
+    }
+
+    private fun scheduleReconnect() {
+        if (!reconnect || manuallyClosed || reconnectAttempts >= maxReconnectAttempts || reconnectJob?.isActive == true) return
+        reconnectAttempts++
+        reconnectJob = scope.launch {
+            delay(reconnectInterval)
+            if (manuallyClosed) return@launch
+            try {
+                connect()
+            } catch (_: Exception) {
+                reconnectJob = null
+                scheduleReconnect()
+            }
+        }
+    }
+
+    private fun startHeartbeat(ws: WebSocket) {
+        heartbeatJob?.cancel()
+        if (heartbeatInterval <= 0 || clientHeartbeat.isEmpty()) return
+        heartbeatJob = scope.launch {
+            while (webSocket === ws) {
+                delay(heartbeatInterval)
+                if (heartbeatTimeout > 0 && System.currentTimeMillis() - lastServerActivity > heartbeatInterval + heartbeatTimeout) {
+                    ws.abort()
+                    return@launch
+                }
+                ws.sendText(clientHeartbeat, true)
+            }
+        }
     }
 
     suspend fun send(channel: String, payload: Any) {
@@ -137,6 +186,17 @@ class <%= it.clientClass %>(
 
     private fun handleMessage(text: String) {
         try {
+            if (heartbeatMatches(text, serverHeartbeat)) {
+                lastServerActivity = System.currentTimeMillis()
+                if (serverHeartbeatResponse.isNotEmpty()) {
+                    webSocket?.sendText(serverHeartbeatResponse, true)
+                }
+                return
+            }
+            if (clientHeartbeatResponse.isEmpty() || heartbeatMatches(text, clientHeartbeatResponse)) {
+                lastServerActivity = System.currentTimeMillis()
+                if (clientHeartbeatResponse.isNotEmpty()) return
+            }
             val data = json.parseToJsonElement(text).jsonObject
 
             emit("message", data)
@@ -155,6 +215,16 @@ class <%= it.clientClass %>(
             }
         } catch (_: Exception) {
             emit("message", text)
+        }
+    }
+
+    private fun heartbeatMatches(actual: String, expected: String): Boolean {
+        if (expected.isEmpty()) return false
+        if (actual == expected) return true
+        return try {
+            json.parseToJsonElement(actual) == json.parseToJsonElement(expected)
+        } catch (_: Exception) {
+            false
         }
     }
 

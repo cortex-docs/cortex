@@ -1,1 +1,2 @@
 - please check first if dev is running in watch mode, if yes do not start another process
+- if need browser testing prefer using playwright mcp tools

@@ -17,7 +17,9 @@ function HighlightedSnippet({ code }: { code: string }) {
       try {
         const highlighted = hljsCore.highlight(jsonPart, { language: 'json' }).value;
         const comments = code.match(/^\/\/.*$/gm) || [];
-        const commentHtml = comments.map((c) => `<span class="hljs-comment">${c}</span>`).join('\n');
+        const commentHtml = comments
+          .map((c) => `<span class="hljs-comment">${c}</span>`)
+          .join('\n');
         return commentHtml + (commentHtml ? '\n' : '') + highlighted;
       } catch {}
     }
@@ -40,7 +42,7 @@ interface McpToolParam {
 
 interface McpTool {
   name: string;
-  source: 'rest' | 'websocket' | 'graphql' | 'grpc' | 'docs';
+  source: 'rest' | 'websocket' | 'graphql' | 'openrpc' | 'docs';
   description: string;
   method?: string;
   path?: string;
@@ -53,6 +55,7 @@ interface McpTool {
 interface McpData {
   serverName: string;
   packageName: string;
+  githubRepository?: string;
   instructions: string;
   instructionsHtml: string;
   tools: McpTool[];
@@ -95,13 +98,18 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
   const fetchData = useCallback(() => {
     fetch('/api/mcp')
       .then(async (res) => {
-        if (!res.ok) { setError('Failed to load MCP data.'); return; }
+        if (!res.ok) {
+          setError('Failed to load MCP data.');
+          return;
+        }
         setData(await res.json());
       })
       .catch(() => setError('Failed to load MCP data'));
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
   useProjectWatch(fetchData);
 
   useEffect(() => {
@@ -116,10 +124,16 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
           else visibleIds.delete(entry.target.id);
         }
         if (isScrollingRef.current) return;
-        if (visibleIds.has('mcp-client-setup')) { setActiveId('mcp-client-setup'); return; }
+        if (visibleIds.has('mcp-client-setup')) {
+          setActiveId('mcp-client-setup');
+          return;
+        }
         const cards = document.querySelectorAll('[data-mcp-card]');
         for (const card of cards) {
-          if (visibleIds.has(card.id)) { setActiveId(card.id); return; }
+          if (visibleIds.has(card.id)) {
+            setActiveId(card.id);
+            return;
+          }
         }
       },
       { rootMargin: '-60px 0px -40% 0px', threshold: 0.1 },
@@ -161,7 +175,9 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
       setActiveId(id);
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setSidebarOpen(false);
-      setTimeout(() => { isScrollingRef.current = false; }, 800);
+      setTimeout(() => {
+        isScrollingRef.current = false;
+      }, 800);
     }
   }
 
@@ -185,7 +201,14 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
     }
     const args: Record<string, string> = {};
     for (const p of tool.parameters) args[p.name] = `<${p.type}>`;
-    return `// MCP tool call\n{\n  "name": "${tool.name}",\n  "arguments": ${JSON.stringify(args, null, 4).split('\n').map((l, i) => i === 0 ? l : '  ' + l).join('\n')}\n}`;
+    return `// MCP tool call\n{\n  "name": "${tool.name}",\n  "arguments": ${JSON.stringify(
+      args,
+      null,
+      4,
+    )
+      .split('\n')
+      .map((l, i) => (i === 0 ? l : '  ' + l))
+      .join('\n')}\n}`;
   }
 
   const activeSection = activeId === 'mcp-client-setup' ? 'setup' : 'tools';
@@ -207,8 +230,10 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
   }
 
   const snippet = getSnippet();
-  const activeLabel = activeId === 'mcp-client-setup' ? 'Client Setup'
-    : data.tools.find((t) => cardId(t.name) === activeId)?.name ?? 'MCP';
+  const activeLabel =
+    activeId === 'mcp-client-setup'
+      ? 'Client Setup'
+      : (data.tools.find((t) => cardId(t.name) === activeId)?.name ?? 'MCP');
 
   return (
     <div className="relative flex h-[calc(100vh-5.5rem)]">
@@ -218,8 +243,26 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
         className="fixed bottom-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg lg:hidden"
         aria-label="Toggle navigation"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          {sidebarOpen ? <path d="M18 6 6 18M6 6l12 12" /> : <><path d="M4 6h16" /><path d="M4 12h16" /><path d="M4 18h16" /></>}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          {sidebarOpen ? (
+            <path d="M18 6 6 18M6 6l12 12" />
+          ) : (
+            <>
+              <path d="M4 6h16" />
+              <path d="M4 12h16" />
+              <path d="M4 18h16" />
+            </>
+          )}
         </svg>
       </button>
 
@@ -230,15 +273,16 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-
-
         <NavSection
           title="Setup"
           expanded={activeSection === 'setup'}
           onClickHeader={() => scrollTo('mcp-client-setup')}
         >
           <NavGroup label="Guides">
-            <NavItem active={activeId === 'mcp-client-setup'} onClick={() => scrollTo('mcp-client-setup')}>
+            <NavItem
+              active={activeId === 'mcp-client-setup'}
+              onClick={() => scrollTo('mcp-client-setup')}
+            >
               Client Setup
             </NavItem>
           </NavGroup>
@@ -254,15 +298,34 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
           <NavGroup label={`${data.tools.length} tools`}>
             {data.tools.map((tool) => {
               const id = cardId(tool.name);
-              const badgeStyle = tool.source === 'rest' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                : tool.source === 'websocket' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-                : tool.source === 'graphql' ? 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400'
-                : tool.source === 'docs' ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400'
-                : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400';
-              const badgeLabel = tool.source === 'rest' ? 'REST' : tool.source === 'websocket' ? 'WS' : tool.source === 'graphql' ? 'GQL' : tool.source === 'docs' ? 'DOCS' : 'gRPC';
+              const badgeStyle =
+                tool.source === 'rest'
+                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                  : tool.source === 'websocket'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    : tool.source === 'graphql'
+                      ? 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400'
+                      : tool.source === 'docs'
+                        ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400'
+                        : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400';
+              const badgeLabel =
+                tool.source === 'rest'
+                  ? 'REST'
+                  : tool.source === 'websocket'
+                    ? 'WS'
+                    : tool.source === 'graphql'
+                      ? 'GQL'
+                      : tool.source === 'docs'
+                        ? 'DOCS'
+                        : 'RPC';
               return (
                 <NavItem key={id} active={activeId === id} onClick={() => scrollTo(id)}>
-                  <span className={cn('mr-1.5 inline-block rounded px-1 py-0.5 text-center text-[10px] font-bold uppercase leading-none', badgeStyle)}>
+                  <span
+                    className={cn(
+                      'mr-1.5 inline-block rounded px-1 py-0.5 text-center text-[10px] font-bold uppercase leading-none',
+                      badgeStyle,
+                    )}
+                  >
                     {badgeLabel}
                   </span>
                   <span className="truncate">{tool.name}</span>
@@ -276,93 +339,172 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
       {/* ---- Center panel ---- */}
       <main className="flex-1 overflow-y-auto">
         <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/30">
-          <DocsBreadcrumb segments={[
-            { label: 'MCP', href: '/mcp' },
-            ...(activeId !== 'mcp-client-setup' && data
-              ? [{ label: data.tools.find((t) => cardId(t.name) === activeId)?.name ?? 'Tools' }]
-              : [{ label: 'Setup' }]),
-          ]} />
+          <DocsBreadcrumb
+            segments={[
+              { label: 'MCP', href: '/mcp' },
+              ...(activeId !== 'mcp-client-setup' && data
+                ? [{ label: data.tools.find((t) => cardId(t.name) === activeId)?.name ?? 'Tools' }]
+                : [{ label: 'Setup' }]),
+            ]}
+          />
         </div>
         <div className="px-6 py-6 lg:px-8">
-        {/* Client Setup */}
-        <div id="mcp-client-setup" data-mcp-card className="mb-8">
-          <McpSetupGuide />
-        </div>
-
-        {/* Agent Instructions */}
-        {data.instructionsHtml && (
-          <div className="mb-8">
-            <h2 className="mb-3 text-xl font-semibold">Agent Instructions</h2>
-            <div className="rounded-lg border border-border bg-muted/40 p-6">
-              <div className="docs-content" dangerouslySetInnerHTML={{ __html: data.instructionsHtml }} />
+          {data.githubRepository && (
+            <div className="mb-6 flex justify-end">
+              <a
+                href={data.githubRepository}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                Source repository
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M15 3h6v6" />
+                  <path d="M10 14 21 3" />
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                </svg>
+              </a>
             </div>
+          )}
+          {/* Client Setup */}
+          <div id="mcp-client-setup" data-mcp-card className="mb-8">
+            <McpSetupGuide />
           </div>
-        )}
 
-        {/* Tools */}
-        <h2 className="mb-3 text-xl font-semibold">Tools</h2>
-        <p className="mb-4 text-sm text-muted-foreground">
-          {data.tools.length} tools available for AI agents via <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">{data.serverName}</code>
-        </p>
-        <div className="space-y-3">
-          {data.tools.map((tool) => {
-            const badgeStyle = tool.source === 'rest' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-              : tool.source === 'websocket' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : tool.source === 'graphql' ? 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400'
-              : tool.source === 'docs' ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400'
-              : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400';
-            const badgeLabel = tool.source === 'rest' ? 'REST' : tool.source === 'websocket' ? 'WS' : tool.source === 'graphql' ? 'GQL' : tool.source === 'docs' ? 'DOCS' : 'gRPC';
-            return (
-              <div key={tool.name} id={cardId(tool.name)} data-mcp-card className="rounded-lg border">
-                <div className="flex items-center gap-3 border-b px-4 py-3">
-                  <code className="font-mono text-sm font-semibold">{tool.name}</code>
-                  <span className={cn('rounded px-2 py-0.5 text-xs font-bold', badgeStyle)}>{badgeLabel}</span>
-                  {tool.method && (
-                    <span className={cn(
-                      'text-xs font-bold',
-                      tool.method === 'GET' ? 'text-blue-600 dark:text-blue-400' :
-                      tool.method === 'POST' ? 'text-green-600 dark:text-green-400' :
-                      tool.method === 'PUT' ? 'text-orange-600 dark:text-orange-400' :
-                      tool.method === 'DELETE' ? 'text-red-600 dark:text-red-400' :
-                      'text-muted-foreground',
-                    )}>{tool.method}</span>
-                  )}
-                  {tool.path && <code className="text-xs text-muted-foreground font-mono">{tool.path}</code>}
-                  {tool.channel && <code className="text-xs text-muted-foreground font-mono">{tool.channel}</code>}
-                  {tool.operationType && <span className="text-xs text-muted-foreground">{tool.operationType}</span>}
-                  {tool.serviceName && <span className="text-xs text-muted-foreground font-mono">{tool.serviceName}</span>}
-                </div>
-                <div className="px-4 py-3 space-y-3">
-                  <p className="text-sm text-muted-foreground">{tool.description}</p>
-                  {tool.parameters.length > 0 && (
-                    <table className="mt-2 w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left text-xs text-muted-foreground">
-                          <th className="pb-1.5 pr-4 font-medium">Name</th>
-                          <th className="pb-1.5 pr-4 font-medium">Type</th>
-                          <th className="pb-1.5 font-medium">Required</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tool.parameters.map((p) => (
-                          <tr key={p.name} className="border-b last:border-0">
-                            <td className="py-1.5 pr-4 font-mono text-xs">{p.name}</td>
-                            <td className="py-1.5 pr-4 text-xs text-muted-foreground">{p.type}</td>
-                            <td className="py-1.5 text-xs">
-                              {p.required
-                                ? <span className="text-red-500 dark:text-red-400">required</span>
-                                : <span className="text-muted-foreground">optional</span>}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+          {/* Agent Instructions */}
+          {data.instructionsHtml && (
+            <div className="mb-8">
+              <h2 className="mb-3 text-xl font-semibold">Agent Instructions</h2>
+              <div className="rounded-lg border border-border bg-muted/40 p-6">
+                <div
+                  className="docs-content"
+                  dangerouslySetInnerHTML={{ __html: data.instructionsHtml }}
+                />
               </div>
-            );
-          })}
-        </div>
+            </div>
+          )}
+
+          {/* Tools */}
+          <h2 className="mb-3 text-xl font-semibold">Tools</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            {data.tools.length} tools available for AI agents via{' '}
+            <code className="rounded bg-muted px-2 py-0.5 font-mono text-xs">
+              {data.serverName}
+            </code>
+          </p>
+          <div className="space-y-3">
+            {data.tools.map((tool) => {
+              const badgeStyle =
+                tool.source === 'rest'
+                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                  : tool.source === 'websocket'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    : tool.source === 'graphql'
+                      ? 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400'
+                      : tool.source === 'docs'
+                        ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400'
+                        : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400';
+              const badgeLabel =
+                tool.source === 'rest'
+                  ? 'REST'
+                  : tool.source === 'websocket'
+                    ? 'WS'
+                    : tool.source === 'graphql'
+                      ? 'GQL'
+                      : tool.source === 'docs'
+                        ? 'DOCS'
+                        : 'RPC';
+              return (
+                <div
+                  key={tool.name}
+                  id={cardId(tool.name)}
+                  data-mcp-card
+                  className="rounded-lg border"
+                >
+                  <div className="flex items-center gap-3 border-b px-4 py-3">
+                    <code className="font-mono text-sm font-semibold">{tool.name}</code>
+                    <span className={cn('rounded px-2 py-0.5 text-xs font-bold', badgeStyle)}>
+                      {badgeLabel}
+                    </span>
+                    {tool.method && (
+                      <span
+                        className={cn(
+                          'text-xs font-bold',
+                          tool.method === 'GET'
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : tool.method === 'POST'
+                              ? 'text-green-600 dark:text-green-400'
+                              : tool.method === 'PUT'
+                                ? 'text-orange-600 dark:text-orange-400'
+                                : tool.method === 'DELETE'
+                                  ? 'text-red-600 dark:text-red-400'
+                                  : 'text-muted-foreground',
+                        )}
+                      >
+                        {tool.method}
+                      </span>
+                    )}
+                    {tool.path && (
+                      <code className="text-xs text-muted-foreground font-mono">{tool.path}</code>
+                    )}
+                    {tool.channel && (
+                      <code className="text-xs text-muted-foreground font-mono">
+                        {tool.channel}
+                      </code>
+                    )}
+                    {tool.operationType && (
+                      <span className="text-xs text-muted-foreground">{tool.operationType}</span>
+                    )}
+                    {tool.serviceName && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {tool.serviceName}
+                      </span>
+                    )}
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    <p className="text-sm text-muted-foreground">{tool.description}</p>
+                    {tool.parameters.length > 0 && (
+                      <table className="mt-2 w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-xs text-muted-foreground">
+                            <th className="pb-1.5 pr-4 font-medium">Name</th>
+                            <th className="pb-1.5 pr-4 font-medium">Type</th>
+                            <th className="pb-1.5 font-medium">Required</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tool.parameters.map((p) => (
+                            <tr key={p.name} className="border-b last:border-0">
+                              <td className="py-1.5 pr-4 font-mono text-xs">{p.name}</td>
+                              <td className="py-1.5 pr-4 text-xs text-muted-foreground">
+                                {p.type}
+                              </td>
+                              <td className="py-1.5 text-xs">
+                                {p.required ? (
+                                  <span className="text-red-500 dark:text-red-400">required</span>
+                                ) : (
+                                  <span className="text-muted-foreground">optional</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </main>
 
@@ -372,7 +514,9 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
           {snippet ? (
             <div className="flex-1 overflow-y-auto bg-muted/40 p-0">
               <div className="flex items-center justify-between border-b border-border px-4 py-2">
-                <span className="truncate font-mono text-xs text-muted-foreground">{activeLabel}</span>
+                <span className="truncate font-mono text-xs text-muted-foreground">
+                  {activeLabel}
+                </span>
                 <CopyButton text={snippet} />
               </div>
               <HighlightedSnippet code={snippet} />
@@ -392,7 +536,17 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
 /* Navigation sub-components                                           */
 /* ------------------------------------------------------------------ */
 
-function NavSection({ title, expanded, onClickHeader, children }: { title: string; expanded: boolean; onClickHeader: () => void; children: React.ReactNode }) {
+function NavSection({
+  title,
+  expanded,
+  onClickHeader,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onClickHeader: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <div className="mb-2">
       <button
@@ -400,7 +554,18 @@ function NavSection({ title, expanded, onClickHeader, children }: { title: strin
         className="mb-1 flex w-full cursor-pointer items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
       >
         <span>{title}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn('transition-transform', expanded ? 'rotate-90' : '')}>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={cn('transition-transform', expanded ? 'rotate-90' : '')}
+        >
           <path d="m9 18 6-6-6-6" />
         </svg>
       </button>
@@ -418,7 +583,15 @@ function NavGroup({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function NavItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function NavItem({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (active && ref.current) ref.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -429,7 +602,9 @@ function NavItem({ active, onClick, children }: { active: boolean; onClick: () =
       onClick={onClick}
       className={cn(
         'flex w-full cursor-pointer items-center rounded px-2 py-1 text-left text-xs transition-colors',
-        active ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+        active
+          ? 'bg-accent text-accent-foreground font-medium'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted',
       )}
     >
       {children}

@@ -4,10 +4,14 @@
 package <%= pkg %>
 
 import java.net.URI
+import java.io.InputStream
+import java.io.ByteArrayOutputStream
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.nio.charset.StandardCharsets
+import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
@@ -17,10 +21,11 @@ class <%= clientClass %>(
     val baseUrl: String = "<%= baseUrl %>",
     bearerToken: String? = null,
     apiKey: String? = null,
+    private val requestTimeout: Duration = Duration.ofSeconds(15),
 ) {
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(Duration.ofSeconds(30))
+        .connectTimeout(requestTimeout)
         .build()
 
     private val headers: MutableMap<String, String> = mutableMapOf("Content-Type" to "application/json")
@@ -36,22 +41,42 @@ class <%= clientClass %>(
     val <%= it.naming.propertyName(r.name) %>: <%= r.className %> = <%= r.className %>(this)
 <% } -%>
 
-    fun request(method: String, path: String, query: Map<String, String>? = null, body: String? = null): String {
+    fun request(
+        method: String,
+        path: String,
+        query: Map<String, String>? = null,
+        body: String? = null,
+        multipart: List<MultipartPart>? = null,
+        rawFile: FileUpload? = null,
+        rawContentType: String? = null,
+    ): String {
         val urlBuilder = StringBuilder(baseUrl).append(path)
         if (!query.isNullOrEmpty()) {
             urlBuilder.append("?")
             urlBuilder.append(query.entries.joinToString("&") { "${it.key}=${it.value}" })
         }
 
-        val reqBuilder = HttpRequest.newBuilder().uri(URI.create(urlBuilder.toString()))
-        headers.forEach { (k, v) -> reqBuilder.header(k, v) }
+        val reqBuilder = HttpRequest.newBuilder().uri(URI.create(urlBuilder.toString())).timeout(requestTimeout)
+        headers.forEach { (k, v) ->
+            if ((multipart == null && rawFile == null) || !k.equals("Content-Type", ignoreCase = true)) reqBuilder.header(k, v)
+        }
+
+        val multipartBody = multipart?.let(::encodeMultipart)
+        if (multipartBody != null) reqBuilder.header("Content-Type", multipartBody.contentType)
+        if (rawFile != null) {
+            reqBuilder.header("Content-Type", rawFile.contentType.ifBlank {
+                rawContentType?.ifBlank { "application/octet-stream" } ?: "application/octet-stream"
+            })
+        }
 
         when (method) {
             "GET" -> reqBuilder.GET()
             "DELETE" -> reqBuilder.DELETE()
             else -> reqBuilder.method(
                 method,
-                if (body != null) HttpRequest.BodyPublishers.ofString(body)
+                if (rawFile != null) HttpRequest.BodyPublishers.ofByteArray(rawFile.data)
+                else if (multipartBody != null) HttpRequest.BodyPublishers.ofByteArray(multipartBody.data)
+                else if (body != null) HttpRequest.BodyPublishers.ofString(body)
                 else HttpRequest.BodyPublishers.noBody()
             )
         }
@@ -65,11 +90,62 @@ class <%= clientClass %>(
         return response.body()
     }
 
-    inline fun <reified T> typedRequest(method: String, path: String, query: Map<String, String>? = null, body: String? = null): T {
-        val raw = request(method, path, query, body)
+    /** Streams a response body without buffering it. The caller must close the stream. */
+    fun requestStream(method: String, path: String, query: Map<String, String>? = null, body: String? = null): InputStream {
+        val urlBuilder = StringBuilder(baseUrl).append(path)
+        if (!query.isNullOrEmpty()) urlBuilder.append("?").append(query.entries.joinToString("&") { "${it.key}=${it.value}" })
+        val builder = HttpRequest.newBuilder().uri(URI.create(urlBuilder.toString())).timeout(requestTimeout)
+        headers.forEach { (key, value) -> builder.header(key, value) }
+        when (method) {
+            "GET" -> builder.GET()
+            "DELETE" -> builder.DELETE()
+            else -> builder.method(method, body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody())
+        }
+        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+        if (response.statusCode() >= 400) {
+            response.body().use { throw ApiException(response.statusCode(), String(it.readAllBytes())) }
+        }
+        return response.body()
+    }
+
+    inline fun <reified T> typedRequest(
+        method: String,
+        path: String,
+        query: Map<String, String>? = null,
+        body: String? = null,
+        multipart: List<MultipartPart>? = null,
+        rawFile: FileUpload? = null,
+        rawContentType: String? = null,
+    ): T {
+        val raw = request(method, path, query, body, multipart, rawFile, rawContentType)
         return json.decodeFromString<T>(raw)
     }
+
+    private fun encodeMultipart(parts: List<MultipartPart>): EncodedMultipart {
+        val boundary = "cortex-${UUID.randomUUID()}"
+        val output = ByteArrayOutputStream()
+        fun write(value: String) = output.write(value.toByteArray(StandardCharsets.UTF_8))
+        for (part in parts) {
+            write("--$boundary\r\n")
+            val file = part.file
+            if (file != null) {
+                write("Content-Disposition: form-data; name=\"${part.name}\"; filename=\"${file.filename}\"\r\n")
+                write("Content-Type: ${file.contentType.ifBlank { "application/octet-stream" }}\r\n\r\n")
+                output.write(file.data)
+                write("\r\n")
+            } else {
+                write("Content-Disposition: form-data; name=\"${part.name}\"\r\n\r\n")
+                write(part.value.orEmpty())
+                write("\r\n")
+            }
+        }
+        write("--$boundary--\r\n")
+        return EncodedMultipart(output.toByteArray(), "multipart/form-data; boundary=$boundary")
+    }
 }
+
+data class MultipartPart(val name: String, val value: String? = null, val file: FileUpload? = null)
+private data class EncodedMultipart(val data: ByteArray, val contentType: String)
 
 class ApiException(val statusCode: Int, val body: String) :
     Exception("API error $statusCode: $body")

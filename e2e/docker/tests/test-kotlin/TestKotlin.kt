@@ -1,35 +1,27 @@
-package com.test.project.test
+package com.test.project.sdk.test
 
-import com.test.project.TestProjectClient
-import com.test.project.CreatePetRequest
-import com.test.project.CreateOwnerRequest
-import com.test.project.WsClient
-import com.test.project.graphql.GqlClient
-import com.test.project.graphql.CreatePetInput
-import com.test.project.graphql.CreateOwnerInput
-import com.test.project.graphql.Species
-import com.test.project.graphql.CreatePetMutationVariables
-import com.test.project.graphql.DeletePetMutationVariables
-import com.test.project.graphql.CreateOwnerMutationVariables
-import com.test.project.graphql.PetsQueryVariables
-import com.test.project.graphql.PetQueryVariables
-import com.test.project.graphql.OwnersQueryVariables
-import com.test.project.grpc.PetServiceClient
-import com.test.project.grpc.OwnerServiceClient
-import com.test.project.grpc.ListPetsRequest
-import com.test.project.grpc.GetPetRequest
-import com.test.project.grpc.CreatePetRequest as GrpcCreatePetRequest
-import com.test.project.grpc.DeletePetRequest
-import com.test.project.grpc.WatchPetsRequest
-import com.test.project.grpc.ListOwnersRequest
-import com.test.project.grpc.GetOwnerRequest
-import com.test.project.grpc.CreateOwnerRequest as GrpcCreateOwnerRequest
+import com.test.project.sdk.RestApiV1
+import com.test.project.sdk.CreatePetRequest
+import com.test.project.sdk.CreateOwnerRequest
+import com.test.project.sdk.FileUpload
+import com.test.project.sdk.WebsocketApi
+import com.test.project.sdk.graphql.*
+import com.test.project.sdk.grpc.Grpc
+import com.test.project.sdk.grpc.ListPetsRequest
+import com.test.project.sdk.grpc.GetPetRequest
+import com.test.project.sdk.grpc.CreatePetRequest as GrpcCreatePetRequest
+import com.test.project.sdk.grpc.DeletePetRequest
+import com.test.project.sdk.grpc.WatchPetsRequest
+import com.test.project.sdk.grpc.ListOwnersRequest
+import com.test.project.sdk.grpc.GetOwnerRequest
+import com.test.project.sdk.grpc.CreateOwnerRequest as GrpcCreateOwnerRequest
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.time.Duration
 
 class TestKotlin {
 
@@ -45,7 +37,7 @@ class TestKotlin {
 
     @Nested
     inner class REST {
-        private val rest = TestProjectClient(baseUrl = BASE)
+        private val rest = RestApiV1(baseUrl = BASE)
 
         @Test
         fun `rest pets list`() {
@@ -62,8 +54,25 @@ class TestKotlin {
 
         @Test
         fun `rest pets create`() {
-            val r = rest.pets.create(CreatePetRequest(name = "KotlinPet", species = "bird"))
+            val r = rest.pets.create(CreatePetRequest(
+                name = "KotlinPet",
+                species = "bird",
+                profilePic = FileUpload("profile.png", "pet-avatar".toByteArray(), "image/png"),
+                attachments = listOf(
+                    FileUpload("record.pdf", "pdf-file".toByteArray(), "application/pdf"),
+                    FileUpload("notes.txt", "notes".toByteArray(), "text/plain"),
+                ),
+            ))
             assertEquals("KotlinPet", r.name)
+            assertEquals("profile.png", r.profilePicFilename)
+            assertEquals(10, r.profilePicSize)
+            assertEquals("image/png", r.profilePicContentType)
+            assertEquals(2, r.attachmentCount)
+            assertEquals(listOf("application/pdf", "text/plain"), r.attachmentContentTypes)
+
+            val raw = rest.uploads.uploadFile(FileUpload("raw.pdf", "raw-pdf".toByteArray(), "application/pdf"))
+            assertEquals(7, raw.size)
+            assertEquals("application/pdf", raw.contentType)
         }
 
         @Test
@@ -77,15 +86,37 @@ class TestKotlin {
             assertTrue(r.data.size >= 1)
             assertTrue(r.data[0].email.isNotEmpty())
         }
+
+        @Test
+        fun `rest chunked response stream`() {
+            rest.requestStream("GET", "/pets/stream").use { stream ->
+                val body = String(stream.readAllBytes())
+                assertTrue(body.contains("Rex"))
+                assertTrue(body.contains("Whiskers"))
+                assertTrue(body.lines().filter { it.isNotEmpty() }.size >= 2)
+            }
+        }
+
+        @Test
+        fun `rest timeout override`() {
+            val shortClient = RestApiV1(baseUrl = BASE, requestTimeout = Duration.ofMillis(40))
+            assertThrows<Exception> {
+                shortClient.request("GET", "/transport/slow?delay=250")
+            }
+            val longerClient = RestApiV1(baseUrl = BASE, requestTimeout = Duration.ofMillis(500))
+            assertTrue(longerClient.request("GET", "/transport/slow?delay=100").contains("\"delayed\":100"))
+        }
     }
 
     // ─── GraphQL ──────────────────────────────────────────────────────
 
     @Nested
     inner class GraphQL {
-        private val gql = GqlClient(
+        private val gql = Graphql(
             endpoint = GQL_URL,
             wsEndpoint = GQL_WS_URL,
+            reconnectIntervalMs = 50,
+            maxReconnectAttempts = 5,
         )
 
         @AfterEach
@@ -196,7 +227,7 @@ class TestKotlin {
 
         @Test
         fun `connect and receive presence`() = runBlocking {
-            val ws = WsClient(url = WS_URL)
+            val ws = WebsocketApi(url = WS_URL, reconnectInterval = 50, maxReconnectAttempts = 5)
             val latch = CountDownLatch(1)
             var receivedPayload: String? = null
 
@@ -216,7 +247,7 @@ class TestKotlin {
 
         @Test
         fun `WsClient has channel methods from AsyncAPI spec`() {
-            val ws = WsClient(url = WS_URL)
+            val ws = WebsocketApi(url = WS_URL)
             assertNotNull(ws::connect)
             assertNotNull(ws::disconnect)
             assertNotNull(ws::send)
@@ -230,32 +261,30 @@ class TestKotlin {
 
     @Nested
     inner class GrpcTests {
-        private val petClient = PetServiceClient(baseUrl = BASE)
-        private val ownerClient = OwnerServiceClient(baseUrl = BASE)
+        private val grpc = Grpc(baseUrl = BASE)
 
         @AfterEach
         fun cleanup() {
-            petClient.close()
-            ownerClient.close()
+            grpc.close()
         }
 
         @Test
         fun `PetService listPets — returns pet list`() {
-            val r = petClient.listPets(ListPetsRequest())
+            val r = grpc.listPets(ListPetsRequest())
             assertTrue(r.data.size >= 2)
             assertTrue(r.data[0].name.isNotEmpty())
         }
 
         @Test
         fun `PetService getPet — returns single pet by ID`() {
-            val r = petClient.getPet(GetPetRequest(id = "pet-1"))
+            val r = grpc.getPet(GetPetRequest(id = "pet-1"))
             assertEquals("Rex", r.name)
             assertEquals("pet-1", r.id)
         }
 
         @Test
         fun `PetService createPet — creates and returns pet`() {
-            val r = petClient.createPet(GrpcCreatePetRequest(
+            val r = grpc.createPet(GrpcCreatePetRequest(
                 name = "GrpcKotlinPet",
                 species = "SPECIES_DOG",
             ))
@@ -265,33 +294,33 @@ class TestKotlin {
 
         @Test
         fun `PetService deletePet — completes without error`() {
-            val r = petClient.deletePet(DeletePetRequest(id = "pet-1"))
+            val r = grpc.deletePet(DeletePetRequest(id = "pet-1"))
             assertNotNull(r)
         }
 
         @Test
         fun `PetService watchPets — returns multiple pets`() {
-            val pets = petClient.watchPets(WatchPetsRequest())
+            val pets = grpc.watchPets(WatchPetsRequest())
             assertTrue(pets.size >= 2)
             assertTrue(pets[0].name.isNotEmpty())
         }
 
         @Test
         fun `OwnerService listOwners — returns owner list`() {
-            val r = ownerClient.listOwners(ListOwnersRequest())
+            val r = grpc.listOwners(ListOwnersRequest())
             assertTrue(r.data.size >= 1)
         }
 
         @Test
         fun `OwnerService getOwner — returns single owner`() {
-            val r = ownerClient.getOwner(GetOwnerRequest(id = "owner-1"))
+            val r = grpc.getOwner(GetOwnerRequest(id = "owner-1"))
             assertEquals("Alice", r.name)
             assertEquals("alice@example.com", r.email)
         }
 
         @Test
         fun `OwnerService createOwner — creates and returns owner`() {
-            val r = ownerClient.createOwner(GrpcCreateOwnerRequest(
+            val r = grpc.createOwner(GrpcCreateOwnerRequest(
                 name = "GrpcOwner",
                 email = "grpc@test.com",
             ))

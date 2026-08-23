@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import * as path from 'node:path';
 import { GraphQLParser } from '@cortex/core';
-import { GqlTemplateEngine, createGqlPluginForLanguage } from '../src/languages/gql-template-plugin';
+import {
+  GqlTemplateEngine,
+  createGqlPluginForLanguage,
+} from '../src/languages/gql-template-plugin';
 
 const GQL_FIXTURE = path.join(__dirname, '../../core/__fixtures__/petstore.graphql');
 
@@ -77,14 +80,18 @@ describe('GraphQL Query Builder — Selector Interfaces', () => {
     const files = await generateFiles();
     const b = getBuilder(files).content;
     expect(b).toContain('export interface OwnerSelector<T extends {} = {}>');
-    expect(b).toMatch(/pets<S extends \{\}>\(fn: \(s: PetSelector\) => PetSelector<S>\): OwnerSelector<T & \{ pets: S\[\] \}>/);
+    expect(b).toMatch(
+      /pets<S extends \{\}>\(fn: \(s: PetSelector\) => PetSelector<S>\): OwnerSelector<T & \{ pets: S\[\] \}>/,
+    );
   });
 
   it('generates PetConnectionSelector with nested data and scalar nextCursor', async () => {
     const files = await generateFiles();
     const b = getBuilder(files).content;
     expect(b).toContain('export interface PetConnectionSelector<T extends {} = {}>');
-    expect(b).toMatch(/data<S extends \{\}>\(fn: \(s: PetSelector\) => PetSelector<S>\): PetConnectionSelector<T & \{ data: S\[\] \}>/);
+    expect(b).toMatch(
+      /data<S extends \{\}>\(fn: \(s: PetSelector\) => PetSelector<S>\): PetConnectionSelector<T & \{ data: S\[\] \}>/,
+    );
     expect(b).toContain('nextCursor(): PetConnectionSelector<T & { nextCursor: string | null }>');
   });
 
@@ -92,7 +99,9 @@ describe('GraphQL Query Builder — Selector Interfaces', () => {
     const files = await generateFiles();
     const b = getBuilder(files).content;
     expect(b).toContain('export interface OwnerConnectionSelector<T extends {} = {}>');
-    expect(b).toMatch(/data<S extends \{\}>\(fn: \(s: OwnerSelector\) => OwnerSelector<S>\): OwnerConnectionSelector<T & \{ data: S\[\] \}>/);
+    expect(b).toMatch(
+      /data<S extends \{\}>\(fn: \(s: OwnerSelector\) => OwnerSelector<S>\): OwnerConnectionSelector<T & \{ data: S\[\] \}>/,
+    );
   });
 });
 
@@ -119,7 +128,10 @@ describe('GraphQL Query Builder — Root Builder Interfaces', () => {
   it('generates overload without args for all-optional operations', async () => {
     const files = await generateFiles();
     const b = getBuilder(files).content;
-    const builderSection = b.slice(b.indexOf('interface QueryBuilder'), b.indexOf('interface MutationBuilder'));
+    const builderSection = b.slice(
+      b.indexOf('interface QueryBuilder'),
+      b.indexOf('interface MutationBuilder'),
+    );
     const petsOverloads = builderSection.match(/pets<S extends \{\}>\(/g);
     expect(petsOverloads).toHaveLength(2);
     const ownersOverloads = builderSection.match(/owners<S extends \{\}>\(/g);
@@ -154,7 +166,9 @@ describe('GraphQL Query Builder — Root Builder Interfaces', () => {
   it('handles scalar return types (deletePet returns boolean)', async () => {
     const files = await generateFiles();
     const b = getBuilder(files).content;
-    expect(b).toContain('deletePet(args: { id: string }): MutationBuilder<T & { deletePet: boolean }>');
+    expect(b).toContain(
+      'deletePet(args: { id: string }): MutationBuilder<T & { deletePet: boolean }>',
+    );
   });
 
   it('generates SubscriptionBuilder', async () => {
@@ -204,7 +218,7 @@ describe('GraphQL Query Builder — Client Integration', () => {
   it('imports builder types and factories in client', async () => {
     const files = await generateFiles();
     const c = getClient(files).content;
-    expect(c).toContain("from './gql-query-builder'");
+    expect(c).toContain("from './gql-query-builder.js'");
     expect(c).toContain('QueryBuilder');
     expect(c).toContain('createQueryBuilder');
     expect(c).toContain('MutationBuilder');
@@ -214,7 +228,9 @@ describe('GraphQL Query Builder — Client Integration', () => {
   it('generates query() method on GqlClient', async () => {
     const files = await generateFiles();
     const c = getClient(files).content;
-    expect(c).toContain('async query<T extends {}>(fn: (q: QueryBuilder) => QueryBuilder<T>): Promise<T>');
+    expect(c).toContain(
+      'async query<T extends {}>(fn: (q: QueryBuilder) => QueryBuilder<T>): Promise<T>',
+    );
     expect(c).toContain('createQueryBuilder()');
     expect(c).toContain("__buildDocument('query')");
   });
@@ -222,7 +238,9 @@ describe('GraphQL Query Builder — Client Integration', () => {
   it('generates mutate() method on GqlClient', async () => {
     const files = await generateFiles();
     const c = getClient(files).content;
-    expect(c).toContain('async mutate<T extends {}>(fn: (m: MutationBuilder) => MutationBuilder<T>): Promise<T>');
+    expect(c).toContain(
+      'async mutate<T extends {}>(fn: (m: MutationBuilder) => MutationBuilder<T>): Promise<T>',
+    );
     expect(c).toContain('createMutationBuilder()');
     expect(c).toContain("__buildDocument('mutation')");
   });
@@ -250,7 +268,7 @@ describe('GraphQL Query Builder — Imports', () => {
     const b = getBuilder(files).content;
     expect(b).toContain('Species');
     expect(b).toContain('PetStatus');
-    expect(b).toContain("from './gql-types'");
+    expect(b).toContain("from './gql-types.js'");
   });
 
   it('imports input types from gql-types', async () => {

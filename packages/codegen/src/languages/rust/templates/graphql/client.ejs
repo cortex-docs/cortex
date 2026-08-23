@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::Instant;
 use tokio::sync::Mutex;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
@@ -56,20 +57,48 @@ pub struct <%= it.clientClass %> {
     ws_endpoint: String,
     http: HttpClient,
     headers: HashMap<String, String>,
+    reconnect: bool,
+    reconnect_interval: Duration,
+    max_reconnect_attempts: u32,
+    heartbeat_interval: Duration,
+    heartbeat_timeout: Duration,
 }
 
 impl <%= it.clientClass %> {
     pub fn new(endpoint: &str) -> Self {
+        Self::new_with_timeout(endpoint, Duration::from_secs(15))
+    }
+
+    pub fn new_with_timeout(endpoint: &str, timeout: Duration) -> Self {
+        Self::new_with_options(
+            endpoint, timeout, true, Duration::from_secs(3), 10,
+            Duration::from_secs(30), Duration::from_secs(10),
+        )
+    }
+
+    pub fn new_with_options(
+        endpoint: &str,
+        timeout: Duration,
+        reconnect: bool,
+        reconnect_interval: Duration,
+        max_reconnect_attempts: u32,
+        heartbeat_interval: Duration,
+        heartbeat_timeout: Duration,
+    ) -> Self {
         let ws_endpoint = endpoint.replacen("http", "ws", 1);
         let http = HttpClient::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(timeout)
             .build()
             .expect("Failed to build HTTP client");
 
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-        Self { endpoint: endpoint.to_string(), ws_endpoint, http, headers }
+        Self {
+            endpoint: endpoint.to_string(), ws_endpoint, http, headers,
+            reconnect, reconnect_interval, max_reconnect_attempts,
+            heartbeat_interval, heartbeat_timeout,
+        }
     }
 
     pub fn default() -> Self {
@@ -134,68 +163,92 @@ impl <%= it.clientClass %> {
         let builder = f(SubscriptionBuilder::new());
         let (query, variables) = builder.build_document();
         let ws_url = self.ws_endpoint.clone();
+        let reconnect = self.reconnect;
+        let reconnect_interval = self.reconnect_interval;
+        let max_reconnect_attempts = self.max_reconnect_attempts;
+        let heartbeat_interval = self.heartbeat_interval;
+        let heartbeat_timeout = self.heartbeat_timeout;
 
         let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
 
         tokio::spawn(async move {
-            let mut request = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(ws_url.as_str()).unwrap();
-            request.headers_mut().insert("Sec-WebSocket-Protocol", "graphql-transport-ws".parse().unwrap());
-
-            let (ws_stream, _) = tokio_tungstenite::connect_async_with_config(
-                request, None, false,
-            ).await.expect("ws connect failed");
-
-            let (mut write, mut read) = ws_stream.split();
-
-            // graphql-ws protocol: connection_init
-            write.send(Message::Text(
-                serde_json::json!({"type": "connection_init"}).to_string().into()
-            )).await.ok();
-
-            // Wait for connection_ack
-            while let Some(Ok(msg)) = read.next().await {
-                if let Message::Text(txt) = msg {
-                    let parsed: Value = serde_json::from_str(&txt).unwrap_or_default();
-                    if parsed["type"].as_str() == Some("connection_ack") {
-                        break;
-                    }
+            let mut attempts = 0u32;
+            'connection: loop {
+                if attempts > 0 { tokio::time::sleep(reconnect_interval).await; }
+                let mut request = match tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(ws_url.as_str()) {
+                    Ok(request) => request,
+                    Err(_) => return,
+                };
+                request.headers_mut().insert("Sec-WebSocket-Protocol", "graphql-transport-ws".parse().unwrap());
+                let ws_stream = match tokio_tungstenite::connect_async_with_config(request, None, false).await {
+                    Ok((stream, _)) => stream,
+                    Err(_) if reconnect && attempts < max_reconnect_attempts => { attempts += 1; continue; }
+                    Err(_) => return,
+                };
+                let (mut write, mut read) = ws_stream.split();
+                if write.send(Message::Text(serde_json::json!({"type": "connection_init"}).to_string().into())).await.is_err() {
+                    if reconnect && attempts < max_reconnect_attempts { attempts += 1; continue; }
+                    return;
                 }
-            }
-
-            // Send subscribe
-            let sub_msg = serde_json::json!({
-                "id": "1",
-                "type": "subscribe",
-                "payload": { "query": query, "variables": variables }
-            });
-            write.send(Message::Text(sub_msg.to_string().into())).await.ok();
-
-            // Read events until cancelled
-            loop {
-                tokio::select! {
-                    msg = read.next() => {
-                        match msg {
-                            Some(Ok(Message::Text(txt))) => {
-                                let parsed: Value = serde_json::from_str(&txt).unwrap_or_default();
-                                if parsed["type"].as_str() == Some("next") {
-                                    if let Some(data) = parsed.get("payload").and_then(|p| p.get("data")) {
-                                        on_data(data.clone());
-                                    }
-                                } else if parsed["type"].as_str() == Some("complete") {
-                                    break;
+                let acknowledged = loop {
+                    tokio::select! {
+                        msg = read.next() => match msg {
+                            Some(Ok(Message::Text(text))) => {
+                                let parsed: Value = serde_json::from_str(&text).unwrap_or_default();
+                                if parsed["type"].as_str() == Some("connection_ack") { break true; }
+                            }
+                            _ => break false,
+                        },
+                        _ = &mut cancel_rx => return,
+                    }
+                };
+                if !acknowledged {
+                    if reconnect && attempts < max_reconnect_attempts { attempts += 1; continue; }
+                    return;
+                }
+                let subscribe = serde_json::json!({
+                    "id": "1", "type": "subscribe",
+                    "payload": { "query": query, "variables": variables }
+                });
+                if write.send(Message::Text(subscribe.to_string().into())).await.is_err() {
+                    if reconnect && attempts < max_reconnect_attempts { attempts += 1; continue; }
+                    return;
+                }
+                attempts = 0;
+                let heartbeat_period = if heartbeat_interval.is_zero() { Duration::from_secs(31_536_000) } else { heartbeat_interval };
+                let mut heartbeat = tokio::time::interval(heartbeat_period);
+                heartbeat.tick().await;
+                let mut last_activity = Instant::now();
+                loop {
+                    tokio::select! {
+                        msg = read.next() => match msg {
+                            Some(Ok(Message::Text(text))) => {
+                                last_activity = Instant::now();
+                                let parsed: Value = serde_json::from_str(&text).unwrap_or_default();
+                                match parsed["type"].as_str() {
+                                    Some("next") => if let Some(data) = parsed.get("payload").and_then(|p| p.get("data")) { on_data(data.clone()); },
+                                    Some("ping") => { let _ = write.send(Message::Text(serde_json::json!({"type": "pong"}).to_string().into())).await; },
+                                    Some("complete") | Some("error") => return,
+                                    _ => {}
                                 }
                             }
-                            None => break,
-                            _ => {}
+                            Some(Ok(_)) => { last_activity = Instant::now(); }
+                            _ => break,
+                        },
+                        _ = heartbeat.tick() => {
+                            if !heartbeat_interval.is_zero() {
+                                if !heartbeat_timeout.is_zero() && last_activity.elapsed() > heartbeat_interval + heartbeat_timeout { break; }
+                                let _ = write.send(Message::Text(serde_json::json!({"type": "ping"}).to_string().into())).await;
+                            }
+                        },
+                        _ = &mut cancel_rx => {
+                            let _ = write.send(Message::Text(serde_json::json!({"id": "1", "type": "complete"}).to_string().into())).await;
+                            return;
                         }
                     }
-                    _ = &mut cancel_rx => {
-                        write.send(Message::Text(
-                            serde_json::json!({"id": "1", "type": "complete"}).to_string().into()
-                        )).await.ok();
-                        break;
-                    }
                 }
+                if !reconnect || attempts >= max_reconnect_attempts { break 'connection; }
+                attempts += 1;
             }
         });
 

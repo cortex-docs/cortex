@@ -9,7 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"time"
 )
@@ -61,7 +64,7 @@ func WithHeader(key, value string) <%= clientClass %>Option {
 func New<%= clientClass %>(opts ...<%= clientClass %>Option) *<%= clientClass %> {
 	c := &<%= clientClass %>{
 		BaseURL:    "<%= baseUrl %>",
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 		headers: map[string]string{
 			"Content-Type": "application/json",
 		},
@@ -129,4 +132,98 @@ func (c *<%= clientClass %>) Request(method, path string, query url.Values, body
 	}
 
 	return nil
+}
+
+// RequestMultipart sends text fields and file parts as multipart/form-data.
+func (c *<%= clientClass %>) RequestMultipart(method, path string, query url.Values, fields map[string]string, files map[string][]FileUpload, result interface{}) error {
+	u, err := url.Parse(c.BaseURL + path)
+	if err != nil { return fmt.Errorf("invalid URL: %w", err) }
+	if query != nil { u.RawQuery = query.Encode() }
+
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&payload)
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil { return fmt.Errorf("write multipart field: %w", err) }
+	}
+	for name, uploads := range files {
+		for _, file := range uploads {
+			header := textproto.MIMEHeader{}
+			header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": name, "filename": file.Filename}))
+			contentType := file.ContentType
+			if contentType == "" { contentType = "application/octet-stream" }
+			header.Set("Content-Type", contentType)
+			part, partErr := writer.CreatePart(header)
+			if partErr != nil { return fmt.Errorf("create multipart file: %w", partErr) }
+			if _, partErr = part.Write(file.Data); partErr != nil { return fmt.Errorf("write multipart file: %w", partErr) }
+		}
+	}
+	if err := writer.Close(); err != nil { return fmt.Errorf("close multipart body: %w", err) }
+
+	req, err := http.NewRequest(method, u.String(), &payload)
+	if err != nil { return fmt.Errorf("create request: %w", err) }
+	for k, v := range c.headers {
+		if k != "Content-Type" { req.Header.Set(k, v) }
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil { return fmt.Errorf("request failed: %w", err) }
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil { return fmt.Errorf("read response: %w", err) }
+	if resp.StatusCode >= 400 { return &APIError{StatusCode: resp.StatusCode, Body: string(responseBody)} }
+	if result != nil && len(responseBody) > 0 {
+		if err := json.Unmarshal(responseBody, result); err != nil { return fmt.Errorf("unmarshal response: %w", err) }
+	}
+	return nil
+}
+
+// RequestFile sends one file as the complete request body.
+func (c *<%= clientClass %>) RequestFile(method, path string, query url.Values, file FileUpload, defaultContentType string, result interface{}) error {
+	u, err := url.Parse(c.BaseURL + path)
+	if err != nil { return fmt.Errorf("invalid URL: %w", err) }
+	if query != nil { u.RawQuery = query.Encode() }
+	req, err := http.NewRequest(method, u.String(), bytes.NewReader(file.Data))
+	if err != nil { return fmt.Errorf("create request: %w", err) }
+	for k, v := range c.headers {
+		if k != "Content-Type" { req.Header.Set(k, v) }
+	}
+	contentType := file.ContentType
+	if contentType == "" { contentType = defaultContentType }
+	if contentType == "" { contentType = "application/octet-stream" }
+	req.Header.Set("Content-Type", contentType)
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil { return fmt.Errorf("request failed: %w", err) }
+	defer resp.Body.Close()
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil { return fmt.Errorf("read response: %w", err) }
+	if resp.StatusCode >= 400 { return &APIError{StatusCode: resp.StatusCode, Body: string(responseBody)} }
+	if result != nil && len(responseBody) > 0 {
+		if err := json.Unmarshal(responseBody, result); err != nil { return fmt.Errorf("unmarshal response: %w", err) }
+	}
+	return nil
+}
+
+// RequestStream starts an HTTP request and returns its unbuffered response body.
+// The caller must close the returned body. HTTP chunk framing is decoded by net/http.
+func (c *<%= clientClass %>) RequestStream(method, path string, query url.Values, body interface{}) (io.ReadCloser, error) {
+	u, err := url.Parse(c.BaseURL + path)
+	if err != nil { return nil, fmt.Errorf("invalid URL: %w", err) }
+	if query != nil { u.RawQuery = query.Encode() }
+	var bodyReader io.Reader
+	if body != nil {
+		data, marshalErr := json.Marshal(body)
+		if marshalErr != nil { return nil, fmt.Errorf("marshal body: %w", marshalErr) }
+		bodyReader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequest(method, u.String(), bodyReader)
+	if err != nil { return nil, fmt.Errorf("create request: %w", err) }
+	for k, v := range c.headers { req.Header.Set(k, v) }
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil { return nil, fmt.Errorf("request failed: %w", err) }
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		responseBody, _ := io.ReadAll(resp.Body)
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: string(responseBody)}
+	}
+	return resp.Body, nil
 }

@@ -21,6 +21,11 @@ public class <%= it.clientClass %> : IDisposable
 <% if (hasSubscriptions) { -%>
     private readonly string _wsEndpoint;
     private int _subId;
+    private readonly bool _reconnect;
+    private readonly TimeSpan _reconnectInterval;
+    private readonly int _maxReconnectAttempts;
+    private readonly TimeSpan _heartbeatInterval;
+    private readonly TimeSpan _heartbeatTimeout;
 <% } -%>
 
     public <%= it.clientClass %>(
@@ -29,10 +34,15 @@ public class <%= it.clientClass %> : IDisposable
         string? wsEndpoint = null,
 <% } -%>
         string? bearerToken = null,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null<% if (hasSubscriptions) { %>,
+        bool reconnect = true,
+        TimeSpan? reconnectInterval = null,
+        int maxReconnectAttempts = 10,
+        TimeSpan? heartbeatInterval = null,
+        TimeSpan? heartbeatTimeout = null<% } %>)
     {
         _endpoint = endpoint;
-        _httpClient = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) };
+        _httpClient = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(15) };
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         if (bearerToken is not null)
@@ -40,6 +50,11 @@ public class <%= it.clientClass %> : IDisposable
 <% if (hasSubscriptions) { -%>
 
         _wsEndpoint = wsEndpoint ?? endpoint.Replace("http://", "ws://").Replace("https://", "wss://");
+        _reconnect = reconnect;
+        _reconnectInterval = reconnectInterval ?? TimeSpan.FromSeconds(3);
+        _maxReconnectAttempts = maxReconnectAttempts;
+        _heartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(30);
+        _heartbeatTimeout = heartbeatTimeout ?? TimeSpan.FromSeconds(10);
 <% } -%>
     }
 
@@ -103,39 +118,20 @@ public class <%= it.clientClass %> : IDisposable
         Func<SubscriptionBuilder, SubscriptionBuilder> fn,
         int timeoutMs = 10000)
     {
-        var builder = new SubscriptionBuilder();
-        fn(builder);
-        var (query, variables) = builder.BuildDocument("subscription");
-
-        using var ws = new ClientWebSocket();
-        ws.Options.AddSubProtocol("graphql-transport-ws");
-        await ws.ConnectAsync(new Uri(_wsEndpoint), CancellationToken.None);
-
-        await WsSendAsync(ws, new { type = "connection_init" });
-        await WsReceiveAsync(ws);
-
-        var id = $"{Interlocked.Increment(ref _subId)}";
-        await WsSendAsync(ws, new { type = "subscribe", id, payload = new { query, variables } });
-
-        using var cts = new CancellationTokenSource(timeoutMs);
-        while (!cts.Token.IsCancellationRequested)
-        {
-            var msg = await WsReceiveAsync(ws, cts.Token);
-            if (msg.TryGetProperty("type", out var tp))
+        var result = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var unsubscribe = Subscribe(
+            fn,
+            data =>
             {
-                var type = tp.GetString();
-                if (type == "next" &&
-                    msg.TryGetProperty("payload", out var payload) &&
-                    payload.TryGetProperty("data", out var data))
-                {
-                    try { await WsSendAsync(ws, new { type = "complete", id }); } catch { }
-                    return JsonSerializer.Deserialize<T>(data.GetRawText(), JsonOpts)!;
-                }
-                if (type == "error" || type == "complete") break;
-            }
-        }
-
-        throw new TimeoutException("Subscription timed out");
+                try { result.TrySetResult(JsonSerializer.Deserialize<T>(data.GetRawText(), JsonOpts)!); }
+                catch (Exception error) { result.TrySetException(error); }
+            },
+            error => result.TrySetException(error));
+        using var cts = new CancellationTokenSource(timeoutMs);
+        using var registration = cts.Token.Register(() =>
+            result.TrySetException(new TimeoutException("Subscription timed out")));
+        try { return await result.Task; }
+        finally { unsubscribe(); }
     }
 
     public Action Subscribe(
@@ -152,34 +148,52 @@ public class <%= it.clientClass %> : IDisposable
 
         _ = Task.Run(async () =>
         {
-            try
+            var reconnectAttempts = 0;
+            while (!disposed)
             {
-                ws = new ClientWebSocket();
-                ws.Options.AddSubProtocol("graphql-transport-ws");
-                await ws.ConnectAsync(new Uri(_wsEndpoint), CancellationToken.None);
-                await WsSendAsync(ws, new { type = "connection_init" });
-                await WsReceiveAsync(ws);
-                await WsSendAsync(ws, new { type = "subscribe", id, payload = new { query, variables } });
-
-                while (!disposed && ws.State == WebSocketState.Open)
+                try
                 {
-                    var msg = await WsReceiveAsync(ws);
-                    if (msg.TryGetProperty("type", out var tp))
+                    ws = new ClientWebSocket();
+                    ws.Options.AddSubProtocol("graphql-transport-ws");
+                    await ws.ConnectAsync(new Uri(_wsEndpoint), CancellationToken.None);
+                    await WsSendAsync(ws, new { type = "connection_init" });
+                    await WsReceiveAsync(ws);
+                    await WsSendAsync(ws, new { type = "subscribe", id, payload = new { query, variables } });
+                    reconnectAttempts = 0;
+                    var lastActivity = DateTimeOffset.UtcNow;
+
+                    while (!disposed && ws.State == WebSocketState.Open)
                     {
-                        var type = tp.GetString();
-                        if (type == "next" && !disposed &&
-                            msg.TryGetProperty("payload", out var payload) &&
-                            payload.TryGetProperty("data", out var data))
+                        JsonElement msg;
+                        using var receiveCts = new CancellationTokenSource(
+                            _heartbeatInterval > TimeSpan.Zero ? _heartbeatInterval : Timeout.InfiniteTimeSpan);
+                        try { msg = await WsReceiveAsync(ws, receiveCts.Token); }
+                        catch (OperationCanceledException)
                         {
-                            onData(data.Clone());
+                            if (_heartbeatTimeout > TimeSpan.Zero && DateTimeOffset.UtcNow - lastActivity > _heartbeatInterval + _heartbeatTimeout)
+                                throw new WebSocketException("GraphQL subscription heartbeat timed out");
+                            await WsSendAsync(ws, new { type = "ping" });
+                            continue;
                         }
-                        if (type == "error" || type == "complete") break;
+                        lastActivity = DateTimeOffset.UtcNow;
+                        if (msg.TryGetProperty("type", out var tp))
+                        {
+                            var type = tp.GetString();
+                            if (type == "ping") { await WsSendAsync(ws, new { type = "pong" }); continue; }
+                            if (type == "next" && !disposed && msg.TryGetProperty("payload", out var payload) && payload.TryGetProperty("data", out var data))
+                                onData(data.Clone());
+                            if (type == "error" || type == "complete") return;
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                if (!disposed) onError?.Invoke(ex);
+                catch (Exception ex)
+                {
+                    if (disposed) return;
+                    if (!_reconnect || reconnectAttempts >= _maxReconnectAttempts) { onError?.Invoke(ex); return; }
+                }
+                finally { ws?.Dispose(); ws = null; }
+                reconnectAttempts++;
+                await Task.Delay(_reconnectInterval);
             }
         });
 

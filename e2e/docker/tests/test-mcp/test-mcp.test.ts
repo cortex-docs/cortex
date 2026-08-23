@@ -59,12 +59,27 @@ function sendRequest(
         let end = -1;
         for (let i = jsonStart; i < buffer.length; i++) {
           const ch = buffer[i];
-          if (escape) { escape = false; continue; }
-          if (ch === '\\' && inString) { escape = true; continue; }
-          if (ch === '"') { inString = !inString; continue; }
+          if (escape) {
+            escape = false;
+            continue;
+          }
+          if (ch === '\\' && inString) {
+            escape = true;
+            continue;
+          }
+          if (ch === '"') {
+            inString = !inString;
+            continue;
+          }
           if (inString) continue;
           if (ch === '{') depth++;
-          if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+          if (ch === '}') {
+            depth--;
+            if (depth === 0) {
+              end = i;
+              break;
+            }
+          }
         }
 
         if (end === -1) break; // Incomplete JSON, wait for more data
@@ -115,7 +130,10 @@ function sendNotification(
 
 describe('MCP Server', () => {
   // Resolve paths relative to the monorepo root
-  const repoRoot = path.resolve(import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname), '../../../..');
+  const repoRoot = path.resolve(
+    import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname),
+    '../../../..',
+  );
   const fixturePath = path.join(repoRoot, 'packages/core/__fixtures__/petstore.yaml');
 
   let mcpProc: ChildProcess | null = null;
@@ -176,9 +194,7 @@ describe('MCP Server', () => {
     // Give it a moment to start
     await new Promise((r) => setTimeout(r, 1000));
 
-    expect(
-      !mcpProc.killed && mcpProc.exitCode === null,
-    ).toBe(true);
+    expect(!mcpProc.killed && mcpProc.exitCode === null).toBe(true);
   }, 180000);
 
   afterAll(() => {

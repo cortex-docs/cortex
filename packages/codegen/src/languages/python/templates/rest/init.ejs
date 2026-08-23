@@ -1,5 +1,5 @@
 <% const clientClass = it.clientClass; -%>
-<% const pkgName = it.pkgName ?? it.config.languageConfig.package_name; -%>
+<% const pkgName = (it.pkgName ?? it.config.languageConfig.package_name).replace(/[-.]/g, '_'); -%>
 <% const baseUrl = it.baseUrl ?? it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
 from <%= pkgName %> import <%= clientClass %>
 

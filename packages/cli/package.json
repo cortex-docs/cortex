@@ -1,27 +1,58 @@
 {
   "name": "@cortex/cli",
   "version": "0.1.0",
-  "description": "CLI tool for Cortex — OpenAPI SDK generator",
+  "description": "Cortex Docs CLI for SDKs, API documentation, and MCP servers",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cortex-docs/cortex.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/cortex-docs/cortex#readme",
+  "bugs": {
+    "url": "https://github.com/cortex-docs/cortex/issues"
+  },
+  "keywords": [
+    "cortex-docs",
+    "openapi",
+    "sdk",
+    "documentation",
+    "mcp"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "main": "./dist/main.js",
   "types": "./dist/main.d.ts",
   "bin": {
     "cortex": "./dist/main.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc && node -e \"require('node:fs').chmodSync('dist/main.js', 0o755)\"",
+    "prepack": "npm run build",
     "dev": "tsc --watch",
     "start": "node dist/main.js",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@cortex/codegen": "*",
-    "@cortex/core": "*",
-    "@cortex/mcp-gen": "*",
+    "@cortex/codegen": "0.1.0",
+    "@cortex/core": "0.1.0",
+    "@cortex/docs-ui": "0.1.0",
+    "@cortex/mcp-gen": "0.1.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "chalk": "^5.4.0",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.1",
     "nest-commander": "^3.20.0",
     "ora": "^8.2.0",
     "reflect-metadata": "^0.2.2",
@@ -32,6 +63,6 @@
     "@types/node": "^22.0.0",
     "nest-commander-testing": "^3.5.0",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.0"
+    "vitest": "^4.1.10"
   }
 }

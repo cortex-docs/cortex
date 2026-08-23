@@ -16,7 +16,7 @@ export class GraphQLParser {
 
   private async loadContent(specPath: string): Promise<string> {
     if (specPath.startsWith('http://') || specPath.startsWith('https://')) {
-      const res = await fetch(specPath);
+      const res = await fetch(specPath, { signal: AbortSignal.timeout(30_000) });
       if (!res.ok) throw new Error(`Failed to fetch ${specPath}: ${res.status}`);
       return res.text();
     }
@@ -32,7 +32,7 @@ export class GraphQLParser {
     const subscriptions: GraphQLOperation[] = [];
 
     let title = 'GraphQL API';
-    let version = '1.0.0';
+    const version = '1.0.0';
     let description: string | undefined;
 
     const blocks = this.extractBlocks(sdl);
@@ -70,12 +70,26 @@ export class GraphQLParser {
     const schemaDirective = sdl.match(/@title\("([^"]+)"\)/);
     if (schemaDirective) title = schemaDirective[1];
 
-    return { title, version, description, endpoint, queries, mutations, subscriptions, types, enums, inputs };
+    return {
+      title,
+      version,
+      description,
+      endpoint,
+      queries,
+      mutations,
+      subscriptions,
+      types,
+      enums,
+      inputs,
+    };
   }
 
-  private extractBlocks(sdl: string): Array<{ kind: string; name: string; body: string; description?: string }> {
+  private extractBlocks(
+    sdl: string,
+  ): Array<{ kind: string; name: string; body: string; description?: string }> {
     const blocks: Array<{ kind: string; name: string; body: string; description?: string }> = [];
-    const regex = /(?:"""([\s\S]*?)"""\s*)?(?:#\s*(.*?)\n\s*)?(type|input|enum|interface|union|scalar)\s+(\w+)(?:\s+implements\s+\w+(?:\s*&\s*\w+)*)?\s*\{([^}]*)\}/g;
+    const regex =
+      /(?:"""([\s\S]*?)"""\s*)?(?:#\s*(.*?)\n\s*)?(type|input|enum|interface|union|scalar)\s+(\w+)(?:\s+implements\s+\w+(?:\s*&\s*\w+)*)?\s*\{([^}]*)\}/g;
     let match;
 
     while ((match = regex.exec(sdl)) !== null) {
@@ -92,11 +106,17 @@ export class GraphQLParser {
 
   private parseFields(body: string): GraphQLField[] {
     const fields: GraphQLField[] = [];
-    const lines = body.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    const lines = body
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
 
     for (const line of lines) {
       const desc = line.match(/"""(.*?)"""/)?.[1]?.trim();
-      const cleaned = line.replace(/""".*?"""\s*/, '').replace(/#.*$/, '').trim();
+      const cleaned = line
+        .replace(/""".*?"""\s*/, '')
+        .replace(/#.*$/, '')
+        .trim();
       const match = cleaned.match(/^(\w+)(?:\([^)]*\))?\s*:\s*(.+?)$/);
       if (!match) continue;
 
@@ -111,11 +131,17 @@ export class GraphQLParser {
 
   private parseOperationFields(body: string): GraphQLOperation[] {
     const ops: GraphQLOperation[] = [];
-    const lines = body.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    const lines = body
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
 
     for (const line of lines) {
       const desc = line.match(/"""(.*?)"""/)?.[1]?.trim();
-      const cleaned = line.replace(/""".*?"""\s*/, '').replace(/#.*$/, '').trim();
+      const cleaned = line
+        .replace(/""".*?"""\s*/, '')
+        .replace(/#.*$/, '')
+        .trim();
 
       const match = cleaned.match(/^(\w+)(?:\(([^)]*)\))?\s*:\s*(.+?)$/);
       if (!match) continue;
@@ -132,7 +158,10 @@ export class GraphQLParser {
 
   private parseArgs(argsStr: string): GraphQLField[] {
     const args: GraphQLField[] = [];
-    const parts = argsStr.split(',').map((s) => s.trim()).filter(Boolean);
+    const parts = argsStr
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     for (const part of parts) {
       const match = part.match(/^(\w+)\s*:\s*(.+?)$/);
@@ -147,7 +176,10 @@ export class GraphQLParser {
   }
 
   private parseEnumValues(body: string): string[] {
-    return body.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#') && !l.startsWith('"'));
+    return body
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#') && !l.startsWith('"'));
   }
 
   private parseTypeRef(raw: string): { type: string; required: boolean; isList: boolean } {

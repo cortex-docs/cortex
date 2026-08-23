@@ -18,6 +18,7 @@ import java.util.concurrent.CompletionStage
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 <% } -%>
 import kotlinx.serialization.json.Json
@@ -45,10 +46,16 @@ class <%= it.clientClass %>(
     val wsEndpoint: String = "<%= it.endpoint %>".replace("http", "ws"),
 <% } -%>
     bearerToken: String? = null,
+    private val requestTimeout: Duration = Duration.ofSeconds(15),
+<% if (hasSubscriptions) { -%>
+    private val reconnect: Boolean = true,
+    private val reconnectIntervalMs: Long = 3000,
+    private val maxReconnectAttempts: Int = 10,
+<% } -%>
 ) {
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(Duration.ofSeconds(30))
+        .connectTimeout(requestTimeout)
         .build()
 
     private val headers: MutableMap<String, String> = mutableMapOf("Content-Type" to "application/json")
@@ -110,6 +117,7 @@ class <%= it.clientClass %>(
 
         val reqBuilder = HttpRequest.newBuilder()
             .uri(URI.create(endpoint))
+            .timeout(requestTimeout)
             .POST(HttpRequest.BodyPublishers.ofString(json.encodeToString(requestBody)))
 
         headers.forEach { (k, v) -> reqBuilder.header(k, v) }
@@ -176,100 +184,24 @@ class <%= it.clientClass %>(
         timeoutMs: Long = 10000,
         fn: (SubscriptionBuilder) -> SubscriptionBuilder,
     ): JsonObject {
-        val builder = createSubscriptionBuilder()
-        fn(builder)
-        val (query, variables) = builder.buildDocument("subscription")
-
         val result = AtomicReference<JsonObject?>()
         val error = AtomicReference<Exception?>()
         val latch = CountDownLatch(1)
-
-        val varsJson = if (variables.isNotEmpty()) {
-            JsonObject(variables.entries.associate { (k, v) -> k to anyToJsonElement(v) })
-        } else {
-            JsonObject(emptyMap())
-        }
-
-        val listener = object : WebSocket.Listener {
-            private val buffer = StringBuilder()
-
-            override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*> {
-                buffer.append(data)
-                if (!last) {
-                    webSocket.request(1)
-                    return CompletableFuture.completedFuture(null)
-                }
-                val text = buffer.toString()
-                buffer.clear()
-                val msg = json.parseToJsonElement(text).jsonObject
-                val type = msg["type"]?.jsonPrimitive?.content
-
-                when (type) {
-                    "connection_ack" -> {
-                        val subscribePayload = buildJsonObject {
-                            put("type", "subscribe")
-                            put("id", "1")
-                            put("payload", buildJsonObject {
-                                put("query", query)
-                                put("variables", varsJson)
-                            })
-                        }
-                        webSocket.sendText(json.encodeToString(subscribePayload), true)
-                    }
-                    "next" -> {
-                        val payload = msg["payload"]?.jsonObject
-                        val data = payload?.get("data")?.jsonObject
-                        if (data != null) {
-                            result.set(data)
-                        }
-                        webSocket.sendText(json.encodeToString(buildJsonObject {
-                            put("type", "complete")
-                            put("id", "1")
-                        }), true)
-                        webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "done")
-                        latch.countDown()
-                    }
-                    "error" -> {
-                        val payload = msg["payload"]
-                        error.set(GqlException("Subscription error: $payload"))
-                        latch.countDown()
-                    }
-                    "complete" -> {
-                        if (result.get() == null) {
-                            error.set(GqlException("Subscription completed without data"))
-                        }
-                        latch.countDown()
-                    }
-                }
-                webSocket.request(1)
-                return CompletableFuture.completedFuture(null)
+        val unsubscribe = subscribe(fn, {
+            if (result.compareAndSet(null, it)) latch.countDown()
+        }, {
+            error.compareAndSet(null, it)
+            latch.countDown()
+        })
+        try {
+            if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                throw GqlException("Subscription timed out after ${timeoutMs}ms")
             }
-
-            override fun onError(webSocket: WebSocket, throwable: Throwable) {
-                error.set(GqlException("WebSocket error: ${throwable.message}"))
-                latch.countDown()
-            }
+            error.get()?.let { throw it }
+            return result.get() ?: throw GqlException("Subscription completed without data")
+        } finally {
+            unsubscribe()
         }
-
-        val ws = httpClient.newWebSocketBuilder()
-            .subprotocols("graphql-transport-ws")
-            .buildAsync(URI.create(wsEndpoint), listener)
-            .get(timeoutMs, TimeUnit.MILLISECONDS)
-
-        synchronized(activeWebSockets) { activeWebSockets.add(ws) }
-
-        val initPayload = buildJsonObject { put("type", "connection_init") }
-        ws.sendText(json.encodeToString(initPayload), true)
-
-        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-            ws.sendClose(WebSocket.NORMAL_CLOSURE, "timeout")
-            throw GqlException("Subscription timed out after ${timeoutMs}ms")
-        }
-
-        synchronized(activeWebSockets) { activeWebSockets.remove(ws) }
-
-        error.get()?.let { throw it }
-        return result.get() ?: throw GqlException("Subscription completed without data")
     }
 
     /**
@@ -294,6 +226,17 @@ class <%= it.clientClass %>(
         }
 
         val wsRef = AtomicReference<WebSocket?>()
+        val reconnectAttempts = AtomicInteger(0)
+        lateinit var connect: () -> Unit
+
+        fun scheduleReconnect() {
+            val attempt = reconnectAttempts.getAndIncrement()
+            if (stopped.get() || !reconnect || attempt >= maxReconnectAttempts) {
+                if (!stopped.get() && onError != null) onError(GqlException("Subscription reconnect attempts exhausted"))
+                return
+            }
+            CompletableFuture.delayedExecutor(reconnectIntervalMs, TimeUnit.MILLISECONDS).execute { connect() }
+        }
 
         val listener = object : WebSocket.Listener {
             private val buffer = StringBuilder()
@@ -345,33 +288,48 @@ class <%= it.clientClass %>(
             }
 
             override fun onError(webSocket: WebSocket, throwable: Throwable) {
-                if (!stopped.get() && onError != null) {
-                    onError(GqlException("WebSocket error: ${throwable.message}"))
-                }
+                wsRef.compareAndSet(webSocket, null)
+                scheduleReconnect()
+            }
+
+            override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String?): CompletionStage<*> {
+                wsRef.compareAndSet(webSocket, null)
+                synchronized(activeWebSockets) { activeWebSockets.remove(webSocket) }
+                scheduleReconnect()
+                return CompletableFuture.completedFuture(null)
             }
         }
 
-        val ws = httpClient.newWebSocketBuilder()
-            .subprotocols("graphql-transport-ws")
-            .buildAsync(URI.create(wsEndpoint), listener)
-            .get(10, TimeUnit.SECONDS)
-
-        wsRef.set(ws)
-        synchronized(activeWebSockets) { activeWebSockets.add(ws) }
-
-        val initPayload = buildJsonObject { put("type", "connection_init") }
-        ws.sendText(json.encodeToString(initPayload), true)
+        connect = {
+            httpClient.newWebSocketBuilder()
+                .subprotocols("graphql-transport-ws")
+                .buildAsync(URI.create(wsEndpoint), listener)
+                .whenComplete { ws, error ->
+                    if (error != null) {
+                        scheduleReconnect()
+                    } else if (!stopped.get()) {
+                        reconnectAttempts.set(0)
+                        wsRef.set(ws)
+                        synchronized(activeWebSockets) { activeWebSockets.add(ws) }
+                        val initPayload = buildJsonObject { put("type", "connection_init") }
+                        ws.sendText(json.encodeToString(initPayload), true)
+                        ws.request(1)
+                    }
+                }
+        }
+        connect()
 
         return {
             stopped.set(true)
+            val ws = wsRef.getAndSet(null)
             try {
-                ws.sendText(json.encodeToString(buildJsonObject {
+                ws?.sendText(json.encodeToString(buildJsonObject {
                     put("type", "complete")
                     put("id", "1")
                 }), true)
-                ws.sendClose(WebSocket.NORMAL_CLOSURE, "unsubscribed")
+                ws?.sendClose(WebSocket.NORMAL_CLOSURE, "unsubscribed")
             } catch (_: Exception) {}
-            synchronized(activeWebSockets) { activeWebSockets.remove(ws) }
+            if (ws != null) synchronized(activeWebSockets) { activeWebSockets.remove(ws) }
         }
     }
 

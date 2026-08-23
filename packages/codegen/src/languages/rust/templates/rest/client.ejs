@@ -29,8 +29,12 @@ pub enum ApiError {
 
 impl <%= clientClass %> {
     pub fn new(base_url: &str) -> Self {
+        Self::new_with_timeout(base_url, Duration::from_secs(15))
+    }
+
+    pub fn new_with_timeout(base_url: &str, timeout: Duration) -> Self {
         let http = HttpClient::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(timeout)
             .build()
             .expect("Failed to build HTTP client");
 
@@ -94,5 +98,93 @@ impl <%= clientClass %> {
         }
 
         Ok(response.json::<T>().await?)
+    }
+
+    pub async fn request_multipart<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        path: &str,
+        query: Option<&HashMap<String, String>>,
+        form: reqwest::multipart::Form,
+    ) -> Result<T, ApiError> {
+        let url = format!("{}{}", self.base_url, path);
+        let mut req = match method {
+            "POST" => self.http.post(&url),
+            "PUT" => self.http.put(&url),
+            "PATCH" => self.http.patch(&url),
+            "DELETE" => self.http.delete(&url),
+            _ => self.http.get(&url),
+        };
+        for (key, value) in &self.headers {
+            if !key.eq_ignore_ascii_case("content-type") {
+                req = req.header(key.as_str(), value.as_str());
+            }
+        }
+        if let Some(values) = query { req = req.query(values); }
+        let response = req.multipart(form).send().await?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            let body = response.text().await.unwrap_or_default();
+            return Err(ApiError::Http { status, body });
+        }
+        if status == 204 {
+            return serde_json::from_value(Value::Null).map_err(Into::into);
+        }
+        Ok(response.json::<T>().await?)
+    }
+
+    pub async fn request_file<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        path: &str,
+        query: Option<&HashMap<String, String>>,
+        file: &super::types::FileUpload,
+        default_content_type: &str,
+    ) -> Result<T, ApiError> {
+        let url = format!("{}{}", self.base_url, path);
+        let mut req = match method {
+            "POST" => self.http.post(&url),
+            "PUT" => self.http.put(&url),
+            "PATCH" => self.http.patch(&url),
+            "DELETE" => self.http.delete(&url),
+            _ => self.http.get(&url),
+        };
+        for (key, value) in &self.headers {
+            if !key.eq_ignore_ascii_case("content-type") { req = req.header(key.as_str(), value.as_str()); }
+        }
+        if let Some(values) = query { req = req.query(values); }
+        let content_type = if file.content_type.is_empty() {
+            if default_content_type.is_empty() { "application/octet-stream" } else { default_content_type }
+        } else {
+            &file.content_type
+        };
+        let response = req.header("Content-Type", content_type).body(file.data.clone()).send().await?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            let body = response.text().await.unwrap_or_default();
+            return Err(ApiError::Http { status, body });
+        }
+        if status == 204 { return serde_json::from_value(Value::Null).map_err(Into::into); }
+        Ok(response.json::<T>().await?)
+    }
+
+    /// Starts an unbuffered request. Call `chunk()` or `bytes_stream()` on the response.
+    pub async fn request_stream(&self, method: &str, path: &str, query: Option<&HashMap<String, String>>, body: Option<&Value>) -> Result<reqwest::Response, ApiError> {
+        let url = format!("{}{}", self.base_url, path);
+        let mut req = match method {
+            "GET" => self.http.get(&url), "POST" => self.http.post(&url),
+            "PUT" => self.http.put(&url), "PATCH" => self.http.patch(&url),
+            "DELETE" => self.http.delete(&url), _ => self.http.get(&url),
+        };
+        for (key, value) in &self.headers { req = req.header(key.as_str(), value.as_str()); }
+        if let Some(values) = query { req = req.query(values); }
+        if let Some(value) = body { req = req.json(value); }
+        let response = req.send().await?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            let response_body = response.text().await.unwrap_or_default();
+            return Err(ApiError::Http { status, body: response_body });
+        }
+        Ok(response)
     }
 }

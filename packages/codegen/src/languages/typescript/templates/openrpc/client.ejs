@@ -1,13 +1,11 @@
 <% const entries = Array.from(it.schemas.entries()); -%>
-<% const hasTypes = entries.some(([_, s]) => s.type === 'object' && s.properties); -%>
+<% const hasTypes = entries.length > 0; -%>
 <% if (hasTypes) { -%>
 import type {
-<% for (const [name, schema] of entries) { -%>
-<% if (schema.type === 'object' && schema.properties) { -%>
+<% for (const [name] of entries) { -%>
   <%= it.naming.className(name) %>,
 <% } -%>
-<% } -%>
-} from './openrpc-types';
+} from './openrpc-types.js';
 <% } -%>
 
 export interface JsonRpcRequest {

@@ -1,6 +1,8 @@
 <% const r = it.resource; -%>
 <% const clientClass = it.clientClass; -%>
 <% const pkg = it.config.languageConfig.package_name.replace(/-/g, '.').toLowerCase(); -%>
+<% const schemaNames = new Set(it.schemas.map(s => s.className)); -%>
+<% const modelType = (type) => schemaNames.has(type) ? `${pkg}.models.${type}` : type; -%>
 package <%= pkg %>;
 
 import <%= pkg %>.models.*;
@@ -16,11 +18,11 @@ public class <%= r.className %> {
     }
 
 <% for (const op of r.operations) { -%>
-<% const uniqueParams = [...op.pathParams.map(p => `String ${p.name}`), ...(op.hasBody ? [`${op.bodyType} body`] : []), ...(op.queryParams.length > 0 ? ['Map<String, String> query'] : [])]; -%>
+<% const uniqueParams = [...op.pathParams.map(p => `String ${p.name}`), ...(op.hasBody ? [`${modelType(op.bodyType)} body`] : []), ...(op.queryParams.length > 0 ? ['Map<String, String> query'] : [])]; -%>
 <% let pathExpr = `"${op.path}"`; for (const p of op.pathParams) { pathExpr = pathExpr + `.replace("{${p.originalName}}", ${p.name})`; } -%>
 <% const isVoid = op.responseType === 'void'; -%>
 <% const isList = !!op.listItemType; -%>
-<% const returnType = isList ? `PaginatedResponse<${op.listItemType}>` : (isVoid ? 'void' : op.responseType); -%>
+<% const returnType = isList ? `PaginatedResponse<${modelType(op.listItemType)}>` : (isVoid ? 'void' : modelType(op.responseType)); -%>
 <% if (op.summary) { -%>
     /**
      * <%= op.summary %>
@@ -28,16 +30,16 @@ public class <%= r.className %> {
 <% } -%>
 <% if (isVoid) { -%>
     public void <%= op.name %>(<%= uniqueParams.join(', ') %>) throws ApiException {
-        client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %>);
+        client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %><% if (op.isMultipart) { %>, true<% } %><% if (op.isRawBinary) { %>, false, true, "<%= op.contentType %>"<% } %>);
     }
 <% } else if (isList) { -%>
-    public PaginatedResponse<<%= op.listItemType %>> <%= op.name %>(<%= uniqueParams.join(', ') %>) throws ApiException {
-        String json = client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %>);
-        return client.getGson().fromJson(json, new TypeToken<PaginatedResponse<<%= op.listItemType %>>>(){}.getType());
+    public <%= returnType %> <%= op.name %>(<%= uniqueParams.join(', ') %>) throws ApiException {
+        String json = client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %><% if (op.isMultipart) { %>, true<% } %><% if (op.isRawBinary) { %>, false, true, "<%= op.contentType %>"<% } %>);
+        return client.getGson().fromJson(json, new TypeToken<<%= returnType %>>(){}.getType());
     }
 <% } else { -%>
     public <%= returnType %> <%= op.name %>(<%= uniqueParams.join(', ') %>) throws ApiException {
-        String json = client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %>);
+        String json = client.request("<%= op.method %>", <%= pathExpr %>, <%= op.queryParams.length > 0 ? 'query' : 'null' %>, <%= op.hasBody ? 'body' : 'null' %><% if (op.isMultipart) { %>, true<% } %><% if (op.isRawBinary) { %>, false, true, "<%= op.contentType %>"<% } %>);
         return client.getGson().fromJson(json, <%= returnType %>.class);
     }
 <% } -%>

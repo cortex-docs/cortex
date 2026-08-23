@@ -1,5 +1,5 @@
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
-<% const ns = it.naming.className(it.config.languageConfig.package_name); -%>
+<% const ns = it.naming.className(it.config.languageConfig.package_name.replace(/[\/.]+/g, '-')); -%>
 <% const clientClass = it.clientClass; -%>
 <?php
 
@@ -9,6 +9,15 @@ namespace <%= ns %>;
 
 use GuzzleHttp\Client as HttpClient;
 use GuzzleHttp\Exception\RequestException;
+
+final class FileUpload
+{
+    public function __construct(
+        public readonly string $filename,
+        public readonly string $data,
+        public readonly string $contentType = 'application/octet-stream',
+    ) {}
+}
 
 class <%= clientClass %>
 {
@@ -20,10 +29,10 @@ class <%= clientClass %>
         string $baseUrl = '<%= baseUrl %>',
         ?string $bearerToken = null,
         ?string $apiKey = null,
-        float $timeout = 30.0,
+        float $timeout = 15.0,
     ) {
         $this->baseUrl = $baseUrl;
-        $this->headers = ['Content-Type' => 'application/json'];
+        $this->headers = [];
 
         if ($bearerToken !== null) {
             $this->headers['Authorization'] = "Bearer {$bearerToken}";
@@ -46,7 +55,15 @@ class <%= clientClass %>
     }
 
 <% } -%>
-    public function request(string $method, string $path, ?array $query = null, mixed $body = null): mixed
+    public function request(
+        string $method,
+        string $path,
+        ?array $query = null,
+        mixed $body = null,
+        bool $multipart = false,
+        bool $rawFile = false,
+        ?string $rawContentType = null,
+    ): mixed
     {
         $options = [];
 
@@ -54,7 +71,46 @@ class <%= clientClass %>
             $options['query'] = $query;
         }
         if ($body !== null) {
-            $options['json'] = $body;
+            if ($rawFile) {
+                if (!$body instanceof FileUpload) {
+                    throw new \TypeError('raw file body must be a FileUpload');
+                }
+                $options['body'] = $body->data;
+                $options['headers']['Content-Type'] = $body->contentType ?: ($rawContentType ?: 'application/octet-stream');
+            } elseif ($multipart) {
+                $options['multipart'] = [];
+                foreach ($body as $name => $value) {
+                    if ($value === null) continue;
+                    if ($value instanceof FileUpload) {
+                        $options['multipart'][] = [
+                            'name' => (string) $name,
+                            'contents' => $value->data,
+                            'filename' => $value->filename,
+                            'headers' => ['Content-Type' => $value->contentType],
+                        ];
+                    } elseif (is_array($value) && array_is_list($value) && array_reduce(
+                        $value,
+                        static fn (bool $valid, mixed $item): bool => $valid && $item instanceof FileUpload,
+                        true,
+                    )) {
+                        foreach ($value as $file) {
+                            $options['multipart'][] = [
+                                'name' => (string) $name,
+                                'contents' => $file->data,
+                                'filename' => $file->filename,
+                                'headers' => ['Content-Type' => $file->contentType],
+                            ];
+                        }
+                    } else {
+                        $options['multipart'][] = [
+                            'name' => (string) $name,
+                            'contents' => is_scalar($value) ? (string) $value : json_encode($value, JSON_THROW_ON_ERROR),
+                        ];
+                    }
+                }
+            } else {
+                $options['json'] = $body;
+            }
         }
 
         try {
@@ -66,6 +122,34 @@ class <%= clientClass %>
             }
 
             return json_decode($response->getBody()->getContents(), true);
+        } catch (RequestException $e) {
+            $response = $e->getResponse();
+            throw new ApiException(
+                $response ? $response->getStatusCode() : 0,
+                $response ? $response->getBody()->getContents() : $e->getMessage(),
+            );
+        }
+    }
+
+    /** @return \Generator<int, string> Decoded response payload chunks. */
+    public function requestStream(
+        string $method,
+        string $path,
+        ?array $query = null,
+        mixed $body = null,
+        int $chunkSize = 8192,
+        ?float $timeout = null,
+    ): \Generator {
+        $options = ['stream' => true];
+        if ($query !== null) $options['query'] = $query;
+        if ($body !== null) $options['json'] = $body;
+        if ($timeout !== null) $options['timeout'] = $timeout;
+        try {
+            $response = $this->httpClient->request($method, $path, $options);
+            while (!$response->getBody()->eof()) {
+                $chunk = $response->getBody()->read($chunkSize);
+                if ($chunk !== '') yield $chunk;
+            }
         } catch (RequestException $e) {
             $response = $e->getResponse();
             throw new ApiException(

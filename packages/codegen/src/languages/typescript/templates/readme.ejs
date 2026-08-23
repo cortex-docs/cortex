@@ -60,6 +60,8 @@ npm install <%= pkgName %>
 <%~ include("rest/init", it) %>
 ```
 
+HTTP requests default to a 15-second timeout. Set `timeout` in the client options, or pass a per-request `timeout`. Use `requestStream()` to consume chunked responses as an `AsyncGenerator<Uint8Array>` without buffering the full body.
+
 ### Resources
 <% for (const resource of it.resources) { -%>
 
@@ -120,6 +122,8 @@ Values: <%= schema.enumValues.map(v => `\`'${v}'\``).join(' | ') %>
 ```typescript
 <%~ include("graphql/init", it) %>
 ```
+
+Queries and mutations default to a 15-second HTTP timeout. Subscription reconnect interval, maximum attempts, heartbeat interval, and connection acknowledgement timeout are configurable client options.
 <% if (it.gql.queries.length > 0) { -%>
 
 ### Queries
@@ -236,6 +240,10 @@ Values: <%= e.values.map(v => `\`${v}\``).join(' | ') %>
 ```typescript
 <%~ include("websocket/init", it) %>
 ```
+
+Reconnect attempts and retry intervals are configurable constructor options. Application heartbeat messages come from the AsyncAPI source in `cortex.config.yml`.
+
+The generated heartbeat is disabled when the source has no `websocket.heartbeat` block. Set `heartbeatInterval: 0` to disable it at runtime.
 
 ### Channels
 

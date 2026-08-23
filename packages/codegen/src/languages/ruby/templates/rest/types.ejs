@@ -1,4 +1,11 @@
 # frozen_string_literal: true
+<% const schemaNames = new Set(it.schemas.map(s => s.className)); -%>
+
+FileUpload = Struct.new(:filename, :data, :content_type, keyword_init: true) do
+  def initialize(filename:, data:, content_type: "application/octet-stream")
+    super
+  end
+end
 
 <% for (const schema of it.schemas) { -%>
 <% if (schema.isEnum) { -%>
@@ -24,7 +31,14 @@ end
     return nil if hash.nil?
     new(
 <% for (let i = 0; i < schema.properties.length; i++) { -%>
-      hash["<%= schema.properties[i].originalName %>"]<%= i < schema.properties.length - 1 ? ',' : '' %>
+<% const prop = schema.properties[i]; const arrayMatch = /^Array<(.+)>$/.exec(prop.type); -%>
+<% if (arrayMatch && schemaNames.has(arrayMatch[1])) { -%>
+      (hash["<%= prop.originalName %>"] || []).map { |item| Rest<%= arrayMatch[1] %>.from_hash(item) }<%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } else if (schemaNames.has(prop.type)) { -%>
+      Rest<%= prop.type %>.from_hash(hash["<%= prop.originalName %>"])<%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } else { -%>
+      hash["<%= prop.originalName %>"]<%= i < schema.properties.length - 1 ? ',' : '' %>
+<% } -%>
 <% } -%>
     )
   end
@@ -37,6 +51,7 @@ end
     }
   end
 end
+Rest<%= schema.className %> = <%= schema.className %>
 
 <% } -%>
 <% } -%>

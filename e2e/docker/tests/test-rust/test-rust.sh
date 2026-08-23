@@ -3,10 +3,12 @@
 # that import and call the generated GqlClient, types, and REST client.
 set -e
 
-GEN="${GEN_DIR:-/tmp/cortex-e2e-sdks/generated}"
 BASE="${MOCK_URL:-http://localhost:4010}"
-RS_SRC="$GEN/rust/src"
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOCAL_GEN="$TEST_DIR/generated"
+GEN="${GEN_DIR:-/tmp/cortex-e2e-sdks/generated}"
+if [ -d "$LOCAL_GEN/rust/src" ]; then GEN="$LOCAL_GEN"; fi
+RS_SRC="$GEN/rust/src"
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
 
@@ -32,7 +34,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "stream", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -162,7 +164,7 @@ echo "  grpc.rs contents:"
 cat "$TMP/src/grpc.rs" 2>/dev/null || echo "  (no grpc.rs)"
 echo "  OK: Generated SDK files copied"
 echo "  Compiling and running tests..."
-cd "$TMP" && MOCK_URL="$BASE" GRPC_ADDR="$BASE" cargo test -- --test-threads=1 2>&1
+cd "$TMP" && CARGO_TARGET_DIR="$TEST_DIR/target" MOCK_URL="$BASE" GRPC_ADDR="$BASE" cargo test --release -- --test-threads=1 2>&1
 TEST_EXIT=$?
 
 if [ $TEST_EXIT -ne 0 ]; then

@@ -1,0 +1,27 @@
+from conan import ConanFile
+from conan.tools.files import copy
+import os
+
+
+class CortexCppSdk(ConanFile):
+    name = "<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase() %>-cpp"
+    version = "<%= it.version %>"
+    package_type = "header-library"
+    license = "MIT"
+    description = "C++ SDK for <%= it.title %>"
+<% if (it.repositoryUrl) { %>    homepage = "<%= it.repositoryUrl %>"
+    url = "<%= it.repositoryUrl %>"
+<% } %>    
+    exports_sources = "src/*", "src/**/*", ".cortex-package.json"
+    no_copy_source = True
+
+    def requirements(self):
+        self.requires("nlohmann_json/3.11.3")
+        self.requires("cpp-httplib/0.18.3")
+
+    def package(self):
+        copy(self, "*.hpp", src=os.path.join(self.source_folder, "src"), dst=os.path.join(self.package_folder, "include"))
+        copy(self, ".cortex-package.json", src=self.source_folder, dst=self.package_folder)
+
+    def package_info(self):
+        self.cpp_info.includedirs = ["include"]

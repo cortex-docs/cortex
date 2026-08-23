@@ -3,12 +3,17 @@ name = "<%= it.packageName.replace(/[^a-zA-Z0-9_-]/g, '-') %>"
 version = "<%= it.version %>"
 edition = "2021"
 description = "Rust SDK for <%= it.title %>"
+license = "MIT"
+readme = "README.md"
+<% if (it.repositoryUrl) { %>repository = "<%= it.repositoryUrl %>"
+homepage = "<%= it.repositoryUrl %>"
+<% } %>include = ["src/**", "README.md", ".cortex-package.json"]
 
 [lib]
 path = "src/index.rs"
 
 [dependencies]
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }

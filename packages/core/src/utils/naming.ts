@@ -32,7 +32,7 @@ export function titleToPascalCase(str: string): string {
     .replace(/[^a-zA-Z0-9]/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join('');
 }
 

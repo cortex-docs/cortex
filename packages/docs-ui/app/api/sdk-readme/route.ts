@@ -1,10 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
-import { Eta } from 'eta';
 import * as yaml from 'js-yaml';
 import type { ParsedSpec, Parameter, ResponseInfo, SchemaObject } from '@cortex/core';
-import type { NamingConventions } from '@cortex/codegen';
+import { renderLanguageTemplate, type NamingConventions } from '@cortex/codegen';
 
 interface ReadmeResourceOperation {
   name: string;
@@ -60,18 +59,6 @@ const DISPLAY_NAMES: Record<string, string> = {
   c: 'C',
 };
 
-function findCodegenTemplatesDir(): string {
-  const candidates = [
-    path.resolve(process.cwd(), '..', 'codegen', 'src', 'languages'),
-    path.resolve(process.cwd(), '..', 'codegen', 'dist', 'languages'),
-    path.resolve(process.cwd(), 'node_modules', '@cortex', 'codegen', 'dist', 'languages'),
-  ];
-  for (const dir of candidates) {
-    if (fs.existsSync(dir)) return dir;
-  }
-  return candidates[0];
-}
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const lang = searchParams.get('lang');
@@ -112,18 +99,24 @@ export async function GET(request: Request) {
       process.env.CORTEX_GRAPHQL_PATH ||
       fs.existsSync(path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.graphql'))
     );
-    const hasGrpc = !!(
-      process.env.CORTEX_GRPC_PATH ||
-      fs.existsSync(path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.proto'))
+    const hasOpenRpc = !!(
+      process.env.CORTEX_OPENRPC_PATH ||
+      fs.existsSync(path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore-openrpc.json'))
     );
 
     const configPkgNames: Record<string, string> = {};
+    const configTemplateDirs: Record<string, string> = {};
     const configSources: Array<Record<string, unknown>> = [];
     try {
-      const configDir = path.dirname(specPath);
-      for (const cfgName of ['cortex.config.yml', 'cortex.config.yaml', 'cortex.yml']) {
-        const cfgPath = path.join(configDir, cfgName);
+      const configuredPath = process.env.CORTEX_CONFIG_PATH;
+      const configCandidates = configuredPath
+        ? [configuredPath]
+        : ['cortex.config.yml', 'cortex.config.yaml', 'cortex.yml'].map((name) =>
+            path.join(path.dirname(specPath), name),
+          );
+      for (const cfgPath of configCandidates) {
         if (fs.existsSync(cfgPath)) {
+          const configDir = path.dirname(path.resolve(cfgPath));
           const rawCfg = yaml.load(fs.readFileSync(cfgPath, 'utf-8')) as Record<string, unknown>;
           const sources = Array.isArray(rawCfg?.sources)
             ? (rawCfg.sources as Array<Record<string, unknown>>)
@@ -135,6 +128,17 @@ export async function GET(request: Request) {
             for (const langCfg of languages) {
               if (langCfg.package_name)
                 configPkgNames[langCfg.language as string] = langCfg.package_name as string;
+              if (
+                src.type === 'openapi-spec' &&
+                langCfg.language &&
+                langCfg.template &&
+                !configTemplateDirs[langCfg.language as string]
+              ) {
+                const configuredTemplate = langCfg.template as string;
+                configTemplateDirs[langCfg.language as string] = path.isAbsolute(configuredTemplate)
+                  ? path.normalize(configuredTemplate)
+                  : path.resolve(configDir, configuredTemplate);
+              }
             }
           }
           configSources.push(...sources);
@@ -143,21 +147,12 @@ export async function GET(request: Request) {
       }
     } catch {}
 
-    const templatesBase = findCodegenTemplatesDir();
-
     const langsToGenerate = lang ? [lang] : [...LANGUAGES];
     const results: Record<string, string> = {};
 
     for (const l of langsToGenerate) {
-      const readmePath = path.join(templatesBase, l, 'templates', 'readme.ejs');
-      if (!fs.existsSync(readmePath)) {
-        results[l] = `# ${DISPLAY_NAMES[l]} SDK\n\nREADME template not found.`;
-        continue;
-      }
-
       try {
         const naming = getLanguageNaming(l);
-        const template = fs.readFileSync(readmePath, 'utf-8');
         const langPkgName = configPkgNames[l] ?? `${fallbackPkg}-${l === 'csharp' ? 'dotnet' : l}`;
 
         const resources = buildResources(spec, naming, singularize);
@@ -188,8 +183,15 @@ export async function GET(request: Request) {
                       },
                     ]
                   : []),
-                ...(hasGrpc
-                  ? [{ title: 'gRPC', type: 'grpc-spec', spec: 'service.proto', languages: [] }]
+                ...(hasOpenRpc
+                  ? [
+                      {
+                        title: 'OpenRPC',
+                        type: 'openrpc-spec',
+                        spec: 'api-openrpc.json',
+                        languages: [],
+                      },
+                    ]
                   : []),
               ];
 
@@ -201,16 +203,8 @@ export async function GET(request: Request) {
         )?.title as string | undefined;
         const graphqlTitle = sources.find((s: Record<string, unknown>) => s.type === 'graphql-spec')
           ?.title as string | undefined;
-        const grpcTitle = sources.find((s: Record<string, unknown>) => s.type === 'grpc-spec')
+        const openRpcTitle = sources.find((s: Record<string, unknown>) => s.type === 'openrpc-spec')
           ?.title as string | undefined;
-
-        const templateDir = path.join(templatesBase, l, 'templates');
-        const eta = new Eta({
-          autoEscape: false,
-          autoTrim: false,
-          views: templateDir,
-          defaultExtension: '.ejs',
-        });
 
         const templateData = {
           spec,
@@ -232,7 +226,7 @@ export async function GET(request: Request) {
           clientClass: titleToPascalCase(openapiTitle),
           gqlClientClass: graphqlTitle ? titleToPascalCase(graphqlTitle) : undefined,
           wsClientClass: asyncapiTitle ? titleToPascalCase(asyncapiTitle) : undefined,
-          grpcClientClass: grpcTitle ? titleToPascalCase(grpcTitle) : undefined,
+          openRpcClientClass: openRpcTitle ? titleToPascalCase(openRpcTitle) : undefined,
           utils: {
             singularize,
             toPascalCase,
@@ -243,7 +237,11 @@ export async function GET(request: Request) {
           },
         };
 
-        results[l] = eta.renderString(template, templateData);
+        results[l] =
+          renderLanguageTemplate(l, 'readme', templateData, {
+            templateRoot: process.env.CORTEX_TEMPLATE_ROOT,
+            templateDir: configTemplateDirs[l],
+          }) ?? `# ${DISPLAY_NAMES[l]} SDK\n\nREADME template not found.`;
       } catch (e) {
         results[l] =
           `# ${DISPLAY_NAMES[l]} SDK\n\nError rendering README: ${e instanceof Error ? e.message : String(e)}`;
@@ -268,7 +266,11 @@ export async function GET(request: Request) {
   }
 }
 
-function buildResources(spec: ParsedSpec, naming: NamingConventions, singularize: (s: string) => string): ReadmeResource[] {
+function buildResources(
+  spec: ParsedSpec,
+  naming: NamingConventions,
+  singularize: (s: string) => string,
+): ReadmeResource[] {
   const resourceMap = new Map<string, ReadmeResourceOperation[]>();
   for (const op of spec.operations) {
     const resName = (op.extensions['resource'] as string) ?? op.resourceName;

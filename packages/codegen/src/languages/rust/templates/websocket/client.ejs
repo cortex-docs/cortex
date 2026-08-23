@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 type MessageHandler = Box<dyn Fn(Value) + Send + Sync>;
@@ -25,10 +25,35 @@ pub struct <%= it.clientClass %> {
     reconnect: Arc<Mutex<bool>>,
     reconnect_interval: Duration,
     max_reconnect_attempts: u32,
+    heartbeat_interval: Duration,
+    heartbeat_timeout: Duration,
+    heartbeat_message: Option<String>,
+    heartbeat_response: Option<String>,
+    server_heartbeat: Option<String>,
+    server_response: Option<String>,
+    active: Arc<Mutex<bool>>,
 }
 
 impl <%= it.clientClass %> {
     pub fn new(url: &str) -> Self {
+        Self::new_with_options(
+            url,
+            true,
+            Duration::from_secs(3),
+            10,
+            Duration::from_millis(<%= it.heartbeat.intervalMs %>),
+            Duration::from_millis(<%= it.heartbeat.timeoutMs %>),
+        )
+    }
+
+    pub fn new_with_options(
+        url: &str,
+        reconnect: bool,
+        reconnect_interval: Duration,
+        max_reconnect_attempts: u32,
+        heartbeat_interval: Duration,
+        heartbeat_timeout: Duration,
+    ) -> Self {
         let url = if url.is_empty() {
             "<%= it.serverUrl %>".to_string()
         } else {
@@ -39,9 +64,16 @@ impl <%= it.clientClass %> {
             url,
             handlers: Arc::new(RwLock::new(HashMap::new())),
             sender: Arc::new(Mutex::new(None)),
-            reconnect: Arc::new(Mutex::new(true)),
-            reconnect_interval: Duration::from_secs(3),
-            max_reconnect_attempts: 10,
+            reconnect: Arc::new(Mutex::new(reconnect)),
+            reconnect_interval,
+            max_reconnect_attempts,
+            heartbeat_interval,
+            heartbeat_timeout,
+            heartbeat_message: <% if (it.heartbeat.hasClientMessage) { %>Some(<%= it.heartbeat.clientMessageLiteral %>.to_string())<% } else { %>None<% } %>,
+            heartbeat_response: <% if (it.heartbeat.hasClientResponse) { %>Some(<%= it.heartbeat.clientResponseLiteral %>.to_string())<% } else { %>None<% } %>,
+            server_heartbeat: <% if (it.heartbeat.hasServerMessage) { %>Some(<%= it.heartbeat.serverMessageLiteral %>.to_string())<% } else { %>None<% } %>,
+            server_response: <% if (it.heartbeat.hasServerResponse) { %>Some(<%= it.heartbeat.serverResponseLiteral %>.to_string())<% } else { %>None<% } %>,
+            active: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -50,6 +82,7 @@ impl <%= it.clientClass %> {
     }
 
     pub async fn connect(&self) -> Result<(), WsError> {
+        *self.active.lock().await = true;
         let (ws_stream, _) = connect_async(&self.url).await?;
         let (mut write, mut read) = ws_stream.split();
 
@@ -75,6 +108,12 @@ impl <%= it.clientClass %> {
         let url = self.url.clone();
         let reconnect_interval = self.reconnect_interval;
         let max_attempts = self.max_reconnect_attempts;
+        let reader_active = self.active.clone();
+        let heartbeat_response = self.heartbeat_response.clone();
+        let server_heartbeat = self.server_heartbeat.clone();
+        let server_response = self.server_response.clone();
+        let last_activity = Arc::new(Mutex::new(Instant::now()));
+        let reader_activity = last_activity.clone();
 
         tokio::spawn(async move {
             let mut attempts: u32 = 0;
@@ -83,6 +122,19 @@ impl <%= it.clientClass %> {
                 while let Some(Ok(msg)) = read.next().await {
                     attempts = 0;
                     if let Message::Text(text) = msg {
+                        if heartbeat_matches(&text, server_heartbeat.as_deref()) {
+                            *reader_activity.lock().await = Instant::now();
+                            if let Some(response) = server_response.as_ref() {
+                                if let Some(tx) = sender.lock().await.as_ref() {
+                                    let _ = tx.send(Message::Text(response.clone().into()));
+                                }
+                            }
+                            continue;
+                        }
+                        if heartbeat_response.is_none() || heartbeat_matches(&text, heartbeat_response.as_deref()) {
+                            *reader_activity.lock().await = Instant::now();
+                            if heartbeat_response.is_some() { continue; }
+                        }
                         if let Ok(data) = serde_json::from_str::<Value>(&text) {
                             let channel = data.get("channel")
                                 .or_else(|| data.get("type"))
@@ -106,13 +158,14 @@ impl <%= it.clientClass %> {
                 }
 
                 // Connection lost - attempt reconnect
-                let should_reconnect = *reconnect.lock().await;
+                let should_reconnect = *reconnect.lock().await && *reader_active.lock().await;
                 if !should_reconnect || attempts >= max_attempts {
                     break;
                 }
 
                 attempts += 1;
                 sleep(reconnect_interval).await;
+                if !*reader_active.lock().await { break; }
 
                 match connect_async(&url).await {
                     Ok((new_ws, _)) => {
@@ -138,14 +191,35 @@ impl <%= it.clientClass %> {
             }
         });
 
+        if !self.heartbeat_interval.is_zero() && self.heartbeat_message.is_some() {
+            let heartbeat_sender = self.sender.clone();
+            let heartbeat_active = self.active.clone();
+            let interval = self.heartbeat_interval;
+            let timeout = self.heartbeat_timeout;
+            let heartbeat_message = self.heartbeat_message.clone().unwrap();
+            tokio::spawn(async move {
+                loop {
+                    sleep(interval).await;
+                    if !*heartbeat_active.lock().await { break; }
+                    let stale = !timeout.is_zero() && last_activity.lock().await.elapsed() > interval + timeout;
+                    let sender = heartbeat_sender.lock().await;
+                    if let Some(tx) = sender.as_ref() {
+                        let message = if stale {
+                            Message::Close(None)
+                        } else {
+                            Message::Text(heartbeat_message.clone().into())
+                        };
+                        let _ = tx.send(message);
+                    }
+                }
+            });
+        }
+
         Ok(())
     }
 
     pub async fn disconnect(&self) {
-        {
-            let mut reconnect = self.reconnect.lock().await;
-            *reconnect = false;
-        }
+        *self.active.lock().await = false;
         let mut sender = self.sender.lock().await;
         *sender = None;
     }
@@ -219,4 +293,13 @@ impl <%= it.clientClass %> {
 
 <% } %>
 <% } %>
+}
+
+fn heartbeat_matches(actual: &str, expected: Option<&str>) -> bool {
+    let Some(expected) = expected else { return false; };
+    if actual == expected { return true; }
+    match (serde_json::from_str::<Value>(actual), serde_json::from_str::<Value>(expected)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
 }

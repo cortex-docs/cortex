@@ -3,7 +3,14 @@ import * as path from 'node:path';
 import { SubCommand, CommandRunner, Option } from 'nest-commander';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
-import { getFirstSpecPath } from '@cortex/core';
+import { resolveDocsUiPath, resolveNextBin } from './runtime';
+import { assertTemplateRoot } from '@cortex/codegen';
+import {
+  getAllLanguageTemplateDirs,
+  getFirstSpecPath,
+  isRemoteLocation,
+  resolveGeneratorTemplateRoot,
+} from '@cortex/core';
 
 @SubCommand({
   name: 'serve',
@@ -27,36 +34,58 @@ export class DocsServeCommand extends CommandRunner {
     let asyncapiPath: string | undefined;
     let graphqlPath: string | undefined;
     let grpcPath: string | undefined;
+    let openRpcPath: string | undefined;
     let logoPath: string | undefined;
     let faviconPath: string | undefined;
+    let configPath: string | undefined;
+    let templateRoot: string | undefined;
+    let languageTemplateDirs: string[] = [];
 
-    try {
-      const config = await this.project.loadConfig();
+    const foundConfigPath = await this.project.findConfig();
+    if (foundConfigPath) {
+      configPath = path.resolve(foundConfigPath);
+      const config = await this.project.loadConfig(configPath);
+      templateRoot = resolveGeneratorTemplateRoot(config, configPath);
+      languageTemplateDirs = getAllLanguageTemplateDirs(config, configPath);
       specPath = options.spec
-        ? path.resolve(options.spec)
+        ? isRemoteLocation(options.spec)
+          ? options.spec
+          : path.resolve(options.spec)
         : getFirstSpecPath(config, 'openapi-spec')
-          ? path.resolve(getFirstSpecPath(config, 'openapi-spec')!)
+          ? getFirstSpecPath(config, 'openapi-spec')!
           : undefined;
       if (options.asyncApi) {
-        asyncapiPath = path.resolve(options.asyncApi);
+        asyncapiPath = isRemoteLocation(options.asyncApi)
+          ? options.asyncApi
+          : path.resolve(options.asyncApi);
       } else {
         const asyncPath = getFirstSpecPath(config, 'asyncapi-spec');
-        if (asyncPath) asyncapiPath = path.resolve(asyncPath);
+        if (asyncPath) asyncapiPath = asyncPath;
       }
       const gqlPath = getFirstSpecPath(config, 'graphql-spec');
-      if (gqlPath) graphqlPath = path.resolve(gqlPath);
-      const grPath = getFirstSpecPath(config, 'grpc-spec');
-      if (grPath) grpcPath = path.resolve(grPath);
+      if (gqlPath) graphqlPath = gqlPath;
+      const protoPath = getFirstSpecPath(config, 'grpc-spec');
+      if (protoPath) grpcPath = protoPath;
+      const orpcPath = getFirstSpecPath(config, 'openrpc-spec');
+      if (orpcPath) openRpcPath = orpcPath;
       if (config.logo) {
-        logoPath = path.resolve(config.logo);
+        logoPath = config.logo;
       }
       if (config.favicon) {
-        faviconPath = path.resolve(config.favicon);
+        faviconPath = config.favicon;
       }
-    } catch {
-      if (options.spec) specPath = path.resolve(options.spec);
-      if (options.asyncApi) asyncapiPath = path.resolve(options.asyncApi);
+    } else {
+      if (options.spec) {
+        specPath = isRemoteLocation(options.spec) ? options.spec : path.resolve(options.spec);
+      }
+      if (options.asyncApi) {
+        asyncapiPath = isRemoteLocation(options.asyncApi)
+          ? options.asyncApi
+          : path.resolve(options.asyncApi);
+      }
     }
+    assertTemplateRoot(templateRoot);
+    for (const templateDir of languageTemplateDirs) assertTemplateRoot(templateDir);
 
     const port = options.port ?? 3012;
     const projectDir = process.cwd();
@@ -65,24 +94,36 @@ export class DocsServeCommand extends CommandRunner {
     if (asyncapiPath) this.logger.info(`AsyncAPI: ${asyncapiPath}`);
     if (graphqlPath) this.logger.info(`GraphQL: ${graphqlPath}`);
     if (grpcPath) this.logger.info(`gRPC: ${grpcPath}`);
+    if (openRpcPath) this.logger.info(`OpenRPC: ${openRpcPath}`);
+    if (templateRoot) this.logger.info(`Templates: ${templateRoot}`);
+    if (languageTemplateDirs.length > 0) {
+      this.logger.info(`Source templates: ${languageTemplateDirs.length}`);
+    }
     this.logger.info(`Port: ${port}`);
     this.logger.info('');
 
     const cliRoot = path.resolve(__dirname, '..', '..', '..');
-    const docsUiPath = path.resolve(cliRoot, '..', 'docs-ui');
+    const docsUiPath = resolveDocsUiPath();
     this.logger.info(`Starting docs server at http://localhost:${port}`);
     this.logger.info('Press Ctrl+C to stop');
 
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       PORT: String(port),
+      CORTEX_DIST_DIR: path.join(projectDir, '.next'),
     };
+    if (configPath) env.CORTEX_CONFIG_PATH = configPath;
     if (specPath) env.CORTEX_SPEC_PATH = specPath;
     if (asyncapiPath) env.CORTEX_ASYNCAPI_PATH = asyncapiPath;
     if (graphqlPath) env.CORTEX_GRAPHQL_PATH = graphqlPath;
     if (grpcPath) env.CORTEX_GRPC_PATH = grpcPath;
+    if (openRpcPath) env.CORTEX_OPENRPC_PATH = openRpcPath;
     if (logoPath) env.CORTEX_LOGO_PATH = logoPath;
     if (faviconPath) env.CORTEX_FAVICON_PATH = faviconPath;
+    if (templateRoot) env.CORTEX_TEMPLATE_ROOT = templateRoot;
+    if (languageTemplateDirs.length > 0) {
+      env.CORTEX_LANGUAGE_TEMPLATE_DIRS = JSON.stringify(languageTemplateDirs);
+    }
 
     const { spawn, execSync } = await import('node:child_process');
 
@@ -106,15 +147,11 @@ export class DocsServeCommand extends CommandRunner {
       }
     };
 
-    const nextBin = path.join(docsUiPath, 'node_modules', '.bin', 'next');
-    const nextBinResolved = fs.existsSync(nextBin)
-      ? nextBin
-      : path.join(cliRoot, '..', '..', 'node_modules', '.bin', 'next');
+    const nextBinResolved = resolveNextBin(docsUiPath);
 
     const child = spawn(process.execPath, [nextBinResolved, 'dev', '--port', String(port)], {
       cwd: docsUiPath,
       env,
-      detached: true,
       stdio: 'inherit',
     });
 
@@ -122,34 +159,49 @@ export class DocsServeCommand extends CommandRunner {
     let generating = false;
     const IGNORE = /(^|[\\/])(generated|node_modules|\.next|assets)([\\/]|$)/;
 
-    fs.watch(projectDir, { recursive: true }, (_event, filename) => {
+    const onChange = (_event: string, filename: string | Buffer | null) => {
       if (!filename || generating) return;
-      if (IGNORE.test(filename)) return;
+      const changedPath = filename.toString();
+      if (IGNORE.test(changedPath)) return;
       const isSpec =
-        /\.(yaml|yml|graphql|proto)$/.test(filename) || /cortex\.config\.(ya?ml)$/.test(filename);
+        /\.(yaml|yml|graphql|json|ejs)$/.test(changedPath) ||
+        /cortex\.config\.(ya?ml)$/.test(changedPath);
       if (!isSpec) return;
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(runGenerate, 500);
-    });
-    this.logger.info('Watching for spec & config changes');
+    };
+    const watchers = [fs.watch(projectDir, { recursive: true }, onChange)];
+    const extraTemplateDirs = new Set(
+      [templateRoot, ...languageTemplateDirs].filter(
+        (directory): directory is string =>
+          !!directory &&
+          directory !== projectDir &&
+          !directory.startsWith(`${projectDir}${path.sep}`),
+      ),
+    );
+    for (const templateDir of extraTemplateDirs) {
+      watchers.push(fs.watch(templateDir, { recursive: true }, onChange));
+    }
+    this.logger.info('Watching for spec, configuration, and template changes');
 
-    const childPid = child.pid;
     const cleanup = () => {
-      if (childPid) {
-        try { process.kill(-childPid, 'SIGTERM'); } catch {}
-        setTimeout(() => {
-          try { process.kill(-childPid, 'SIGKILL'); } catch {}
-        }, 1000);
+      for (const watcher of watchers) watcher.close();
+      if (child.pid && !child.killed) {
+        child.kill('SIGTERM');
       }
+      process.exit(0);
     };
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
-    process.on('exit', cleanup);
 
-    await new Promise<void>((_, reject) => {
+    await new Promise<void>((resolve, reject) => {
       child.on('error', reject);
       child.on('exit', (code) => {
-        if (code !== 0) reject(new Error(`Docs server exited with code ${code}`));
+        if (code !== 0 && code !== null) {
+          reject(new Error(`Docs server exited with code ${code}`));
+        } else {
+          resolve();
+        }
       });
     });
   }
@@ -166,6 +218,10 @@ export class DocsServeCommand extends CommandRunner {
 
   @Option({ flags: '-p, --port <number>', description: 'Port to serve on (default: 3012)' })
   parsePort(val: string): number {
-    return parseInt(val, 10);
+    const port = Number.parseInt(val, 10);
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      throw new Error('The port must be an integer from 1 through 65535.');
+    }
+    return port;
   }
 }

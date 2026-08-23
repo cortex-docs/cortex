@@ -21,6 +21,7 @@ export class PhpPlugin extends TemplateBasedPlugin {
       any: 'mixed',
       void: 'void',
       datetime: 'string',
+      file: 'FileUpload',
       nullable: (type) => `?${type}`,
     },
     naming: {
@@ -31,11 +32,9 @@ export class PhpPlugin extends TemplateBasedPlugin {
       enumValue: toUpperSnakeCase,
       parameterName: toCamelCase,
     },
-    packageTemplates: [
-      { template: 'composer-json', path: 'composer.json' },
-    ],
+    packageTemplates: [{ template: 'composer-json', path: 'composer.json' }],
     packageFiles: (context) => {
-      const ns = toPascalCase(context.languageConfig.package_name);
+      const ns = toPascalCase(context.languageConfig.package_name.replace(/[\/.]+/g, '-'));
 
       return [
         {

@@ -1,0 +1,21 @@
+        val multipart = buildList {
+<% for (const field of it.op.multipartFields) { -%>
+<% if (field.isFile) { -%>
+<% if (field.required) { -%>
+            add(MultipartPart("<%= field.originalName %>", file = body.<%= field.name %>))
+<% } else { -%>
+            body.<%= field.name %>?.let { add(MultipartPart("<%= field.originalName %>", file = it)) }
+<% } -%>
+<% } else if (field.isFileArray) { -%>
+<% if (field.required) { -%>
+            body.<%= field.name %>.forEach { add(MultipartPart("<%= field.originalName %>", file = it)) }
+<% } else { -%>
+            body.<%= field.name %>?.forEach { add(MultipartPart("<%= field.originalName %>", file = it)) }
+<% } -%>
+<% } else if (field.required) { -%>
+            add(MultipartPart("<%= field.originalName %>", value = body.<%= field.name %>.toString()))
+<% } else { -%>
+            body.<%= field.name %>?.let { add(MultipartPart("<%= field.originalName %>", value = it.toString())) }
+<% } -%>
+<% } -%>
+        }

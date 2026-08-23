@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { OpenAPIParser } from '../src/openapi/parser';
 
 const FIXTURE_PATH = path.join(__dirname, '../__fixtures__/petstore.yaml');
+const COMPONENT_FIXTURE_PATH = path.join(__dirname, '../__fixtures__/openapi-path-components.yaml');
 
 describe('OpenAPIParser', () => {
   const parser = new OpenAPIParser();
@@ -59,8 +60,15 @@ describe('OpenAPIParser', () => {
 
       const createPet = spec.operations.find((o) => o.operationId === 'createPet')!;
       expect(createPet.requestBody).toBeDefined();
-      expect(createPet.requestBody!.contentType).toBe('application/json');
+      expect(createPet.requestBody!.contentType).toBe('multipart/form-data');
       expect(createPet.requestBody!.required).toBe(true);
+      const createPetSchema = spec.schemas.get(createPet.requestBody!.schema.name!)!;
+      expect(createPetSchema.properties?.profilePic?.format).toBe('binary');
+      expect(createPetSchema.properties?.attachments?.items?.format).toBe('binary');
+
+      const uploadFile = spec.operations.find((o) => o.operationId === 'uploadFile')!;
+      expect(uploadFile.requestBody?.contentType).toBe('application/pdf');
+      expect(uploadFile.requestBody?.schema).toMatchObject({ type: 'string', format: 'binary' });
     });
 
     it('extracts schemas', async () => {
@@ -81,6 +89,27 @@ describe('OpenAPIParser', () => {
       const listPets = spec.operations.find((o) => o.operationId === 'listPets')!;
       expect(listPets.extensions['resource']).toBe('pets');
       expect(listPets.extensions['method-name']).toBe('list');
+    });
+
+    it('resolves component references and merges path parameters', async () => {
+      const spec = await parser.parse(COMPONENT_FIXTURE_PATH);
+      const operation = spec.operations[0];
+
+      expect(operation.parameters).toHaveLength(2);
+      expect(operation.parameters.find((parameter) => parameter.name === 'petId')).toMatchObject({
+        in: 'path',
+        required: true,
+      });
+      expect(operation.parameters.find((parameter) => parameter.name === 'tenant')).toMatchObject({
+        description: 'Operation tenant',
+        required: true,
+      });
+      expect(operation.requestBody?.schema).toMatchObject({
+        ref: '#/components/schemas/PetInput',
+        required: ['name'],
+      });
+      expect(operation.requestBody?.schema.properties).toHaveProperty('name');
+      expect(operation.responses[0].schema?.properties).toHaveProperty('id');
     });
   });
 

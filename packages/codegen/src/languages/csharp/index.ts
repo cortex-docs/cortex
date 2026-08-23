@@ -21,6 +21,7 @@ export class CSharpPlugin extends TemplateBasedPlugin {
       any: 'object',
       void: 'void',
       datetime: 'DateTimeOffset',
+      file: 'FileUpload',
       nullable: (type) => `${type}?`,
     },
     naming: {

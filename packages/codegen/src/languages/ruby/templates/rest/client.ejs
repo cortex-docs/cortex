@@ -5,7 +5,9 @@
 # frozen_string_literal: true
 
 require "faraday"
+require "faraday/multipart"
 require "json"
+require "stringio"
 require_relative "types"
 <% for (const r of it.resources) { -%>
 require_relative "resources/<%= it.naming.fileName(r.name) %>"
@@ -15,13 +17,13 @@ module <%= moduleName %>
   class <%= clientClass %>
     attr_reader :base_url
 
-    def initialize(base_url: "<%= baseUrl %>", bearer_token: nil, api_key: nil, timeout: 30)
+    def initialize(base_url: "<%= baseUrl %>", bearer_token: nil, api_key: nil, timeout: 15)
       @base_url = base_url
       @connection = Faraday.new(url: base_url) do |f|
+        f.request :multipart, flat_encode: true
         f.request :json
         f.response :raise_error
         f.options.timeout = timeout
-        f.headers["Content-Type"] = "application/json"
         f.headers["Authorization"] = "Bearer #{bearer_token}" if bearer_token
         f.headers["X-API-Key"] = api_key if api_key
       end
@@ -33,14 +35,62 @@ module <%= moduleName %>
     end
 
 <% } -%>
-    def request(method, path, query: nil, body: nil)
+    def request(method, path, query: nil, body: nil, multipart: false, raw_file: false, raw_content_type: nil)
       response = @connection.send(method.downcase.to_sym, path) do |req|
         req.params = query if query
-        req.body = body.to_json if body
+        if body
+          if raw_file
+            raise TypeError, "raw file body must be a FileUpload" unless body.is_a?(FileUpload)
+            req.headers["Content-Type"] = body.content_type || raw_content_type || "application/octet-stream"
+            req.body = body.data
+          else
+            req.body = multipart ? multipart_body(body) : body.to_json
+          end
+        end
       end
 
       return nil if response.status == 204
       JSON.parse(response.body)
+    rescue Faraday::ClientError, Faraday::ServerError => e
+      raise ApiError.new(e.response[:status], e.response[:body])
+    end
+
+    private
+
+    def multipart_body(body)
+      body.each_with_object({}) do |(name, value), parts|
+        next if value.nil?
+        parts[name] = if value.is_a?(FileUpload)
+          Faraday::Multipart::FilePart.new(
+            StringIO.new(value.data),
+            value.content_type,
+            value.filename,
+          )
+        elsif value.is_a?(Array) && value.all? { |item| item.is_a?(FileUpload) }
+          value.map do |file|
+            Faraday::Multipart::FilePart.new(
+              StringIO.new(file.data),
+              file.content_type,
+              file.filename,
+            )
+          end
+        else
+          value
+        end
+      end
+    end
+
+    public
+
+    # Yields decoded response payload chunks as they arrive.
+    def request_stream(method, path, query: nil, body: nil, timeout: nil, &on_chunk)
+      return enum_for(__method__, method, path, query: query, body: body, timeout: timeout) unless on_chunk
+
+      @connection.run_request(method.downcase.to_sym, path, body&.to_json, nil) do |req|
+        req.params = query if query
+        req.options.timeout = timeout if timeout
+        req.options.on_data = proc { |chunk, _overall_bytes| on_chunk.call(chunk) }
+      end
     rescue Faraday::ClientError, Faraday::ServerError => e
       raise ApiError.new(e.response[:status], e.response[:body])
     end

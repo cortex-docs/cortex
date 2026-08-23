@@ -8,6 +8,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -29,6 +30,12 @@ struct <%= it.clientClass %>Options {
   bool reconnect = true;
   int reconnect_interval_ms = 3000;
   int max_reconnect_attempts = 10;
+  int heartbeat_interval_ms = <%= it.heartbeat.intervalMs %>;
+  int heartbeat_timeout_ms = <%= it.heartbeat.timeoutMs %>;
+  std::string heartbeat_message = <% if (it.heartbeat.hasClientMessage) { %><%= it.heartbeat.clientMessageLiteral %><% } else { %>""<% } %>;
+  std::string heartbeat_response = <% if (it.heartbeat.hasClientResponse) { %><%= it.heartbeat.clientResponseLiteral %><% } else { %>""<% } %>;
+  std::string server_heartbeat = <% if (it.heartbeat.hasServerMessage) { %><%= it.heartbeat.serverMessageLiteral %><% } else { %>""<% } %>;
+  std::string server_response = <% if (it.heartbeat.hasServerResponse) { %><%= it.heartbeat.serverResponseLiteral %><% } else { %>""<% } %>;
 };
 
 class <%= it.clientClass %> {
@@ -38,12 +45,36 @@ class <%= it.clientClass %> {
   std::string path_;
   int sock_ = -1;
   std::atomic<bool> connected_{false};
+  bool reconnect_;
   std::atomic<bool> should_reconnect_{true};
+  std::atomic<bool> running_{false};
+  std::atomic<int64_t> last_activity_ms_{0};
   int reconnect_interval_ms_;
   int max_reconnect_attempts_;
+  int heartbeat_interval_ms_;
+  int heartbeat_timeout_ms_;
+  std::string heartbeat_message_;
+  std::string heartbeat_response_;
+  std::string server_heartbeat_;
+  std::string server_response_;
   std::mutex handlers_mutex_;
   std::map<std::string, std::vector<MessageHandler>> handlers_;
   std::thread reader_thread_;
+  std::thread heartbeat_thread_;
+  std::mutex send_mutex_;
+
+  static int64_t now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  }
+
+  static bool heartbeat_matches(const std::string& actual, const std::string& expected) {
+    if (expected.empty()) return false;
+    if (actual == expected) return true;
+    auto left = nlohmann::json::parse(actual, nullptr, false);
+    auto right = nlohmann::json::parse(expected, nullptr, false);
+    return !left.is_discarded() && !right.is_discarded() && left == right;
+  }
 
   void parse_url() {
     std::string url = url_;
@@ -66,6 +97,7 @@ class <%= it.clientClass %> {
   }
 
   void ws_send(const std::string& data) {
+    std::lock_guard<std::mutex> send_lock(send_mutex_);
     std::vector<uint8_t> frame;
     frame.push_back(0x81);
     uint8_t mask_bit = 0x80;
@@ -90,6 +122,7 @@ class <%= it.clientClass %> {
   std::string ws_recv() {
     uint8_t header[2];
     if (recv(sock_, header, 2, MSG_WAITALL) != 2) return "";
+    uint8_t opcode = header[0] & 0x0F;
     uint64_t len = header[1] & 0x7F;
     bool masked = header[1] & 0x80;
     if (len == 126) {
@@ -112,6 +145,7 @@ class <%= it.clientClass %> {
       received += r;
     }
     if (masked) for (size_t i = 0; i < len; ++i) data[i] ^= mask[i % 4];
+    if (opcode == 0x8) return "";
     return data;
   }
 
@@ -143,44 +177,83 @@ class <%= it.clientClass %> {
     if (n <= 0) { ::close(sock_); sock_ = -1; return false; }
 
     connected_ = true;
+    last_activity_ms_ = now_ms();
     return true;
   }
 
   void reader_loop() {
-    while (connected_) {
-      auto msg = ws_recv();
-      if (msg.empty()) {
-        connected_ = false;
-        break;
-      }
-      auto data = nlohmann::json::parse(msg, nullptr, false);
-      if (data.is_discarded()) continue;
-
-      std::string channel;
-      if (data.contains("channel")) channel = data["channel"].get<std::string>();
-      else if (data.contains("type")) channel = data["type"].get<std::string>();
-      else if (data.contains("event")) channel = data["event"].get<std::string>();
-
-      auto payload = data.contains("payload") ? data["payload"]
-                   : data.contains("data") ? data["data"]
-                   : data;
-
-      std::lock_guard<std::mutex> lock(handlers_mutex_);
-      auto it = handlers_.find(channel);
-      if (it != handlers_.end()) {
-        for (const auto& handler : it->second) {
-          handler(payload);
+    int reconnect_attempts = 0;
+    while (running_) {
+      while (connected_ && running_) {
+        auto msg = ws_recv();
+        if (msg.empty()) { connected_ = false; break; }
+        if (heartbeat_matches(msg, server_heartbeat_)) {
+          last_activity_ms_ = now_ms();
+          if (!server_response_.empty()) ws_send(server_response_);
+          continue;
         }
+        if (heartbeat_response_.empty() || heartbeat_matches(msg, heartbeat_response_)) {
+          last_activity_ms_ = now_ms();
+          if (!heartbeat_response_.empty()) continue;
+        }
+        auto data = nlohmann::json::parse(msg, nullptr, false);
+        if (data.is_discarded()) continue;
+
+        std::string channel;
+        if (data.contains("channel")) channel = data["channel"].get<std::string>();
+        else if (data.contains("type")) channel = data["type"].get<std::string>();
+        else if (data.contains("event")) channel = data["event"].get<std::string>();
+        auto payload = data.contains("payload") ? data["payload"]
+                     : data.contains("data") ? data["data"] : data;
+
+        std::lock_guard<std::mutex> lock(handlers_mutex_);
+        auto it = handlers_.find(channel);
+        if (it != handlers_.end()) for (const auto& handler : it->second) handler(payload);
       }
+
+      if (!running_ || !should_reconnect_) break;
+      if (sock_ >= 0) { ::close(sock_); sock_ = -1; }
+      bool reconnected = false;
+      while (running_ && reconnect_attempts < max_reconnect_attempts_) {
+        ++reconnect_attempts;
+        std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_interval_ms_));
+        if (!running_) break;
+        if (do_connect()) { reconnect_attempts = 0; reconnected = true; break; }
+      }
+      if (!reconnected) break;
+    }
+  }
+
+  void heartbeat_loop() {
+    while (running_ && heartbeat_interval_ms_ > 0 && !heartbeat_message_.empty()) {
+      int waited = 0;
+      while (running_ && waited < heartbeat_interval_ms_) {
+        int slice = std::min(100, heartbeat_interval_ms_ - waited);
+        std::this_thread::sleep_for(std::chrono::milliseconds(slice));
+        waited += slice;
+      }
+      if (!running_ || !connected_) continue;
+      if (heartbeat_timeout_ms_ > 0 && now_ms() - last_activity_ms_ > heartbeat_interval_ms_ + heartbeat_timeout_ms_) {
+        ::shutdown(sock_, SHUT_RDWR);
+        continue;
+      }
+      ws_send(heartbeat_message_);
     }
   }
 
 public:
   explicit <%= it.clientClass %>(const <%= it.clientClass %>Options& opts = {})
     : url_(opts.url),
+      reconnect_(opts.reconnect),
       should_reconnect_(opts.reconnect),
       reconnect_interval_ms_(opts.reconnect_interval_ms),
-      max_reconnect_attempts_(opts.max_reconnect_attempts) {
+      max_reconnect_attempts_(opts.max_reconnect_attempts),
+      heartbeat_interval_ms_(opts.heartbeat_interval_ms),
+      heartbeat_timeout_ms_(opts.heartbeat_timeout_ms),
+      heartbeat_message_(opts.heartbeat_message),
+      heartbeat_response_(opts.heartbeat_response),
+      server_heartbeat_(opts.server_heartbeat),
+      server_response_(opts.server_response) {
     parse_url();
   }
 
@@ -189,15 +262,20 @@ public:
   }
 
   void connect() {
-    if (!do_connect()) throw WsError("WebSocket connection failed");
+    should_reconnect_ = reconnect_;
+    running_ = true;
+    if (!do_connect()) { running_ = false; throw WsError("WebSocket connection failed"); }
     reader_thread_ = std::thread([this] { reader_loop(); });
+    if (heartbeat_interval_ms_ > 0 && !heartbeat_message_.empty()) heartbeat_thread_ = std::thread([this] { heartbeat_loop(); });
   }
 
   void disconnect() {
     should_reconnect_ = false;
+    running_ = false;
     connected_ = false;
     if (sock_ >= 0) { ::close(sock_); sock_ = -1; }
     if (reader_thread_.joinable()) reader_thread_.join();
+    if (heartbeat_thread_.joinable()) heartbeat_thread_.join();
   }
 
   void send(const std::string& channel, const nlohmann::json& payload) {
