@@ -1,6 +1,6 @@
 {
   "name": "@cortex-docs/cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Cortex Docs CLI for SDKs, API documentation, and MCP servers",
   "license": "MIT",
   "repository": {
@@ -45,10 +45,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@cortex-docs/codegen": "0.1.5",
-    "@cortex-docs/core": "0.1.5",
-    "@cortex-docs/docs-ui": "0.1.5",
-    "@cortex-docs/mcp-gen": "0.1.5",
+    "@cortex-docs/codegen": "0.1.6",
+    "@cortex-docs/core": "0.1.6",
+    "@cortex-docs/docs-ui": "0.1.6",
+    "@cortex-docs/mcp-gen": "0.1.6",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "chalk": "^5.4.0",

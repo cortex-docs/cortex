@@ -18,6 +18,22 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.6] - 2026-08-24
+
+### New Features
+
+- Published `@cortex-docs/mcp`, an MCP server that exposes the Cortex Docs product documentation.
+- Deployed the Cortex Docs product documentation site at https://docs.cortexdocs.dev.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Added a "Live sites" section to the README linking to both the documentation site and the demo.
+- Documented the full release flow, including MCP package generation/publishing and product docs deployment, in RELEASING.md and CONTRIBUTING.md.
+
 ## [0.1.5] - 2026-08-24
 
 ### New Features
