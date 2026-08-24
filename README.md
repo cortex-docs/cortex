@@ -7,7 +7,9 @@ Cortex Docs generates typed SDKs, interactive API documentation, and Model Conte
 
 One project can combine OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC sources. Cortex Docs generates one package for each configured language.
 
-## Live demo
+## Live sites
+
+**[Read the Cortex Docs documentation →](https://docs.cortexdocs.dev)**
 
 **[Open the Cortex Docs demo →](https://demo.cortexdocs.dev)**
 
@@ -154,6 +156,7 @@ The generated package contains local copies of every configured specification. I
 | `@cortex-docs/core`    | Configuration loader and specification parsers |
 | `@cortex-docs/codegen` | SDK generation engine and language templates   |
 | `@cortex-docs/mcp-gen` | MCP server generator                           |
+| `@cortex-docs/mcp`     | MCP server for the Cortex Docs documentation   |
 | `@cortex-docs/docs-ui` | Documentation runtime used by the CLI          |
 
 ## Documentation

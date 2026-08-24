@@ -43,7 +43,9 @@ npm run pack:check
 
 Do not open a feature pull request to `main`. Maintainers promote `pre-release` to `main` after the required checks pass.
 
-The promotion pull request runs all Docker integration tests. A merge to `main` deploys the demo and publishes a new patch version.
+The promotion pull request runs all Docker integration tests. A merge to `main` publishes a new patch version.
+
+The release also publishes `@cortex-docs/mcp` and deploys `docs.cortexdocs.dev`. The demo deploys through its separate workflow.
 
 Read [RELEASING.md](RELEASING.md) for the complete promotion and release flow.
 

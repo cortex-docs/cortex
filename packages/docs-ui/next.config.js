@@ -35,6 +35,6 @@ module.exports = {
   distDir: process.env.CORTEX_DIST_DIR || '.next',
   outputFileTracingRoot: path.resolve(docsUiRoot, '../..'),
   outputFileTracingIncludes: {
-    '/*': ['./.cortex-demo/**/*'],
+    '/*': ['./.cortex-demo/**/*', './.cortex-docs-site/**/*'],
   },
 };

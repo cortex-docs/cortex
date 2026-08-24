@@ -4,10 +4,16 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareDemo } from './prepare-demo.mjs';
+import { prepareDocsSite } from './prepare-docs-site.mjs';
 
 const command = process.argv[2];
+const target = process.argv[3] ?? 'demo';
 if (!['build', 'preview', 'deploy'].includes(command)) {
-  console.error('Usage: node scripts/cloudflare.mjs <build|preview|deploy>');
+  console.error('Usage: node scripts/cloudflare.mjs <build|preview|deploy> [demo|docs]');
+  process.exit(1);
+}
+if (!['demo', 'docs'].includes(target)) {
+  console.error('The Cloudflare target must be "demo" or "docs".');
   process.exit(1);
 }
 
@@ -16,29 +22,42 @@ const docsUiDir = resolve(scriptDir, '..');
 const workspaceRoot = resolve(docsUiDir, '..', '..');
 const cli = resolve(workspaceRoot, 'node_modules', '.bin', 'opennextjs-cloudflare');
 const demoApiUrl = process.env.CORTEX_DEMO_API_URL || 'http://localhost:4010';
-const prepared = prepareDemo(demoApiUrl);
+const prepared = target === 'demo' ? prepareDemo(demoApiUrl) : prepareDocsSite();
+const wranglerConfig = resolve(
+  docsUiDir,
+  target === 'demo' ? 'wrangler.jsonc' : 'wrangler.docs-site.jsonc',
+);
+const badgeUrl =
+  process.env.CORTEX_BUILT_BY_BADGE_URL ||
+  (target === 'demo'
+    ? `${demoApiUrl}/assets/built-by-cortex.svg`
+    : 'https://api.demo.cortexdocs.dev/assets/built-by-cortex.svg');
 
 const env = {
   ...process.env,
   CORTEX_CLOUDFLARE: '1',
   NEXT_PUBLIC_CORTEX_CLOUDFLARE: '1',
-  NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL: `${demoApiUrl}/assets/built-by-cortex.svg`,
+  NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL: badgeUrl,
   CORTEX_DIST_DIR: '.next',
   CORTEX_DOCS_UI_ROOT: docsUiDir,
   CORTEX_CONFIG_PATH: prepared.configPath,
-  CORTEX_SPEC_PATH: prepared.specPath,
-  CORTEX_ASYNCAPI_PATH: prepared.asyncApiPath,
-  CORTEX_GRAPHQL_PATH: prepared.graphqlPath,
-  CORTEX_GRPC_PATH: prepared.grpcPath,
-  CORTEX_OPENRPC_PATH: prepared.openRpcPath,
   CORTEX_LOGO_PATH: prepared.logoPath,
   CORTEX_FAVICON_PATH: prepared.faviconPath,
+  ...(target === 'demo'
+    ? {
+        CORTEX_SPEC_PATH: prepared.specPath,
+        CORTEX_ASYNCAPI_PATH: prepared.asyncApiPath,
+        CORTEX_GRAPHQL_PATH: prepared.graphqlPath,
+        CORTEX_GRPC_PATH: prepared.grpcPath,
+        CORTEX_OPENRPC_PATH: prepared.openRpcPath,
+      }
+    : {}),
   NEXTJS_ENV: command === 'preview' ? 'development' : 'production',
 };
 
 function runOpenNext(subcommand) {
   return new Promise((resolveCommand, rejectCommand) => {
-    const child = spawn(cli, [subcommand], {
+    const child = spawn(cli, [subcommand, '--config', wranglerConfig], {
       cwd: docsUiDir,
       env,
       stdio: 'inherit',

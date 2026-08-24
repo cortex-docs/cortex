@@ -27,7 +27,7 @@ A promotion pull request to `main` also runs the `integration` check. This check
 
 After a merge to `main`, the `CI` workflow runs again. A successful run starts the deployment and release workflows.
 
-The deployment workflow performs these actions:
+The demo deployment workflow performs these actions:
 
 1. Build all packages.
 2. Make sure that the configured Cloudflare zone is active.
@@ -44,7 +44,13 @@ The release workflow performs these actions:
 5. Update `CHANGELOG.md` with the release notes.
 6. Commit the version and changelog changes to `main`.
 7. Create the matching `vX.X.X` tag.
-8. Publish the five public `@cortex` packages to npm.
+8. Publish the five public workspace packages to npm.
+9. Generate `@cortex-docs/mcp` from the product documentation.
+10. Publish `@cortex-docs/mcp` with the same release version.
+11. Build the product documentation with OpenNext.
+12. Deploy the release to `docs.cortexdocs.dev`.
+
+The release stops before the product docs deployment if an npm publication fails. A rerun skips package versions that already exist.
 
 The release notes always contain these sections:
 
@@ -97,8 +103,26 @@ Run this command to build the demo for the Cloudflare runtime:
 npm run --workspace=@cortex-docs/docs-ui demo:build
 ```
 
+Run this command to build the product docs for the Cloudflare runtime:
+
+```bash
+npm run --workspace=@cortex-docs/docs-ui docs:build
+```
+
+Run this command to generate, build, and pack the product docs MCP package:
+
+```bash
+node scripts/publish-docs-mcp.mjs 0.0.0 --dry-run
+```
+
 Run this command to preview the Cloudflare build:
 
 ```bash
 npm run --workspace=@cortex-docs/docs-ui demo:preview
+```
+
+Run this command to preview the product docs build:
+
+```bash
+npm run --workspace=@cortex-docs/docs-ui docs:preview
 ```
