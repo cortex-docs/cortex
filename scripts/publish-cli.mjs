@@ -17,10 +17,10 @@ const workspaceRoot = resolve(scriptDir, '..');
 const cliManifestPath = join(workspaceRoot, 'packages', 'cli', 'package.json');
 const cliManifest = JSON.parse(readFileSync(cliManifestPath, 'utf8'));
 const bundledPackages = [
-  '@cortex-docs/codegen',
   '@cortex-docs/core',
-  '@cortex-docs/docs-ui',
+  '@cortex-docs/codegen',
   '@cortex-docs/mcp-gen',
+  '@cortex-docs/docs-ui',
 ];
 
 if (!dryRun && cliManifest.version !== expectedVersion) {
@@ -62,6 +62,9 @@ function extractPackage(archive, target) {
 }
 
 try {
+  const bundledArchives = new Map(
+    bundledPackages.map((packageName) => [packageName, packWorkspace(packageName)]),
+  );
   extractPackage(packWorkspace(cliManifest.name), stagingPackage);
 
   const stagedManifestPath = join(stagingPackage, 'package.json');
@@ -72,7 +75,7 @@ try {
 
   for (const packageName of bundledPackages) {
     const target = join(stagingPackage, 'node_modules', ...packageName.split('/'));
-    extractPackage(packWorkspace(packageName), target);
+    extractPackage(bundledArchives.get(packageName), target);
   }
 
   execFileSync(
