@@ -7,6 +7,10 @@ Cortex Docs generates typed SDKs, interactive API documentation, and Model Conte
 
 One project can combine OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC sources. Cortex Docs generates one package for each configured language.
 
+## Live demo
+
+**[Open the Cortex Docs demo →](https://demo.cortexdocs.dev)**
+
 ## Features
 
 - Generate SDKs for TypeScript, Python, Go, Java, Kotlin, Ruby, PHP, C#, Rust, C++, and C.
