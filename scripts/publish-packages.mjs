@@ -8,11 +8,14 @@ if (!/^\d+\.\d+\.\d+$/.test(expectedVersion || '')) {
   throw new Error('Usage: node scripts/publish-packages.mjs <version>');
 }
 
+const useProvenance = process.env.GITHUB_REPOSITORY_VISIBILITY === 'public';
 const packages = ['core', 'codegen', 'mcp-gen', 'docs-ui', 'cli'];
 for (const workspace of packages) {
   const manifest = JSON.parse(readFileSync(`packages/${workspace}/package.json`, 'utf8'));
   if (manifest.version !== expectedVersion) {
-    throw new Error(`${manifest.name} has version ${manifest.version}. Expected ${expectedVersion}.`);
+    throw new Error(
+      `${manifest.name} has version ${manifest.version}. Expected ${expectedVersion}.`,
+    );
   }
 
   try {
@@ -24,9 +27,11 @@ for (const workspace of packages) {
   } catch {}
 
   console.log(`Publishing ${manifest.name}@${expectedVersion}...`);
-  execFileSync(
-    'npm',
-    ['publish', `--workspace=${manifest.name}`, '--access=public', '--provenance'],
-    { stdio: 'inherit' },
-  );
+  const publishArgs = ['publish', `--workspace=${manifest.name}`, '--access=public'];
+  if (useProvenance) {
+    publishArgs.push('--provenance');
+  } else {
+    console.log('Publishing without provenance because the source repository is not public.');
+  }
+  execFileSync('npm', publishArgs, { stdio: 'inherit' });
 }
