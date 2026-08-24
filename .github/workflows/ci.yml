@@ -60,6 +60,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - if: failure()
@@ -82,5 +83,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: docker volume create cortex-sdk-gradle-cache
       - run: npm run test:sdk
       - run: npm run test:publish:e2e
