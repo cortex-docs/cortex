@@ -15,12 +15,14 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const docsUiDir = resolve(scriptDir, '..');
 const workspaceRoot = resolve(docsUiDir, '..', '..');
 const cli = resolve(workspaceRoot, 'node_modules', '.bin', 'opennextjs-cloudflare');
-const prepared = prepareDemo();
+const demoApiUrl = process.env.CORTEX_DEMO_API_URL || 'http://localhost:4010';
+const prepared = prepareDemo(demoApiUrl);
 
 const env = {
   ...process.env,
   CORTEX_CLOUDFLARE: '1',
   NEXT_PUBLIC_CORTEX_CLOUDFLARE: '1',
+  NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL: `${demoApiUrl}/assets/built-by-cortex.svg`,
   CORTEX_DIST_DIR: '.next',
   CORTEX_DOCS_UI_ROOT: docsUiDir,
   CORTEX_CONFIG_PATH: prepared.configPath,

@@ -9,6 +9,23 @@ if (process.env.CORTEX_CLOUDFLARE === '1') {
 /** @type {import('next').NextConfig} */
 module.exports = {
   reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'api.demo.cortexdocs.dev',
+        port: '',
+        pathname: '/assets/built-by-cortex.svg',
+        search: '',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        pathname: '/assets/built-by-cortex.svg',
+        search: '',
+      },
+    ],
+  },
   serverExternalPackages: [
     '@cortex-docs/core',
     '@cortex-docs/codegen',

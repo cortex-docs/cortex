@@ -12,6 +12,18 @@ describe('demo API Worker', () => {
     await expect(response.json()).resolves.toEqual({ status: 'ok', runtime: 'cloudflare-worker' });
   });
 
+  it('serves the Built by Cortex badge as a cached Cloudflare asset', async () => {
+    const response = await request('/assets/built-by-cortex.svg');
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/svg+xml; charset=utf-8');
+    expect(response.headers.get('Cache-Control')).toContain('max-age=86400');
+    expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+    expect(body).toContain('<title id="title">Built by Cortex</title>');
+    expect(body).toContain('<svg');
+  });
+
   it('returns the Petstore collection with CORS headers', async () => {
     const response = await request('/pets');
     const body = (await response.json()) as { data: Array<{ name: string }> };

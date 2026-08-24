@@ -33,6 +33,22 @@ test.describe('Docs UI', () => {
     });
   });
 
+  test('loads the Built by Cortex badge from the Worker', async ({ page }) => {
+    await page.goto('/docs/quickstart');
+    const badgeLink = page.getByRole('link', { name: 'Built by Cortex' });
+    const badgeImage = badgeLink.getByRole('img', { name: 'Built by Cortex' });
+
+    await expect(badgeLink).toHaveAttribute('href', 'https://cortexdocs.dev');
+    await badgeLink.scrollIntoViewIfNeeded();
+    await expect(badgeImage).toHaveAttribute(
+      'src',
+      'http://localhost:4010/assets/built-by-cortex.svg',
+    );
+    await expect
+      .poll(() => badgeImage.evaluate((image: HTMLImageElement) => image.naturalWidth))
+      .toBe(148);
+  });
+
   test('shows authentication info', async ({ page }) => {
     await page.goto('/api-reference');
     await expect(page.locator('text=bearerAuth').first()).toBeVisible({ timeout: 15000 });

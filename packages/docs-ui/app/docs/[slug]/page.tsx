@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 
 import { DocsBreadcrumb, type BreadcrumbSegment } from '@/components/docs/docs-breadcrumb';
@@ -13,6 +14,10 @@ interface TocItem {
   text: string;
   level: number;
 }
+
+const BUILT_BY_CORTEX_BADGE_URL =
+  process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL ??
+  'https://api.demo.cortexdocs.dev/assets/built-by-cortex.svg';
 
 function extractToc(html: string): TocItem[] {
   const items: TocItem[] = [];
@@ -253,35 +258,16 @@ export default function DocSlugPage({ params }: { params: Promise<{ slug: string
                     href="https://cortexdocs.dev"
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label="Visit Cortex Docs"
-                    className="inline-flex items-center gap-2 rounded-[10px] border border-white/15 bg-[#0a0a0a] px-3 py-2 shadow-sm transition-colors hover:bg-[#18181b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    aria-label="Built by Cortex"
+                    className="inline-flex rounded-[10px] shadow-sm transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
-                    <svg
-                      className="size-5 shrink-0 text-white"
-                      viewBox="0 0 22 20"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M9 2.5Q11 1 13 2.5L18 5Q20 6 18 7L13 9.5Q11 11 9 9.5L4 7Q2 6 4 5L9 2.5Z"
-                        strokeWidth="1.5"
-                        fill="currentColor"
-                        fillOpacity="0.1"
-                      />
-                      <path d="M3 10L9 13.5Q11 14.8 13 13.5L19 10" strokeWidth="1.5" />
-                      <path
-                        d="M3 13.5L9 17Q11 18.3 13 17L19 13.5"
-                        strokeWidth="1.5"
-                        opacity="0.5"
-                      />
-                    </svg>
-                    <span className="inline-flex items-baseline gap-1 whitespace-nowrap text-xs leading-none">
-                      <span className="text-zinc-400">Built with</span>
-                      <span className="font-semibold text-white">Cortex Docs</span>
-                    </span>
+                    <Image
+                      src={BUILT_BY_CORTEX_BADGE_URL}
+                      alt="Built by Cortex"
+                      width={148}
+                      height={36}
+                      unoptimized
+                    />
                   </a>
                 </footer>
               </>
