@@ -45,11 +45,14 @@
     "demo:build": "node scripts/cloudflare.mjs build",
     "demo:preview": "node scripts/cloudflare.mjs preview",
     "demo:deploy": "node scripts/cloudflare.mjs deploy",
+    "docs:build": "node scripts/cloudflare.mjs build docs",
+    "docs:preview": "node scripts/cloudflare.mjs preview docs",
+    "docs:deploy": "node scripts/cloudflare.mjs deploy docs",
     "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "start": "next start",
-    "clean": "rm -rf .next .next-build .open-next .cortex-demo"
+    "clean": "rm -rf .next .next-build .open-next .cortex-demo .cortex-docs-site"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
