@@ -5,6 +5,7 @@ dist/
 .open-next/
 .wrangler/
 .cortex-demo/
+.cortex-docs-site/
 .cortex-dev-*/
 .cortex-build-*/
 .turbo/

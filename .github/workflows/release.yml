@@ -1,4 +1,4 @@
-name: Release npm packages
+name: Release packages and docs
 
 on:
   workflow_run:
@@ -72,10 +72,10 @@ jobs:
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   publish:
-    name: publish npm packages
+    name: publish packages and deploy docs
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment: npm
     permissions:
       contents: read
@@ -97,3 +97,22 @@ jobs:
           GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-packages.mjs "${{ needs.prepare.outputs.version }}"
+      - name: Publish the product docs MCP package
+        env:
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-docs-mcp.mjs "${{ needs.prepare.outputs.version }}"
+      - name: Make sure that the Cloudflare zone is active
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}" \
+            | jq --exit-status '.success == true and .result.status == "active"'
+      - name: Deploy the product docs Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run --workspace=@cortex-docs/docs-ui docs:deploy

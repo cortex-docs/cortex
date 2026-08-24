@@ -55,4 +55,11 @@ docs:
         document: docs/mcp-servers.md
       - title: Publishing
         document: docs/publishing.md
-mcp: {}
+mcp:
+  package_name: '@cortex-docs/mcp'
+  github_repository: github.com/cortex-docs/cortex
+publish:
+  mcp:
+    url: https://registry.npmjs.org
+    token_env: NPM_TOKEN
+    access: public
