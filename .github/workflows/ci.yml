@@ -19,12 +19,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
       - name: Enforce the promotion path
         env:
           PR_BASE: ${{ github.base_ref }}
           PR_HEAD: ${{ github.head_ref }}
-        run: node scripts/check-pr-flow.mjs
+        run: |
+          if [[ "$PR_BASE" == "main" && "$PR_HEAD" != "pre-release" ]]; then
+            echo "Only the pre-release branch can open a pull request to main."
+            exit 1
+          fi
+          echo "The ${PR_HEAD:-push} -> ${PR_BASE:-push} flow is valid."
 
   quality:
     name: quality
