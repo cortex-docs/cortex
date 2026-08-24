@@ -94,5 +94,6 @@ jobs:
       - run: npm run pack:check
       - name: Publish packages that are not in npm
         env:
+          GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-packages.mjs "${{ needs.prepare.outputs.version }}"
