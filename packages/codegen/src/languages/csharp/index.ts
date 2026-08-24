@@ -1,4 +1,4 @@
-import { toPascalCase, toUpperSnakeCase } from '@cortex/core';
+import { toPascalCase, toUpperSnakeCase } from '@cortex-docs/core';
 import { TemplateBasedPlugin, type LanguageTemplateConfig } from '../template-plugin';
 
 export class CSharpPlugin extends TemplateBasedPlugin {

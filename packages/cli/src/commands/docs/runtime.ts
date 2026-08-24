@@ -51,10 +51,10 @@ function mirrorSourceDirectory(source: string, target: string): void {
 
 export function resolveDocsUiPath(): string {
   try {
-    return path.dirname(require.resolve('@cortex/docs-ui/package.json'));
+    return path.dirname(require.resolve('@cortex-docs/docs-ui/package.json'));
   } catch (error) {
     throw new Error(
-      `Cannot find the Cortex Docs UI runtime. Reinstall @cortex/cli. ${
+      `Cannot find the Cortex Docs UI runtime. Reinstall @cortex-docs/cli. ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -66,7 +66,7 @@ export function resolveNextBin(docsUiPath: string): string {
     return require.resolve('next/dist/bin/next', { paths: [docsUiPath] });
   } catch (error) {
     throw new Error(
-      `Cannot find the Next.js runtime for Cortex Docs. Reinstall @cortex/cli. ${
+      `Cannot find the Next.js runtime for Cortex Docs. Reinstall @cortex-docs/cli. ${
         error instanceof Error ? error.message : String(error)
       }`,
     );

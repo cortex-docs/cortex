@@ -1,4 +1,4 @@
-import { toPascalCase, toCamelCase, toSnakeCase, toUpperSnakeCase } from '@cortex/core';
+import { toPascalCase, toCamelCase, toSnakeCase, toUpperSnakeCase } from '@cortex-docs/core';
 import { TemplateBasedPlugin, type LanguageTemplateConfig } from '../template-plugin';
 
 export class GoPlugin extends TemplateBasedPlugin {

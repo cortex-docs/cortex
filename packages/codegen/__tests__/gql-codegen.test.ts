@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as path from 'node:path';
-import { GraphQLParser } from '@cortex/core';
+import { GraphQLParser } from '@cortex-docs/core';
 import {
   GqlTemplateEngine,
   createGqlPluginForLanguage,

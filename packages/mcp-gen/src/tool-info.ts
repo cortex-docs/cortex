@@ -6,7 +6,7 @@ import type {
   GraphQLSpec,
   OpenRpcSpec,
   CortexConfig,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import {
   mapOperationsToTools,
   mapChannelsToTools,

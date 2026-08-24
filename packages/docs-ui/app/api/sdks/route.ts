@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
 import * as yaml from 'js-yaml';
-import { normalizeRepositoryUrl } from '@cortex/core';
+import { normalizeRepositoryUrl } from '@cortex-docs/core';
 
 interface SourceLanguage {
   language: string;

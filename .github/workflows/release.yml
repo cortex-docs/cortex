@@ -39,7 +39,7 @@ jobs:
       - name: Set the next patch version
         id: version
         run: |
-          PUBLISHED_VERSION="$(npm view @cortex/cli version 2>/dev/null || true)"
+          PUBLISHED_VERSION="$(npm view @cortex-docs/cli version 2>/dev/null || true)"
           node scripts/set-release-version.mjs --published="$PUBLISHED_VERSION"
           npm install --package-lock-only --ignore-scripts
       - name: Install Copilot CLI

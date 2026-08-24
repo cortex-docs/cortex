@@ -32,7 +32,7 @@ export function findLanguageTemplateDir(language: string): string {
   let installedPackageDir: string | undefined;
   try {
     const runtimeRequire = createRequire(path.join(process.cwd(), 'package.json'));
-    installedPackageDir = path.dirname(runtimeRequire.resolve('@cortex/codegen/package.json'));
+    installedPackageDir = path.dirname(runtimeRequire.resolve('@cortex-docs/codegen/package.json'));
   } catch {
     // Source checkouts can use the paths below.
   }
@@ -43,7 +43,7 @@ export function findLanguageTemplateDir(language: string): string {
       : []),
     path.resolve(
       process.cwd(),
-      'node_modules/@cortex/codegen/dist/languages',
+      'node_modules/@cortex-docs/codegen/dist/languages',
       language,
       'templates',
     ),

@@ -6,7 +6,7 @@ import type {
   AsyncApiSpec,
   GrpcSpec,
   OpenRpcSpec,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 
 export interface GeneratedFile {
   path: string;

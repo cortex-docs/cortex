@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, inflateRawSync } from 'node:zlib';
-import type { PublishRegistryConfig, SupportedLanguage } from '@cortex/core';
+import type { PublishRegistryConfig, SupportedLanguage } from '@cortex-docs/core';
 
 export interface RegistryVersionTarget {
   language: SupportedLanguage;

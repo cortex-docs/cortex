@@ -306,7 +306,7 @@ function rebuildLibraries() {
   log('build', 'Rebuilding library packages...');
   try {
     execSync(
-      'npx turbo build --only --filter=@cortex/core --filter=@cortex/codegen --filter=@cortex/mcp-gen --filter=@cortex/cli',
+      'npx turbo build --only --filter=@cortex-docs/core --filter=@cortex-docs/codegen --filter=@cortex-docs/mcp-gen --filter=@cortex-docs/cli',
       { cwd: WORKSPACE_ROOT, stdio: 'inherit' },
     );
     log('build', 'Rebuild complete');

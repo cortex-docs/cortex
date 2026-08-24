@@ -2,8 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
 import * as yaml from 'js-yaml';
-import type { ParsedSpec, Parameter, ResponseInfo, SchemaObject } from '@cortex/core';
-import { renderLanguageTemplate, type NamingConventions } from '@cortex/codegen';
+import type { ParsedSpec, Parameter, ResponseInfo, SchemaObject } from '@cortex-docs/core';
+import { renderLanguageTemplate, type NamingConventions } from '@cortex-docs/codegen';
 import { getDocsUiRoot, locationExists } from '@/lib/load-location';
 
 interface ReadmeResourceOperation {
@@ -86,8 +86,8 @@ export async function GET(request: Request) {
       toKebabCase,
       toUpperSnakeCase,
       singularize,
-    } = await import('@cortex/core');
-    const { getLanguageNaming } = await import('@cortex/codegen');
+    } = await import('@cortex-docs/core');
+    const { getLanguageNaming } = await import('@cortex-docs/codegen');
 
     const parser = new OpenAPIParser();
     const spec = await parser.parse(specPath);

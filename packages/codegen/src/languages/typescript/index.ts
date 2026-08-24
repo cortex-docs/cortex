@@ -1,4 +1,4 @@
-import { toPascalCase, toCamelCase, toKebabCase } from '@cortex/core';
+import { toPascalCase, toCamelCase, toKebabCase } from '@cortex-docs/core';
 import { TemplateBasedPlugin, type LanguageTemplateConfig } from '../template-plugin';
 
 export class TypeScriptPlugin extends TemplateBasedPlugin {

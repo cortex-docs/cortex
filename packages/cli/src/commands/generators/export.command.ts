@@ -1,13 +1,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SubCommand, CommandRunner, Option } from 'nest-commander';
-import { createDefaultRegistry, findLanguageTemplateDir } from '@cortex/codegen';
+import { createDefaultRegistry, findLanguageTemplateDir } from '@cortex-docs/codegen';
 import {
   resolveGeneratorTemplateRoot,
   resolveLanguageTemplateDir,
   type CortexConfig,
-} from '@cortex/core';
-import { findMcpTemplateDir } from '@cortex/mcp-gen';
+} from '@cortex-docs/core';
+import { findMcpTemplateDir } from '@cortex-docs/mcp-gen';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
 

@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GrpcParser } from '@cortex/core';
+import { GrpcParser } from '@cortex-docs/core';
 import {
   GrpcTemplateEngine,
   createGrpcPluginForLanguage,

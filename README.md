@@ -28,7 +28,7 @@ Some generated SDKs require the normal compiler or package manager for their tar
 ## Quick start
 
 ```bash
-npm install --global @cortex/cli
+npm install --global @cortex-docs/cli
 cortex init my-api
 cd my-api
 cortex validate
@@ -144,13 +144,13 @@ The generated package contains local copies of every configured specification. I
 
 ## Packages
 
-| Package           | Purpose                                        |
-| ----------------- | ---------------------------------------------- |
-| `@cortex/cli`     | Command-line interface and project workflow    |
-| `@cortex/core`    | Configuration loader and specification parsers |
-| `@cortex/codegen` | SDK generation engine and language templates   |
-| `@cortex/mcp-gen` | MCP server generator                           |
-| `@cortex/docs-ui` | Documentation runtime used by the CLI          |
+| Package                | Purpose                                        |
+| ---------------------- | ---------------------------------------------- |
+| `@cortex-docs/cli`     | Command-line interface and project workflow    |
+| `@cortex-docs/core`    | Configuration loader and specification parsers |
+| `@cortex-docs/codegen` | SDK generation engine and language templates   |
+| `@cortex-docs/mcp-gen` | MCP server generator                           |
+| `@cortex-docs/docs-ui` | Documentation runtime used by the CLI          |
 
 ## Documentation
 

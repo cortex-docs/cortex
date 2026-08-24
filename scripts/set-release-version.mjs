@@ -42,7 +42,7 @@ if (publishedVersion) {
 const nextVersion = `${base[0]}.${base[1]}.${base[2] + 1}`;
 
 if (!checkOnly) {
-  const publicNames = new Set(publicPackages.map((name) => `@cortex/${name}`));
+  const publicNames = new Set(publicPackages.map((name) => `@cortex-docs/${name}`));
   for (const { path, value } of manifests.values()) {
     value.version = nextVersion;
     for (const dependencyType of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {

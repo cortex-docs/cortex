@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as path from 'node:path';
-import { AsyncAPIParser } from '@cortex/core';
+import { AsyncAPIParser } from '@cortex-docs/core';
 import { WsTemplateEngine } from '../src/languages/ws-template-plugin';
 import { createWsPluginForLanguage } from '../src/languages/ws-template-plugin';
-import type { WebSocketHeartbeatConfig } from '@cortex/core';
+import type { WebSocketHeartbeatConfig } from '@cortex-docs/core';
 
 const ASYNCAPI_FIXTURE = path.join(__dirname, '../../core/__fixtures__/chat-asyncapi.yaml');
 

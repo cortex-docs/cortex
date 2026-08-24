@@ -8,8 +8,11 @@ import type {
   PublishGitHubConfig,
   PublishRegistryConfig,
   SupportedLanguage,
-} from '@cortex/core';
-import { gitRepositoryUrl as resolveGitRepositoryUrl, normalizeRepositoryUrl } from '@cortex/core';
+} from '@cortex-docs/core';
+import {
+  gitRepositoryUrl as resolveGitRepositoryUrl,
+  normalizeRepositoryUrl,
+} from '@cortex-docs/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
 import { hashPackageDirectory } from './package-checksum';

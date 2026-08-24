@@ -9,13 +9,13 @@ import {
   resolveDocsUiPath,
   resolveNextBin,
 } from './runtime';
-import { assertTemplateRoot } from '@cortex/codegen';
+import { assertTemplateRoot } from '@cortex-docs/codegen';
 import {
   getAllLanguageTemplateDirs,
   getFirstSpecPath,
   isRemoteLocation,
   resolveGeneratorTemplateRoot,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 
 @SubCommand({
   name: 'serve',

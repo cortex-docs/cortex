@@ -7,7 +7,7 @@ import {
   OpenRpcParser,
   getSourcesByType,
   isRemoteLocation,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
 

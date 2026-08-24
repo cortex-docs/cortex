@@ -1,4 +1,4 @@
-import type { AsyncApiSpec, SchemaObject, WebSocketHeartbeatConfig } from '@cortex/core';
+import type { AsyncApiSpec, SchemaObject, WebSocketHeartbeatConfig } from '@cortex-docs/core';
 import {
   toPascalCase,
   titleToPascalCase,
@@ -6,7 +6,7 @@ import {
   toSnakeCase,
   toKebabCase,
   toUpperSnakeCase,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import type { GeneratedFile, NamingConventions } from '../plugin';
 import {
   applyFileTemplateOverrides,

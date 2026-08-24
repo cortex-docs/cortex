@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { OpenRpcParser } from '@cortex/core';
+import { OpenRpcParser } from '@cortex-docs/core';
 import {
   OpenRpcTemplateEngine,
   createOpenRpcPluginForLanguage,

@@ -1,5 +1,5 @@
 {
-  "name": "@cortex/core",
+  "name": "@cortex-docs/core",
   "version": "0.1.1",
   "description": "Core specification parsing, configuration, and shared types for Cortex Docs",
   "license": "MIT",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GraphQLSpec, Operation, ParsedSpec } from '@cortex/core';
+import type { GraphQLSpec, Operation, ParsedSpec } from '@cortex-docs/core';
 import {
   emptyParsedSpec,
   mergeGraphQLSpecs,

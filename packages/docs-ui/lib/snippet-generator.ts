@@ -2,7 +2,7 @@
 // snippet-generator.ts
 // Constants and types for SDK snippet display.
 // Snippets are rendered server-side from shared EJS mini-templates
-// via the /api/sdk-snippets route using @cortex/codegen's renderSnippet().
+// via the /api/sdk-snippets route using @cortex-docs/codegen's renderSnippet().
 // ---------------------------------------------------------------------------
 
 export const SUPPORTED_LANGUAGES = [

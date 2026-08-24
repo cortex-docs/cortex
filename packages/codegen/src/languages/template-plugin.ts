@@ -11,7 +11,7 @@ import type {
   AsyncApiChannel,
   GrpcSpec,
   OpenRpcSpec,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import {
   singularize,
   toPascalCase,
@@ -24,7 +24,7 @@ import {
   getFirstSourceByType,
   gitRepositoryUrl,
   normalizeRepositoryUrl,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import type { LanguagePlugin, CodegenContext, GeneratedFile, NamingConventions } from '../plugin';
 import {
   applyFileTemplateOverrides,

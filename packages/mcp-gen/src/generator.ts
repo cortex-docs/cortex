@@ -6,8 +6,8 @@ import type {
   AsyncApiSpec,
   GraphQLSpec,
   OpenRpcSpec,
-} from '@cortex/core';
-import { gitRepositoryUrl, normalizeRepositoryUrl } from '@cortex/core';
+} from '@cortex-docs/core';
+import { gitRepositoryUrl, normalizeRepositoryUrl } from '@cortex-docs/core';
 import {
   mapOperationsToTools,
   mapChannelsToTools,
