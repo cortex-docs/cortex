@@ -19,17 +19,19 @@ function write(file, content) {
 
 function run(command, args, options = {}) {
   console.log(`\n$ ${command} ${args.join(' ')}`);
+  const capture = options.capture === true;
   const result = spawnSync(command, args, {
     cwd: options.cwd || WORK,
     env: { ...process.env, ...options.env },
-    encoding: 'utf8',
+    encoding: capture ? 'utf8' : undefined,
+    stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     timeout: options.timeout || 600000,
   });
-  if (result.stdout) process.stdout.write(result.stdout);
-  if (result.stderr) process.stderr.write(result.stderr);
+  if (capture && result.stdout) process.stdout.write(result.stdout);
+  if (capture && result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${command} exited with status ${result.status}`);
-  return result.stdout;
+  return result.stdout || '';
 }
 
 async function waitForPort(host, port, attempts = 120) {
@@ -62,7 +64,7 @@ function assertGitHubVersion(language, version) {
     '--git-dir', repository,
     'show',
     `refs/tags/v${version}:.cortex-package.json`,
-  ]));
+  ], { capture: true }));
   if (!/^sha256:[a-f0-9]{64}$/.test(metadata.contentChecksum ?? '')) {
     throw new Error(`GitHub ${language} v${version} does not contain a Cortex checksum`);
   }
@@ -175,7 +177,7 @@ function testGithubOnlyPublishing() {
 
   fs.rmSync(path.join(root, 'generated'), { recursive: true, force: true });
   run('node', [CLI, 'generate', '--config', configPath, '--no-mcp'], { cwd: root });
-  const unchangedOutput = run('node', publishArgs, { cwd: root });
+  const unchangedOutput = run('node', publishArgs, { cwd: root, capture: true });
   if (!unchangedOutput.includes('All selected packages are unchanged')) {
     throw new Error('An unchanged GitHub-only package was not skipped');
   }
@@ -527,7 +529,7 @@ async function main() {
       if (!process.env.PUBLISH_E2E_PUBLISH_TARGET) {
         fs.rmSync(path.join(WORK, 'generated'), { recursive: true, force: true });
         run('node', [CLI, 'generate', '--config', path.join(WORK, 'cortex.config.yml')]);
-        const unchangedOutput = run('node', publishArgs);
+        const unchangedOutput = run('node', publishArgs, { capture: true });
         if (!unchangedOutput.includes('All selected packages are unchanged')) {
           throw new Error('An unchanged generation was not skipped');
         }

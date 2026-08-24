@@ -205,7 +205,7 @@ Supported language values: `typescript`, `python`, `go`, `java`, `kotlin`, `ruby
 
 When `TEST_LANGUAGES` is not set, all languages and the MCP server test run. When set, only the listed languages run. MCP runs by default unless you explicitly filter — include `mcp` in the list to keep it, or omit it to skip.
 
-The test pipeline:
+The local test pipeline:
 
 1. Builds the base Docker image (`Dockerfile` in project root) with all language runtimes (Node, Python, Go, Java, Ruby, PHP, .NET, Rust, C/C++)
 2. Builds the test image (`e2e/docker/Dockerfile`) which extends the base, copies the project, and builds the TypeScript packages
@@ -215,6 +215,12 @@ The test pipeline:
 6. Reports pass/fail per language
 
 Test files live in `e2e/docker/tests/test-<language>/`. The mock server and test orchestrator are in `e2e/docker/`.
+
+GitHub Actions uses the prebuilt `ghcr.io/cortex-docs/cortex-ci` toolchain image. The `CI toolchain image` workflow publishes this image.
+
+The image tag contains the hash of the root `Dockerfile`. Each test job resolves this tag to an image digest before use.
+
+The workflow builds a new image only after a change to the root `Dockerfile`. Local Docker commands continue to build local images.
 
 ### Formatting
 

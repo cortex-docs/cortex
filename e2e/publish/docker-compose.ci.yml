@@ -1,0 +1,67 @@
+name: cortex-publish-ci
+
+services:
+  npm-registry:
+    image: verdaccio/verdaccio:6
+    volumes:
+      - ./registries/verdaccio.yml:/verdaccio/conf/config.yaml:ro
+
+  pypi-registry:
+    image: pypiserver/pypiserver:latest
+    command: run -P . -a .
+
+  maven-registry:
+    image: dzikoysk/reposilite:3.5.19
+    environment:
+      REPOSILITE_OPTS: --token cortex:cortex-local-maven-token
+
+  gem-registry:
+    image: ${CORTEX_CI_IMAGE:?required}
+    entrypoint:
+      - sh
+      - -c
+      - gemstash authorize --key cortex-local-gem-token && exec gemstash start
+
+  cargo-registry:
+    image: node:22-slim
+    working_dir: /registry
+    command: node mock-cargo-registry.js
+    volumes:
+      - ./mock-cargo-registry.js:/registry/mock-cargo-registry.js:ro
+
+  conan-registry:
+    image: ${CORTEX_CI_IMAGE:?required}
+    entrypoint: ['conan_server', '--server_dir', '/var/lib/conan-server']
+    volumes:
+      - ./registries/conan-server.conf:/var/lib/conan-server/server.conf:ro
+
+  publish-tests:
+    image: ${CORTEX_CI_IMAGE:?required}
+    working_dir: /cortex
+    entrypoint:
+      - bash
+      - e2e/docker/run-ci-test.sh
+      - e2e/publish/run-publish-tests.js
+    depends_on:
+      - npm-registry
+      - pypi-registry
+      - maven-registry
+      - gem-registry
+      - cargo-registry
+      - conan-registry
+    environment:
+      MOCK_PORT: 4010
+      GEM_HOST_API_KEY: cortex-local-gem-token
+      MAVEN_USERNAME: cortex
+      MAVEN_TOKEN: cortex-local-maven-token
+      CARGO_REGISTRY_TOKEN: cortex-local-cargo-token
+      CONAN_LOGIN_USERNAME: demo
+      CONAN_PASSWORD: demo
+    volumes:
+      - ../..:/cortex
+      - cortex-publish-node-modules:/cortex/node_modules
+      - publish-shared:/shared
+
+volumes:
+  cortex-publish-node-modules:
+  publish-shared:
