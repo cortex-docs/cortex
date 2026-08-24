@@ -3,19 +3,19 @@
 import { spawn, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, watch, readFileSync } from 'node:fs';
 import { connect } from 'node:net';
-import { resolve, join, dirname, basename } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOCS_UI_DIR = resolve(__dirname, '..');
 const WORKSPACE_ROOT = resolve(DOCS_UI_DIR, '..', '..');
 const TEST_PROJECT_DIR = join(WORKSPACE_ROOT, 'test-project');
-const MOCK_SERVER_PATH = join(WORKSPACE_ROOT, 'e2e', 'docker', 'mock-server.js');
 const CLI_MAIN = join(WORKSPACE_ROOT, 'packages', 'cli', 'dist', 'main.js');
+const WRANGLER_BIN = join(WORKSPACE_ROOT, 'node_modules', '.bin', 'wrangler');
+const DEMO_API_CONFIG = join(WORKSPACE_ROOT, 'packages', 'demo-api', 'wrangler.jsonc');
 
 const PORT = process.env.PORT || '3012';
 const MOCK_PORT = process.env.MOCK_PORT || '4010';
-const GRPC_PORT = process.env.GRPC_PORT || '50051';
 
 function log(tag, msg) {
   const color =
@@ -39,28 +39,53 @@ function initTestProject() {
   const configPath = join(TEST_PROJECT_DIR, 'cortex.config.yml');
   if (existsSync(configPath)) {
     log('init', 'test-project already initialized');
-    return;
+  } else {
+    log('init', 'Initializing test-project via cortex init...');
+    mkdirSync(TEST_PROJECT_DIR, { recursive: true });
+
+    execSync(`node "${CLI_MAIN}" init Petstore`, {
+      cwd: TEST_PROJECT_DIR,
+      stdio: 'inherit',
+    });
   }
 
-  log('init', 'Initializing test-project via cortex init...');
-  mkdirSync(TEST_PROJECT_DIR, { recursive: true });
-
-  execSync(`node "${CLI_MAIN}" init Petstore`, {
-    cwd: TEST_PROJECT_DIR,
-    stdio: 'inherit',
-  });
-
-  // Dev-only: patch server URL to point to local mock
+  const apiUrl = `http://localhost:${MOCK_PORT}`;
+  const websocketUrl = `ws://localhost:${MOCK_PORT}/ws`;
   const specPath = join(TEST_PROJECT_DIR, 'petstore.yaml');
-  if (existsSync(specPath)) {
-    const specContent = readFileSync(specPath, 'utf-8');
+  const nestedSpecPath = join(TEST_PROJECT_DIR, 'specs', 'petstore.yaml');
+  for (const candidate of [specPath, nestedSpecPath]) {
+    if (!existsSync(candidate)) continue;
+    const specContent = readFileSync(candidate, 'utf-8');
     writeFileSync(
-      specPath,
-      specContent.replace(/url:\s*https?:\/\/[^\n]+/, `url: http://localhost:${MOCK_PORT}`),
+      candidate,
+      specContent.replace(/url:\s*https?:\/\/[^\n]+/, `url: ${apiUrl}`),
       'utf-8',
     );
-    log('init', `Patched petstore.yaml server URL → http://localhost:${MOCK_PORT}`);
   }
+
+  const asyncApiPath = join(TEST_PROJECT_DIR, 'specs', 'chat-asyncapi.yaml');
+  if (existsSync(asyncApiPath)) {
+    const content = readFileSync(asyncApiPath, 'utf-8');
+    writeFileSync(
+      asyncApiPath,
+      content.replace(/url:\s*wss?:\/\/[^\n]+/, `url: ${websocketUrl}`),
+      'utf-8',
+    );
+  }
+
+  const openRpcPath = join(TEST_PROJECT_DIR, 'specs', 'petstore-openrpc.json');
+  if (existsSync(openRpcPath)) {
+    const document = JSON.parse(readFileSync(openRpcPath, 'utf-8'));
+    document.servers = [{ url: `${apiUrl}/rpc` }];
+    writeFileSync(openRpcPath, `${JSON.stringify(document, null, 2)}\n`, 'utf-8');
+  }
+
+  const configContent = readFileSync(configPath, 'utf-8').replace(
+    /endpoint:\s*https?:\/\/[^\n]+\/graphql/,
+    `endpoint: ${apiUrl}/graphql`,
+  );
+  writeFileSync(configPath, configContent, 'utf-8');
+  log('init', `Configured demo endpoints for ${apiUrl}`);
 }
 
 function runGenerate() {
@@ -128,35 +153,21 @@ function stopProcess(proc, processGroup = false) {
   });
 }
 
-async function startMockServer() {
-  const [httpInUse, grpcInUse] = await Promise.all([
-    isPortInUse(MOCK_PORT),
-    isPortInUse(GRPC_PORT),
-  ]);
+async function startDemoApiWorker() {
+  const httpInUse = await isPortInUse(MOCK_PORT);
 
-  if (httpInUse || grpcInUse) {
-    if (httpInUse && grpcInUse && (await isMockHealthy())) {
-      log(
-        'mock',
-        `Mock server is already healthy on :${MOCK_PORT} (gRPC :${GRPC_PORT}); reusing it`,
-      );
+  if (httpInUse) {
+    if (await isMockHealthy()) {
+      log('mock', `Demo API Worker is already healthy on :${MOCK_PORT}; reusing it`);
       return null;
     }
-    const occupied = [
-      httpInUse ? `HTTP :${MOCK_PORT}` : null,
-      grpcInUse ? `gRPC :${GRPC_PORT}` : null,
-    ]
-      .filter(Boolean)
-      .join(' and ');
-    throw new Error(
-      `${occupied} already in use by another process. Stop it or set MOCK_PORT/GRPC_PORT.`,
-    );
+    throw new Error(`HTTP :${MOCK_PORT} is in use. Stop that process or set MOCK_PORT.`);
   }
 
-  log('mock', `Starting mock server on :${MOCK_PORT} (gRPC :${GRPC_PORT})...`);
-  const proc = spawn('node', [MOCK_SERVER_PATH], {
+  log('mock', `Starting the demo API with the Cloudflare Workers runtime on :${MOCK_PORT}...`);
+  const proc = spawn(WRANGLER_BIN, ['dev', '--config', DEMO_API_CONFIG, '--port', MOCK_PORT], {
     cwd: WORKSPACE_ROOT,
-    env: { ...process.env, MOCK_PORT, GRPC_PORT },
+    env: process.env,
     detached: false,
     stdio: 'pipe',
   });
@@ -223,25 +234,6 @@ function watchPackageSources(onChange) {
   };
 }
 
-function watchMockServer(onChange) {
-  let restartTimer = null;
-  const mockDir = dirname(MOCK_SERVER_PATH);
-  const mockFilename = basename(MOCK_SERVER_PATH);
-  const watcher = watch(mockDir, (_event, filename) => {
-    if (!filename || String(filename) !== mockFilename) return;
-    clearTimeout(restartTimer);
-    restartTimer = setTimeout(() => {
-      log('watch', `Mock changed: e2e/docker/${mockFilename}`);
-      onChange();
-    }, 300);
-  });
-  log('watch', `Watching e2e/docker/${mockFilename}`);
-  return () => {
-    clearTimeout(restartTimer);
-    watcher.close();
-  };
-}
-
 function rebuildLibraries() {
   log('build', 'Rebuilding library packages...');
   try {
@@ -271,53 +263,13 @@ async function main() {
   runGenerate();
 
   let shuttingDown = false;
-  let mockProc = await startMockServer();
+  const mockProc = await startDemoApiWorker();
   const ownsMockProcess = mockProc !== null;
   const serveProc = startDocsServe();
 
   const stopWatching = watchPackageSources(() => {
     rebuildLibraries();
     runGenerate();
-  });
-
-  let mockRestarting = false;
-  let mockRestartQueued = false;
-  const restartMock = async () => {
-    if (shuttingDown) return;
-    if (!ownsMockProcess) {
-      log(
-        'mock',
-        'Mock source changed, but the running mock is externally managed; restart it manually',
-      );
-      return;
-    }
-    if (mockRestarting) {
-      mockRestartQueued = true;
-      return;
-    }
-
-    mockRestarting = true;
-    try {
-      do {
-        mockRestartQueued = false;
-        log('mock', 'Restarting mock server...');
-        const previousProc = mockProc;
-        mockProc = null;
-        await stopProcess(previousProc, false);
-        if (shuttingDown) return;
-        try {
-          mockProc = await startMockServer();
-          log('mock', 'Restart complete');
-        } catch (err) {
-          logError('mock', `Restart failed: ${err instanceof Error ? err.message : err}`);
-        }
-      } while (mockRestartQueued && !shuttingDown);
-    } finally {
-      mockRestarting = false;
-    }
-  };
-  const stopWatchingMock = watchMockServer(() => {
-    void restartMock();
   });
 
   console.log('');
@@ -329,8 +281,10 @@ async function main() {
     shuttingDown = true;
     log('dev', 'Shutting down...');
     stopWatching();
-    stopWatchingMock();
-    await Promise.all([stopProcess(serveProc, false), stopProcess(mockProc, false)]);
+    await Promise.all([
+      stopProcess(serveProc, false),
+      ownsMockProcess ? stopProcess(mockProc, false) : Promise.resolve(),
+    ]);
     process.exit(0);
   }
 

@@ -247,6 +247,13 @@ describe('GraphQL Codegen — All Languages', () => {
           expect(client.content).toContain('gql_subscribe(');
           expect(client.content).toContain('gql_subscribe_once(');
         });
+
+        it('does not consume a WebSocket frame while reading upgrade headers', async () => {
+          const files = await generateForLanguage(language);
+          const client = getFile(files, 'gql-client')!;
+          expect(client.content).toContain('recv(sock, buf + handshake_len, 1, 0)');
+          expect(client.content).toContain('memcmp(buf + handshake_len - 4, "\\r\\n\\r\\n", 4)');
+        });
       }
 
       if (language === 'python') {

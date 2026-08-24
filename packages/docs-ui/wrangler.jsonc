@@ -1,0 +1,43 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "cortex-docs-demo",
+  "main": ".open-next/worker.js",
+  "find_additional_modules": true,
+  "base_dir": ".open-next",
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["server-functions/default/packages/docs-ui/.cortex-demo/**/*"],
+      "fallthrough": true
+    }
+  ],
+  "compatibility_date": "2026-08-24",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "demo.cortexdocs.dev",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NEXTJS_ENV": "production",
+    "CORTEX_CLOUDFLARE": "1",
+    "CORTEX_DOCS_UI_ROOT": "/bundle/server-functions/default/packages/docs-ui",
+    "CORTEX_CONFIG_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/cortex.config.yml",
+    "CORTEX_SPEC_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/specs/petstore.yaml",
+    "CORTEX_ASYNCAPI_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/specs/chat-asyncapi.yaml",
+    "CORTEX_GRAPHQL_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/specs/petstore.graphql",
+    "CORTEX_GRPC_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/specs/petstore.proto",
+    "CORTEX_OPENRPC_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/specs/petstore-openrpc.json",
+    "CORTEX_LOGO_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/assets/logo_light.svg",
+    "CORTEX_FAVICON_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/assets/favicon.svg"
+  }
+}

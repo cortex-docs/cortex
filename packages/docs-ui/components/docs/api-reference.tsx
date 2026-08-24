@@ -4,7 +4,7 @@
 // https://github.com/scalar/scalar — Copyright (c) Scalar
 import { ApiReferenceReact } from '@scalar/api-reference-react';
 import '@scalar/api-reference-react/style.css';
-import { useTheme } from 'next-themes';
+import { useTheme } from './theme-provider';
 import { useEffect, useState } from 'react';
 
 interface SpecViewerProps {

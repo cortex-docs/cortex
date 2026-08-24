@@ -59,15 +59,21 @@ public class <%= it.clientClass %> : IDisposable
         _shouldReconnect = false;
         _cts?.Cancel();
 
-        if (_ws is { State: WebSocketState.Open })
+        var socket = _ws;
+        if (socket is { State: WebSocketState.Open })
         {
-            await _ws.CloseAsync(
-                WebSocketCloseStatus.NormalClosure,
-                "Client disconnecting",
-                CancellationToken.None);
+            try
+            {
+                await socket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "Client disconnecting",
+                    CancellationToken.None);
+            }
+            catch (WebSocketException) { }
+            catch (ObjectDisposedException) { }
         }
 
-        _ws?.Dispose();
+        socket?.Dispose();
         _ws = null;
     }
 
@@ -241,6 +247,7 @@ public class <%= it.clientClass %> : IDisposable
     private async void HandleClose()
     {
         _cts?.Cancel();
+        if (!_shouldReconnect) return;
         _ws?.Dispose();
         while (_shouldReconnect && _reconnectAttempts < _maxReconnectAttempts)
         {

@@ -1,5 +1,8 @@
 FROM ubuntu:24.04
 
+LABEL org.opencontainers.image.source="https://github.com/cortex-docs/cortex" \
+      org.opencontainers.image.description="Cortex SDK integration test toolchain"
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Node.js 22
@@ -42,15 +45,16 @@ ENV PATH="${DOTNET_ROOT}:${PATH}"
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 
 # Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Package publishing clients
-RUN pip3 install --break-system-packages build twine conan && \
-    gem install bundler --no-document
+# C/C++ and local registry build tools (gcc/g++ already from build-essential)
+RUN apt-get update && apt-get install -y cmake libcurl4-openssl-dev libsqlite3-dev
 
-# C/C++ build tools (gcc/g++ already from build-essential)
-RUN apt-get update && apt-get install -y cmake libcurl4-openssl-dev
+# Package publishing clients and local registry servers
+RUN pip3 install --break-system-packages --no-cache-dir build twine conan conan-server && \
+    gem install bundler --no-document && \
+    gem install gemstash -v 2.8.2 --no-document
 
 # Cleanup
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*

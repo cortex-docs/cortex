@@ -162,7 +162,7 @@ class TestPhp extends TestCase
         if (!self::$hasGuzzle || self::$client === null) {
             $this->markTestSkipped('Guzzle not available or client not found');
         }
-        self::$client->pets()->delete('pet-1');
+        self::$client->pets()->_delete('pet-1');
         $this->assertTrue(true);
     }
 

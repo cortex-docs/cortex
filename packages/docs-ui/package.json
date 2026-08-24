@@ -41,10 +41,15 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:next": "next dev --port 3012",
-    "build": "cross-env CORTEX_DIST_DIR=.next-build next build --webpack",
+    "build": "node scripts/build.mjs",
+    "demo:build": "node scripts/cloudflare.mjs build",
+    "demo:preview": "node scripts/cloudflare.mjs preview",
+    "demo:deploy": "node scripts/cloudflare.mjs deploy",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "start": "next start",
-    "clean": "rm -rf .next .next-build"
+    "clean": "rm -rf .next .next-build .open-next .cortex-demo"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -92,7 +97,6 @@
     "lucide-react": "^0.500.0",
     "minisearch": "^7.2.0",
     "next": "^16.3.0",
-    "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.0.0",
@@ -114,6 +118,7 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.2",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -123,6 +128,7 @@
     "postcss": "^8.5.26",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.86.0"
   }
 }

@@ -1,0 +1,23 @@
+{
+  "name": "@cortex/demo-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Worker-native API for the Cortex Docs public demo",
+  "scripts": {
+    "build": "tsc",
+    "dev": "wrangler dev --port 4010",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf .wrangler dist coverage"
+  },
+  "dependencies": {
+    "graphql": "^16.14.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260823.1",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.86.0"
+  }
+}

@@ -1,0 +1,50 @@
+name: Prepare the Cortex CI image
+description: Resolve and pull the Cortex toolchain image by its registry digest.
+
+inputs:
+  token:
+    description: GitHub token with packages read access.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to GHCR
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Resolve and pull the toolchain image
+      shell: bash
+      env:
+        IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/cortex-ci
+        IMAGE_HASH: ${{ hashFiles('Dockerfile') }}
+      run: |
+        set -euo pipefail
+        image_tag="${IMAGE_NAME}:toolchain-${IMAGE_HASH}"
+        digest=""
+
+        for attempt in $(seq 1 60); do
+          inspection="$(docker buildx imagetools inspect "$image_tag" 2>/dev/null || true)"
+          digest="$(awk '$1 == "Digest:" { print $2; exit }' <<< "$inspection")"
+          if [[ "$digest" == sha256:* ]]; then
+            break
+          fi
+          echo "Waiting for ${image_tag} (${attempt}/60)..."
+          sleep 10
+        done
+
+        if [[ "$digest" != sha256:* ]]; then
+          echo "The Cortex CI image is not available: ${image_tag}" >&2
+          exit 1
+        fi
+
+        image="${IMAGE_NAME}@${digest}"
+        docker pull "$image"
+        echo "CORTEX_CI_IMAGE=${image}" >> "$GITHUB_ENV"
+        echo "Using ${image}"

@@ -1,35 +1,101 @@
 # Release Cortex Docs
 
-Maintainers use this checklist for an npm release.
+This repository uses an automated promotion and release flow.
 
-## One-time repository setup
+## Branch flow
 
-1. Create the `cortex-docs/cortex` GitHub repository.
-2. Protect `main` and require the `quality` and `browser` checks.
-3. Enable private vulnerability reporting.
-4. Create an npm organization for the `@cortex` scope.
-5. Configure npm trusted publishing for `.github/workflows/release.yml`.
-6. Create a protected GitHub environment named `npm`.
+Use this branch sequence for each change:
 
-## Release steps
+1. Create a feature branch from `pre-release`.
+2. Open a pull request from the feature branch to `pre-release`.
+3. Merge the pull request after the required checks pass.
+4. Open one promotion pull request from `pre-release` to `main`.
+5. Merge the promotion pull request after all checks pass.
 
-1. Move the relevant entries in `CHANGELOG.md` to a version heading.
-2. Set the same version in all five public package manifests.
-3. Run the release checks:
+The `branch-flow` check rejects other pull requests to `main`.
+
+## Pull request checks
+
+Each pull request to `pre-release` or `main` runs these checks:
+
+- `quality` runs the audit, format check, lint check, build, unit tests, coverage, and package checks.
+- `browser` runs the Playwright tests against the local Worker demo.
+
+A promotion pull request to `main` also runs the `integration` check. This check runs all SDK and publishing integration tests in Docker.
+
+## Main branch automation
+
+After a merge to `main`, the `CI` workflow runs again. A successful run starts the deployment and release workflows.
+
+The deployment workflow performs these actions:
+
+1. Build all packages.
+2. Make sure that the configured Cloudflare zone is active.
+3. Deploy the demo API to `api.demo.cortexdocs.dev`.
+4. Build the docs UI with OpenNext.
+5. Deploy the docs UI to `demo.cortexdocs.dev`.
+
+The release workflow performs these actions:
+
+1. Read the current CLI version and the latest npm version.
+2. Increase the patch number in the `x.x.x` version.
+3. Set the same version in all public package manifests.
+4. Run `copilot -p` to create the release notes.
+5. Update `CHANGELOG.md` with the release notes.
+6. Commit the version and changelog changes to `main`.
+7. Create the matching `vX.X.X` tag.
+8. Publish the five public `@cortex` packages to npm.
+
+The release notes always contain these sections:
+
+- New Features
+- Bug Fixes
+- Improvements
+
+## Repository configuration
+
+Add these GitHub Actions repository secrets:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ZONE_ID`
+- `NPM_TOKEN`
+
+Create a protected GitHub environment named `npm`. Permit the release workflow to use this environment.
+
+Enable Copilot CLI for GitHub Actions in the organization policy. The release workflow uses the built-in `GITHUB_TOKEN` for Copilot requests.
+
+Protect `pre-release` with these required checks:
+
+- `branch-flow`
+- `quality`
+- `browser`
+
+Protect `main` with these required checks:
+
+- `branch-flow`
+- `quality`
+- `browser`
+- `integration`
+
+Allow the release workflow to push its version commit and tag to `main`.
+
+## Manual validation
+
+Run this command to calculate the next version without file changes:
 
 ```bash
-npm ci
-npm audit --audit-level=high
-npm run format:check
-npm run lint
-npm run build
-npm run test:coverage
-npm run pack:check
+node scripts/set-release-version.mjs --check
 ```
 
-4. Merge the release pull request.
-5. Create and push a signed tag, such as `v0.1.0`.
-6. Check the release workflow and each npm package page.
-7. Create GitHub release notes from the changelog entry.
+Run this command to build the demo for the Cloudflare runtime:
 
-The workflow rejects a tag that does not match every public package version.
+```bash
+npm run --workspace=@cortex/docs-ui demo:build
+```
+
+Run this command to preview the Cloudflare build:
+
+```bash
+npm run --workspace=@cortex/docs-ui demo:preview
+```

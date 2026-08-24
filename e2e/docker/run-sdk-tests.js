@@ -1,4 +1,4 @@
-const { execSync, spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -16,19 +16,20 @@ function pass(name) { results.push({ name, status: 'PASS' }); log(`\x1b[32m✓\x
 function fail(name, err) { results.push({ name, status: 'FAIL', error: err }); log(`\x1b[31m✗\x1b[0m ${name}: ${err}`); }
 
 function run(cmd, opts = {}) {
-  return execSync(cmd, {
-    stdio: 'pipe', timeout: 300000,
+  const result = spawnSync(cmd, {
+    shell: true, stdio: 'inherit', timeout: 300000,
     env: { ...process.env, MOCK_URL, MOCK_WS_URL: WS_URL, MOCK_GQL_URL: GQL_URL, GRPC_ADDR: 'localhost:50051', GEN_DIR, HOME: '/root' },
     ...opts,
-  }).toString();
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${cmd} exited with status ${result.status}`);
 }
 
 function tryRun(name, cmd, opts) {
   const startedAt = Date.now();
   try {
     log(`Running ${name}...`);
-    const output = run(cmd, opts);
-    if (output) console.log(output);
+    run(cmd, opts);
     pass(`${name} (${((Date.now() - startedAt) / 1000).toFixed(2)}s)`);
   } catch (e) {
     const out = (e.stdout?.toString() || '') + (e.stderr?.toString() || '');
@@ -76,7 +77,10 @@ async function verifyTransportResilience(language) {
 
 async function runLanguage(language, name, cmd, opts) {
   await resetTransportFaults();
-  tryRun(name, cmd, { timeout: 90000, ...opts });
+  // Cold Gradle and Cargo caches on GitHub-hosted runners can take more than
+  // 90 seconds even when the build succeeds. Keep the language command below
+  // the five-minute command limit used by run(), but do not cut it off early.
+  tryRun(name, cmd, { timeout: 300000, ...opts });
   await verifyTransportResilience(language);
 }
 

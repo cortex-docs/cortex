@@ -11,6 +11,7 @@ export default tseslint.config(
       '**/.cortex/**',
       '**/.cortex-dev-*/**',
       '**/.cortex-build-*/**',
+      '**/coverage/**',
       '**/generated/**',
       '**/templates/**',
       '**/__fixtures__/**',

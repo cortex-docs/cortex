@@ -121,7 +121,7 @@ int main() {
 
   TEST("rest.pets.delete()")
     sdk::RestApiV1 rest(rest_opts);
-    rest.pets.delete_("pet-1");
+    rest.pets._delete("pet-1");
   END_TEST
 
   TEST("rest.owners.list() — typed ListResponse")

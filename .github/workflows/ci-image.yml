@@ -1,0 +1,55 @@
+name: CI toolchain image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [pre-release, main]
+    paths:
+      - Dockerfile
+      - .github/workflows/ci-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ci-toolchain-image
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/cortex-ci
+
+jobs:
+  publish:
+    name: publish-toolchain
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and publish the toolchain image
+        id: image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:toolchain-${{ hashFiles('Dockerfile') }}
+          cache-from: type=gha,scope=cortex-ci-toolchain
+          cache-to: type=gha,mode=max,scope=cortex-ci-toolchain
+
+      - name: Write the image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: echo "Published ${IMAGE_NAME}@${IMAGE_DIGEST}" >> "$GITHUB_STEP_SUMMARY"

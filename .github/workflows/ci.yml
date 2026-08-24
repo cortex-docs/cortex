@@ -2,12 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [pre-release, main]
+    branches: [main]
   pull_request:
     branches: [pre-release, main]
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -60,6 +61,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - if: failure()
@@ -69,18 +71,35 @@ jobs:
           path: playwright-report/
           if-no-files-found: ignore
 
-  integration:
-    name: integration
+  sdk-integration:
+    name: sdk-integration
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     needs: [branch-flow, quality]
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/prepare-ci-image
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run test:sdk
-      - run: npm run test:publish:e2e
+      - run: docker volume create cortex-sdk-gradle-cache
+      - run: npm run test:sdk:ci
+
+  publish-integration:
+    name: publish-integration
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    needs: [branch-flow, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/prepare-ci-image
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm run test:publish:e2e:ci

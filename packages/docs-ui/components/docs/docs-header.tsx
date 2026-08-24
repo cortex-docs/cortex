@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useTheme } from 'next-themes';
+import { useTheme } from './theme-provider';
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useProjectWatch } from '@/lib/use-project-watch';

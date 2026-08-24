@@ -1,51 +1,99 @@
 name: Release npm packages
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
-  contents: read
-  id-token: write
+  contents: write
+  copilot-requests: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: prepare release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      release_sha: ${{ steps.commit.outputs.release_sha }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Set the next patch version
+        id: version
+        run: |
+          PUBLISHED_VERSION="$(npm view @cortex/cli version 2>/dev/null || true)"
+          node scripts/set-release-version.mjs --published="$PUBLISHED_VERSION"
+          npm install --package-lock-only --ignore-scripts
+      - name: Install Copilot CLI
+        run: npm install --global @github/copilot
+      - name: Generate release notes with Copilot
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          COMMIT_RANGE="${LAST_TAG:+${LAST_TAG}..}HEAD"
+          node scripts/render-changelog-prompt.mjs "$RELEASE_VERSION" "$COMMIT_RANGE" > .changelog-prompt.txt
+          copilot -p "$(cat .changelog-prompt.txt)" --allow-tool='shell(git:*)' --allow-tool=write --no-ask-user
+          node scripts/apply-changelog.mjs "$RELEASE_VERSION"
+      - name: Make sure that release packages are valid
+        run: |
+          npm run format:check
+          npm run pack:check
+      - name: Commit and tag the release
+        id: commit
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add CHANGELOG.md package-lock.json packages/*/package.json
+          git commit -m "chore(release): v${RELEASE_VERSION}"
+          git tag -a "v${RELEASE_VERSION}" -m "Cortex Docs v${RELEASE_VERSION}"
+          git push origin HEAD:main "v${RELEASE_VERSION}"
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   publish:
+    name: publish npm packages
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: npm
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           registry-url: https://registry.npmjs.org
       - run: npm ci
-      - name: Check tag and package versions
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const tag = process.env.RELEASE_TAG;
-          const expected = tag.startsWith('v') ? tag.slice(1) : tag;
-          const packages = ['core', 'codegen', 'mcp-gen', 'docs-ui', 'cli'];
-          for (const name of packages) {
-            const manifest = JSON.parse(fs.readFileSync(`packages/${name}/package.json`, 'utf8'));
-            if (manifest.version !== expected) {
-              throw new Error(`${manifest.name} is ${manifest.version}; the tag requires ${expected}`);
-            }
-          }
-          NODE
-      - run: npm audit --audit-level=high
-      - run: npm run format:check
-      - run: npm run lint
       - run: npm run build
-      - run: npm run test:coverage
       - run: npm run pack:check
-      - run: npm publish --workspace=@cortex/core --access public --provenance
-      - run: npm publish --workspace=@cortex/codegen --access public --provenance
-      - run: npm publish --workspace=@cortex/mcp-gen --access public --provenance
-      - run: npm publish --workspace=@cortex/docs-ui --access public --provenance
-      - run: npm publish --workspace=@cortex/cli --access public --provenance
+      - name: Publish packages that are not in npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-packages.mjs "${{ needs.prepare.outputs.version }}"

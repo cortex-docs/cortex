@@ -4,7 +4,7 @@ This document explains how to contribute to Cortex Docs.
 
 ## Prerequisites
 
-- **Node.js** >= 20.0.0
+- **Node.js** 22
 - **npm** >= 10.0.0
 - **Git**
 
@@ -50,6 +50,7 @@ cortex/
     mcp-gen/                @cortex/mcp-gen
     docs-ui/                @cortex/docs-ui
     docs-site/              @cortex/docs-site
+    demo-api/               @cortex/demo-api Cloudflare Worker
 ```
 
 ### Package Dependency Graph
@@ -79,34 +80,37 @@ Build order is enforced by Turborepo — `npm run build` handles it automaticall
 | `@cortex/mcp-gen`   | MCP server code generation                        | Programmatic templates                                 |
 | `@cortex/docs-ui`   | API reference documentation viewer                | Next.js 16, `@scalar/api-reference-react`, Tailwind v4 |
 | `@cortex/docs-site` | Cortex Docs product documentation configuration   | Markdown and the Cortex Docs CLI                       |
+| `@cortex/demo-api`  | Public demo API                                   | Cloudflare Workers and Web APIs                        |
 
 ## Development Workflow
 
 ### Docs UI Development Server
 
-`npm run --workspace=@cortex/docs-ui dev` runs a full pre-production simulation of `cortex docs serve`. It mirrors the end-user experience (init, generate, serve) so you can develop and test the documentation UI against realistic conditions.
+`npm run --workspace=@cortex/docs-ui dev` runs a local simulation of `cortex docs serve`.
+
+The command uses the Cloudflare Workers runtime for the demo API.
 
 **What it does on startup:**
 
 1. **Builds library packages** if the CLI hasn't been compiled yet (`npm run build`).
 2. **Initializes `test-project/`** at the workspace root (if no `cortex.config.yml` exists there). This copies the fixture specs from `packages/core/__fixtures__/` and generates a config.
 3. **Runs `cortex generate`** against the test project to produce SDKs in `test-project/generated/`.
-4. **Starts the mock server** (`e2e/docker/mock-server.js`) — REST on `:4010`, GraphQL on `:4010/graphql`, WebSocket on `:4010/ws`, gRPC on `:50051`.
+4. **Starts the demo API Worker** on port `4010` with Wrangler.
 5. **Starts the Next.js dev server** on `:3012` with all `CORTEX_*` environment variables pointing to `test-project/` specs.
 
 **File watching:**
 
 - **`test-project/` changes** (specs, config) — re-runs `cortex generate` automatically. Next.js picks up updated specs on the next request since API routes read them on each call.
 - **`packages/*/src/` changes** (excluding `dist`, `docs-ui`, `docs-site`) — rebuilds library packages via Turbo and re-runs generate so the docs UI reflects template or parser changes.
-- **`packages/docs-ui/` changes** — handled by Next.js HMR (hot module replacement) natively.
+- **`packages/docs-ui/` changes** — Next.js reloads these changes.
+- **`packages/demo-api/` changes** — Wrangler reloads these changes.
 
 **Environment variables (override defaults):**
 
-| Variable    | Default | Description                      |
-| ----------- | ------- | -------------------------------- |
-| `PORT`      | `3012`  | Next.js dev server port          |
-| `MOCK_PORT` | `4010`  | Mock HTTP/WS/GraphQL server port |
-| `GRPC_PORT` | `50051` | Mock gRPC server port            |
+| Variable    | Default | Description                |
+| ----------- | ------- | -------------------------- |
+| `PORT`      | `3012`  | Next.js development port   |
+| `MOCK_PORT` | `4010`  | Demo API Worker local port |
 
 **The docs UI relies exclusively on `test-project/` for all spec data** — it does not fall back to `packages/core/__fixtures__/`. This ensures you're always testing the same flow an end user would see with `cortex docs serve`.
 
@@ -121,6 +125,31 @@ To run only the Next.js server without the orchestration (e.g., if you already h
 
 ```bash
 npm run --workspace=@cortex/docs-ui dev:next
+```
+
+### Cloudflare demo
+
+The public demo uses two Cloudflare Workers:
+
+- `api.demo.cortexdocs.dev` serves the REST, GraphQL, WebSocket, OpenRPC, and HTTP bridge endpoints.
+- `demo.cortexdocs.dev` serves the Next.js documentation UI through OpenNext.
+
+Run the API Worker without the docs UI:
+
+```bash
+npm run --workspace=@cortex/demo-api dev
+```
+
+Build the docs UI for the Cloudflare runtime:
+
+```bash
+npm run --workspace=@cortex/docs-ui demo:build
+```
+
+Preview the complete docs UI Worker locally:
+
+```bash
+npm run --workspace=@cortex/docs-ui demo:preview
 ```
 
 ### Building
@@ -176,7 +205,7 @@ Supported language values: `typescript`, `python`, `go`, `java`, `kotlin`, `ruby
 
 When `TEST_LANGUAGES` is not set, all languages and the MCP server test run. When set, only the listed languages run. MCP runs by default unless you explicitly filter — include `mcp` in the list to keep it, or omit it to skip.
 
-The test pipeline:
+The local test pipeline:
 
 1. Builds the base Docker image (`Dockerfile` in project root) with all language runtimes (Node, Python, Go, Java, Ruby, PHP, .NET, Rust, C/C++)
 2. Builds the test image (`e2e/docker/Dockerfile`) which extends the base, copies the project, and builds the TypeScript packages
@@ -186,6 +215,12 @@ The test pipeline:
 6. Reports pass/fail per language
 
 Test files live in `e2e/docker/tests/test-<language>/`. The mock server and test orchestrator are in `e2e/docker/`.
+
+GitHub Actions uses the prebuilt `ghcr.io/cortex-docs/cortex-ci` toolchain image. The `CI toolchain image` workflow publishes this image.
+
+The image tag contains the hash of the root `Dockerfile`. Each test job resolves this tag to an image digest before use.
+
+The workflow builds a new image only after a change to the root `Dockerfile`. Local Docker commands continue to build local images.
 
 ### Formatting
 
