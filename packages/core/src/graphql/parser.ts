@@ -1,4 +1,21 @@
 import * as fs from 'node:fs';
+import {
+  buildSchema,
+  getNamedType,
+  isEnumType,
+  isInputObjectType,
+  isInterfaceType,
+  isListType,
+  isNonNullType,
+  isObjectType,
+  isScalarType,
+  isSpecifiedScalarType,
+  isUnionType,
+  type GraphQLArgument,
+  type GraphQLField as NativeGraphQLField,
+  type GraphQLInputField,
+  type GraphQLType as NativeGraphQLType,
+} from 'graphql';
 import type {
   GraphQLSpec,
   GraphQLOperation,
@@ -24,171 +41,126 @@ export class GraphQLParser {
   }
 
   private parseSchema(sdl: string, endpoint: string): GraphQLSpec {
+    // Use GraphQL's reference SDL parser so directives, descriptions, custom root
+    // type names, multiline arguments, extensions, and schema definitions follow
+    // the GraphQL specification instead of a source-format-specific regex.
+    const schema = buildSchema(sdl);
+    const queryType = schema.getQueryType();
+    const mutationType = schema.getMutationType();
+    const subscriptionType = schema.getSubscriptionType();
+    const rootTypeNames = new Set(
+      [queryType?.name, mutationType?.name, subscriptionType?.name].filter((name): name is string =>
+        Boolean(name),
+      ),
+    );
+
     const types: GraphQLType[] = [];
     const enums: GraphQLEnum[] = [];
     const inputs: GraphQLInput[] = [];
-    const queries: GraphQLOperation[] = [];
-    const mutations: GraphQLOperation[] = [];
-    const subscriptions: GraphQLOperation[] = [];
+    const scalars: string[] = [];
 
-    let title = 'GraphQL API';
-    const version = '1.0.0';
-    let description: string | undefined;
+    for (const namedType of Object.values(schema.getTypeMap())) {
+      if (namedType.name.startsWith('__')) continue;
 
-    const blocks = this.extractBlocks(sdl);
-
-    for (const block of blocks) {
-      if (block.kind === 'type' && block.name === 'Query') {
-        queries.push(...this.parseOperationFields(block.body));
-      } else if (block.kind === 'type' && block.name === 'Mutation') {
-        mutations.push(...this.parseOperationFields(block.body));
-      } else if (block.kind === 'type' && block.name === 'Subscription') {
-        subscriptions.push(...this.parseOperationFields(block.body));
-      } else if (block.kind === 'type' && block.name === 'Schema') {
-        // skip schema definition
-      } else if (block.kind === 'type') {
+      if (isObjectType(namedType) && !rootTypeNames.has(namedType.name)) {
         types.push({
-          name: block.name,
-          description: block.description,
-          fields: this.parseFields(block.body),
+          name: namedType.name,
+          description: namedType.description ?? undefined,
+          fields: Object.values(namedType.getFields()).map((field) => this.convertField(field)),
         });
-      } else if (block.kind === 'enum') {
+      } else if (isInterfaceType(namedType)) {
+        types.push({
+          name: namedType.name,
+          description: namedType.description ?? undefined,
+          fields: Object.values(namedType.getFields()).map((field) => this.convertField(field)),
+        });
+      } else if (isUnionType(namedType)) {
+        types.push({
+          name: namedType.name,
+          description: namedType.description ?? undefined,
+          fields: [
+            {
+              name: '__typename',
+              type: 'String',
+              typeRaw: 'String!',
+              required: true,
+              isList: false,
+            },
+          ],
+        });
+      } else if (isEnumType(namedType)) {
         enums.push({
-          name: block.name,
-          description: block.description,
-          values: this.parseEnumValues(block.body),
+          name: namedType.name,
+          description: namedType.description ?? undefined,
+          values: namedType.getValues().map((value) => value.name),
         });
-      } else if (block.kind === 'input') {
+      } else if (isInputObjectType(namedType)) {
         inputs.push({
-          name: block.name,
-          description: block.description,
-          fields: this.parseFields(block.body),
+          name: namedType.name,
+          description: namedType.description ?? undefined,
+          fields: Object.values(namedType.getFields()).map((field) => this.convertField(field)),
         });
+      } else if (isScalarType(namedType) && !isSpecifiedScalarType(namedType)) {
+        scalars.push(namedType.name);
       }
     }
 
     const schemaDirective = sdl.match(/@title\("([^"]+)"\)/);
-    if (schemaDirective) title = schemaDirective[1];
 
     return {
-      title,
-      version,
-      description,
+      title: schemaDirective?.[1] ?? 'GraphQL API',
+      version: '1.0.0',
+      description: schema.astNode?.description?.value,
       endpoint,
-      queries,
-      mutations,
-      subscriptions,
+      queries: this.convertOperations(queryType),
+      mutations: this.convertOperations(mutationType),
+      subscriptions: this.convertOperations(subscriptionType),
       types,
       enums,
       inputs,
+      scalars,
     };
   }
 
-  private extractBlocks(
-    sdl: string,
-  ): Array<{ kind: string; name: string; body: string; description?: string }> {
-    const blocks: Array<{ kind: string; name: string; body: string; description?: string }> = [];
-    const regex =
-      /(?:"""([\s\S]*?)"""\s*)?(?:#\s*(.*?)\n\s*)?(type|input|enum|interface|union|scalar)\s+(\w+)(?:\s+implements\s+\w+(?:\s*&\s*\w+)*)?\s*\{([^}]*)\}/g;
-    let match;
+  private convertOperations(
+    rootType: ReturnType<ReturnType<typeof buildSchema>['getQueryType']>,
+  ): GraphQLOperation[] {
+    if (!rootType) return [];
 
-    while ((match = regex.exec(sdl)) !== null) {
-      blocks.push({
-        kind: match[3],
-        name: match[4],
-        body: match[5],
-        description: match[1]?.trim() ?? match[2]?.trim(),
-      });
-    }
-
-    return blocks;
+    return Object.values(rootType.getFields()).map((field) => ({
+      name: field.name,
+      description: field.description ?? undefined,
+      args: field.args.map((arg) => this.convertArgument(arg)),
+      returnType: getNamedType(field.type).name,
+      returnTypeRaw: String(field.type),
+    }));
   }
 
-  private parseFields(body: string): GraphQLField[] {
-    const fields: GraphQLField[] = [];
-    const lines = body
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#'));
-
-    for (const line of lines) {
-      const desc = line.match(/"""(.*?)"""/)?.[1]?.trim();
-      const cleaned = line
-        .replace(/""".*?"""\s*/, '')
-        .replace(/#.*$/, '')
-        .trim();
-      const match = cleaned.match(/^(\w+)(?:\([^)]*\))?\s*:\s*(.+?)$/);
-      if (!match) continue;
-
-      const [, name, typeStr] = match;
-      const { type, required, isList } = this.parseTypeRef(typeStr);
-
-      fields.push({ name, type, typeRaw: typeStr.trim(), required, description: desc, isList });
-    }
-
-    return fields;
+  private convertArgument(arg: GraphQLArgument): GraphQLField {
+    return this.convertTypedValue(arg.name, arg.type, arg.description);
   }
 
-  private parseOperationFields(body: string): GraphQLOperation[] {
-    const ops: GraphQLOperation[] = [];
-    const lines = body
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#'));
-
-    for (const line of lines) {
-      const desc = line.match(/"""(.*?)"""/)?.[1]?.trim();
-      const cleaned = line
-        .replace(/""".*?"""\s*/, '')
-        .replace(/#.*$/, '')
-        .trim();
-
-      const match = cleaned.match(/^(\w+)(?:\(([^)]*)\))?\s*:\s*(.+?)$/);
-      if (!match) continue;
-
-      const [, name, argsStr, returnTypeRaw] = match;
-      const { type: returnType } = this.parseTypeRef(returnTypeRaw);
-      const args = argsStr ? this.parseArgs(argsStr) : [];
-
-      ops.push({ name, description: desc, args, returnType, returnTypeRaw: returnTypeRaw.trim() });
-    }
-
-    return ops;
+  private convertField(
+    field: NativeGraphQLField<unknown, unknown> | GraphQLInputField,
+  ): GraphQLField {
+    return this.convertTypedValue(field.name, field.type, field.description);
   }
 
-  private parseArgs(argsStr: string): GraphQLField[] {
-    const args: GraphQLField[] = [];
-    const parts = argsStr
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+  private convertTypedValue(
+    name: string,
+    type: NativeGraphQLType,
+    description?: string | null,
+  ): GraphQLField {
+    const required = isNonNullType(type);
+    const nullableType = required ? type.ofType : type;
 
-    for (const part of parts) {
-      const match = part.match(/^(\w+)\s*:\s*(.+?)$/);
-      if (!match) continue;
-
-      const [, name, typeStr] = match;
-      const { type, required, isList } = this.parseTypeRef(typeStr);
-      args.push({ name, type, typeRaw: typeStr.trim(), required, isList });
-    }
-
-    return args;
-  }
-
-  private parseEnumValues(body: string): string[] {
-    return body
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#') && !l.startsWith('"'));
-  }
-
-  private parseTypeRef(raw: string): { type: string; required: boolean; isList: boolean } {
-    let s = raw.trim();
-    const required = s.endsWith('!');
-    if (required) s = s.slice(0, -1);
-    const isList = s.startsWith('[');
-    if (isList) s = s.replace(/^\[/, '').replace(/\]!?$/, '');
-    s = s.replace(/!$/, '');
-    return { type: s.trim(), required, isList };
+    return {
+      name,
+      type: getNamedType(type).name,
+      typeRaw: String(type),
+      required,
+      description: description ?? undefined,
+      isList: isListType(nullableType),
+    };
   }
 }

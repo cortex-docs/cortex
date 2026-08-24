@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type {
   ParsedSpec,
   CortexConfig,
@@ -80,6 +82,7 @@ export class CodegenEngine {
 
       try {
         const files = await plugin.generate(context);
+        this.removeLegacyBlankResource(langConfig.output_dir, plugin.fileExtension);
         const emit = await this.emitter.writeFiles(files, langConfig.output_dir);
 
         result.languages.push({
@@ -95,5 +98,12 @@ export class CodegenEngine {
     }
 
     return result;
+  }
+
+  private removeLegacyBlankResource(outputDir: string, fileExtension: string): void {
+    const legacyPath = path.resolve(outputDir, 'src', 'resources', fileExtension);
+    if (fs.existsSync(legacyPath) && fs.statSync(legacyPath).isFile()) {
+      fs.unlinkSync(legacyPath);
+    }
   }
 }

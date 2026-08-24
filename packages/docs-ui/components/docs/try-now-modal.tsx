@@ -328,11 +328,14 @@ function MessageLog({ messages }: { messages: LogEntry[] }) {
               <span>{m.direction === 'sent' ? '→' : m.direction === 'received' ? '←' : '●'}</span>
               <span>{formatTime(m.time)}</span>
             </div>
-            {m.direction !== 'system' && (
-              <pre className="mt-1 whitespace-pre-wrap break-all leading-relaxed text-foreground">
-                {tryFormatJson(m.content)}
-              </pre>
-            )}
+            <pre
+              className={cn(
+                'mt-1 whitespace-pre-wrap break-all leading-relaxed',
+                m.direction === 'system' ? 'text-muted-foreground' : 'text-foreground',
+              )}
+            >
+              {m.direction === 'system' ? m.content : tryFormatJson(m.content)}
+            </pre>
           </div>
         ))}
         <div ref={endRef} />
@@ -528,13 +531,7 @@ export function TryNowModal({
         setBodyText('');
       }
     } else if (config.kind === 'ws') {
-      const payload: Record<string, unknown> = {
-        channel: config.channelName,
-        payload: JSON.parse(
-          buildDefaultRequest(config.publishProperties ?? [], config.channelName),
-        ),
-      };
-      setWsMessageText(JSON.stringify(payload, null, 2));
+      setWsMessageText(buildDefaultRequest(config.publishProperties ?? [], config.channelName));
     } else if (config.kind === 'gql') {
       setGqlQuery(
         buildGqlQuery(
@@ -592,7 +589,9 @@ export function TryNowModal({
       }
     }
     const qs = qp.toString();
-    return `${config.baseUrl}${url}${qs ? `?${qs}` : ''}`;
+    const baseUrl = config.baseUrl.replace(/\/+$/, '');
+    const requestPath = url.startsWith('/') ? url : `/${url}`;
+    return `${baseUrl}${requestPath}${qs ? `?${qs}` : ''}`;
   }, [config, pathValues, queryValues, authValues]);
 
   /* ================================================================ */
@@ -750,11 +749,8 @@ export function TryNowModal({
       wsRef.current = ws;
 
       ws.onopen = () => {
-        const subscription = JSON.stringify({ type: 'subscribe', channel: config.channelName });
-        ws.send(subscription);
         setConnected(true);
         addLog('system', `Connected to ${config.url}`);
-        addLog('system', `Subscribed to ${config.channelName}`);
       };
       ws.onmessage = (e) => {
         addLog('received', typeof e.data === 'string' ? e.data : '[binary]');

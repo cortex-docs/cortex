@@ -275,12 +275,14 @@ interface WsSourceData {
   title: string;
   intro?: string;
   url: string;
+  protocol?: string;
   channels: WsChannel[];
 }
 
 interface GqlSourceData {
   title: string;
   intro?: string;
+  endpoint?: string;
   queries: GqlOperation[];
   mutations: GqlOperation[];
   subscriptions: GqlOperation[];
@@ -383,27 +385,8 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, '');
 }
 
-function localWebSocketUrl(configuredUrl: string, apiBaseUrl: string): string {
-  try {
-    const url = new URL(apiBaseUrl);
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1') {
-      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      url.pathname = '/ws';
-      url.search = '';
-      url.hash = '';
-      return url.toString().replace(/\/$/, '');
-    }
-  } catch {}
-  return configuredUrl;
-}
-
-function grpcBridgeBase(configuredUrl: string | undefined, apiBaseUrl: string): string {
-  if (configuredUrl) return configuredUrl.replace(/\/$/, '');
-  try {
-    return new URL(apiBaseUrl).origin;
-  } catch {
-    return apiBaseUrl.replace(/\/$/, '');
-  }
+function grpcBridgeBase(configuredUrl: string): string {
+  return configuredUrl.replace(/\/$/, '');
 }
 
 function localJsonRpcUrl(configuredUrl: string, apiBaseUrl: string): string {
@@ -1118,10 +1101,12 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
       if (!src) return null;
       const ch = src.channels.find((c) => c.name === item.label);
       if (!ch) return null;
-      const apiBaseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
+      const protocol = src.protocol?.toLowerCase();
+      const isWebSocket = protocol === 'ws' || protocol === 'wss' || /^wss?:\/\//i.test(src.url);
+      if (!isWebSocket) return null;
       return {
         kind: 'ws',
-        url: localWebSocketUrl(src.url, apiBaseUrl),
+        url: src.url,
         channelName: ch.name,
         hasPublish: ch.hasPublish,
         publishProperties: ch.publishMessage?.properties?.map((p) => ({
@@ -1138,10 +1123,11 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
       const src = gqlSourcesList[item.sourceIndex];
       if (!src) return null;
       const baseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
-      const endpoint = baseUrl ? `${baseUrl.replace(/\/$/, '')}/graphql` : '/graphql';
-      const wsEndpoint = baseUrl
-        ? endpoint.replace(/^http/, 'ws')
-        : `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost'}/graphql`;
+      const endpoint =
+        src.endpoint ?? (baseUrl ? `${baseUrl.replace(/\/$/, '')}/graphql` : '/graphql');
+      const wsEndpoint = /^https?:\/\//i.test(endpoint)
+        ? endpoint.replace(/^http/i, 'ws')
+        : `ws://${typeof window !== 'undefined' ? window.location.host : 'localhost'}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
       const isSub = src.subscriptions.some((s) => s.name === item.label);
       const isMut = src.mutations.some((m) => m.name === item.label);
@@ -1163,13 +1149,12 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
 
     if (item.kind === 'grpc') {
       const src = grpcSourcesList[item.sourceIndex];
-      if (!src) return null;
+      if (!src?.bridgeUrl) return null;
       const [serviceName, methodName] = item.label.split('.', 2);
       const service = src.services.find((candidate) => candidate.name === serviceName);
       const method = service?.methods.find((candidate) => candidate.name === methodName);
       if (!service || !method) return null;
-      const apiBaseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
-      const bridgeBase = grpcBridgeBase(src.bridgeUrl, apiBaseUrl);
+      const bridgeBase = grpcBridgeBase(src.bridgeUrl);
       return {
         kind: 'grpc',
         endpoint: `${bridgeBase}/grpc/${service.name}/${method.name}`,
@@ -1185,7 +1170,7 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
 
     if (item.kind === 'openrpc') {
       const src = openrpcSourcesList[item.sourceIndex];
-      if (!src) return null;
+      if (!src?.serverUrl) return null;
       const method = src.methods.find((m) => m.name === item.label);
       if (!method) return null;
       const apiBaseUrl = restSourcesList[0]?.baseUrl ?? data.baseUrl ?? '';
@@ -2076,7 +2061,7 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
                 <div className="opacity-0 group-hover/code:opacity-100 transition-opacity">
                   <CopyButton text={snippet} />
                 </div>
-                {activeItem && (
+                {activeItem && getTryNowConfig() && (
                   <button
                     onClick={() => setTryNowOpen(true)}
                     className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow transition-all"

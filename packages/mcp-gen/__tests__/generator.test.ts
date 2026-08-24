@@ -223,6 +223,16 @@ describe('mapOperationsToTools', () => {
     expect(listPetsTool.inputSchema.properties).toHaveProperty('cursor');
   });
 
+  it('preserves OpenAPI number parameter types', async () => {
+    const parser = new OpenAPIParser();
+    const spec = await parser.parse(
+      path.join(__dirname, '../../core/__fixtures__/openapi-tolerant.yaml'),
+    );
+    const tools = mapOperationsToTools(spec.operations);
+
+    expect(tools[0].inputSchema.properties.from.type).toBe('number');
+  });
+
   it('includes request body fields in input schema', async () => {
     const parser = new OpenAPIParser();
     const spec = await parser.parse(FIXTURE_PATH);

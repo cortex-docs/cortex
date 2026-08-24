@@ -1,0 +1,44 @@
+openapi: 3.0.0
+info:
+  title: Generic Compatibility API
+  version: 1.0.0
+servers: []
+paths:
+  /measurements:
+    get:
+      tags:
+        - ''
+      operationId: get-measurements
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: number
+        - name: symbol
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Measurements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: true
+                  properties:
+                    24-hour-value:
+                      type: number
+components:
+  schemas:
+    Measurement:
+      type: object
+      required: true
+      properties:
+        24-hour-value:
+          type: number
+        data.source:
+          type: string

@@ -1,9 +1,10 @@
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const wsUrl = it.websocketUrl ?? baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') + '/ws'; -%>
 #include "ws_client.h"
 #include "ws_types.h"
 
 ws_client_options_t ws_opts = {
-  .url = "<%= baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') %>/ws",
+  .url = "<%= wsUrl %>",
   .reconnect = 0,
 };
 ws_client_t ws;

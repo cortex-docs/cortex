@@ -553,7 +553,7 @@ export abstract class TemplateBasedPlugin implements LanguagePlugin {
 
   private buildResources(spec: ParsedSpec, lc: LanguageTemplateConfig): ResourceData[] {
     return spec.resources.map((resource) => ({
-      name: resource.name,
+      name: lc.naming.propertyName(resource.name),
       className: lc.naming.className(singularize(resource.name)) + 'Resource',
       fileName: lc.naming.fileName(resource.name),
       operations: resource.operations.map((op) => this.buildOperation(op, lc, spec)),
@@ -613,7 +613,9 @@ export abstract class TemplateBasedPlugin implements LanguagePlugin {
       this.isBinarySchema(requestSchema);
 
     return {
-      name: (op.extensions['method-name'] as string) ?? lc.naming.methodName(op.operationId),
+      name: lc.naming.methodName(
+        (op.extensions['method-name'] as string | undefined) ?? op.operationId,
+      ),
       method: op.method.toUpperCase(),
       path: op.path,
       summary: op.summary,

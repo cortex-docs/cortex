@@ -96,17 +96,22 @@ export class GqlTemplateEngine {
     const enumNames = new Set(spec.enums.map((e) => e.name));
     const inputNames = new Set(spec.inputs.map((i) => i.name));
     const typesByName = new Map(spec.types.map((t) => [t.name, t]));
+    const customScalars = new Set(spec.scalars ?? []);
 
-    const isScalarType = (name: string): boolean => GQL_SCALARS.has(name);
+    const isScalarType = (name: string): boolean =>
+      GQL_SCALARS.has(name) || customScalars.has(name);
 
-    const resolveType = (gqlType: string): string => langConfig.gqlTypeMap[gqlType] ?? gqlType;
+    const resolveType = (gqlType: string): string =>
+      customScalars.has(gqlType)
+        ? langConfig.typeMap.any
+        : (langConfig.gqlTypeMap[gqlType] ?? gqlType);
 
     const nullable = langConfig.nullableWrapper ?? langConfig.typeMap.nullable;
     const inputNullable = langConfig.inputNullableWrapper ?? nullable;
     const list = langConfig.listWrapper ?? langConfig.typeMap.array;
 
     const mapGqlType = (gqlType: string, required: boolean, isList: boolean): string => {
-      const mapped = langConfig.gqlTypeMap[gqlType] ?? gqlType;
+      const mapped = resolveType(gqlType);
       const withList = isList ? langConfig.typeMap.array(mapped) : mapped;
       return required ? withList : langConfig.typeMap.nullable(withList);
     };
@@ -150,17 +155,23 @@ export class GqlTemplateEngine {
       typeName: string,
       indent: number,
       visited: Set<string> = new Set(),
+      depth = 0,
     ): string => {
       const type = typesByName.get(typeName);
-      if (!type || visited.has(typeName)) return '';
+      if (!type || visited.has(typeName)) return `${'  '.repeat(indent)}__typename`;
       visited.add(typeName);
       const pad = '  '.repeat(indent);
       const lines: string[] = [];
-      for (const field of type.fields) {
+      // Default documents are runnable examples, not exhaustive schema dumps.
+      // Bound breadth and depth so cyclic graphs cannot expand exponentially.
+      for (const field of type.fields.slice(0, 12)) {
         if (isScalarType(field.type) || enumNames.has(field.type)) {
           lines.push(`${pad}${field.name}`);
-        } else if (typesByName.has(field.type) && !visited.has(field.type)) {
-          const sub = buildFieldSelection(field.type, indent + 1, new Set(visited));
+        } else if (typesByName.has(field.type)) {
+          const sub =
+            depth >= 1 || visited.has(field.type)
+              ? `${'  '.repeat(indent + 1)}__typename`
+              : buildFieldSelection(field.type, indent + 1, new Set(visited), depth + 1);
           if (sub) {
             lines.push(`${pad}${field.name} {`);
             lines.push(sub);
@@ -168,7 +179,7 @@ export class GqlTemplateEngine {
           }
         }
       }
-      return lines.join('\n');
+      return lines.length > 0 ? lines.join('\n') : `${pad}__typename`;
     };
 
     const buildDocument = (op: GraphQLOperation, kind: string): string => {
@@ -226,9 +237,14 @@ export class GqlTemplateEngine {
       return ops;
     };
 
-    const scalarEntries = SCALAR_ORDER.filter((s) => s in langConfig.gqlTypeMap).map(
-      (s) => [s, langConfig.gqlTypeMap[s]] as [string, string],
-    );
+    const scalarEntries = [
+      ...SCALAR_ORDER.filter((s) => s in langConfig.gqlTypeMap).map(
+        (s) => [s, langConfig.gqlTypeMap[s]] as [string, string],
+      ),
+      ...Array.from(customScalars).map(
+        (scalar) => [scalar, langConfig.typeMap.any] as [string, string],
+      ),
+    ];
 
     const data: GqlTemplateData = {
       spec,

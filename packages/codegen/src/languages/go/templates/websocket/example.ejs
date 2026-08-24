@@ -2,7 +2,7 @@
 <% const pkgShort = _parts[_parts.length - 1].replace(/-/g, ''); -%>
 <% const channel = it.channel ?? {}; -%>
 <% const channelId = channel.channelId ?? 'channel'; -%>
-<% const pascalName = channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(''); -%>
+<% const pascalName = channel.className ?? it.utils.toPascalCase(channelId.replace(/[^a-zA-Z0-9]+/g, '-')); -%>
 <% if (channel.canSubscribe !== false && channel.subscribeMessage) { -%>
 // Subscribe to <%= channelId %>
 ws.On<%= pascalName %>(func(msg <%= pkgShort %>.<%= pascalName %>Message) {

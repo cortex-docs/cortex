@@ -187,6 +187,7 @@ export function mergeGraphQLSpecs(specs: GraphQLSpec[], title: string): GraphQLS
       'GraphQL input',
       (item) => item.name,
     ),
+    scalars: [...new Set(specs.flatMap((spec) => spec.scalars ?? []))],
   };
 }
 

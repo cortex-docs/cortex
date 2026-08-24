@@ -1,4 +1,4 @@
-export { OpenAPIParser } from './openapi/parser';
+export { OpenAPIParser, resolveOpenApiServers } from './openapi/parser';
 export { extractExtensions, getOperationExtensions } from './openapi/extensions';
 export type {
   CortexExtensions,

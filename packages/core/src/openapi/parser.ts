@@ -15,6 +15,47 @@ import type {
 
 const HTTP_METHODS: HttpMethod[] = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];
 
+function isRemoteLocation(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function trimTrailingSlash(value: string): string {
+  if (value === '/') return value;
+  return value.replace(/\/$/, '');
+}
+
+/**
+ * Resolve OpenAPI Server Objects in the context of the source document.
+ *
+ * OpenAPI defaults an omitted `servers` array to `/`. For a remote document,
+ * that relative URL has an unambiguous origin and can be made useful to SDKs
+ * and the docs UI. A local file has no HTTP origin, so its implicit server is
+ * left unspecified and callers can use their runtime origin or an override.
+ */
+export function resolveOpenApiServers(
+  specLocation: string,
+  servers: OpenAPIV3_1.ServerObject[] | undefined,
+): Array<{ url: string; description?: string }> {
+  const remote = isRemoteLocation(specLocation);
+  const candidates = servers?.length ? servers : remote ? [{ url: '/' }] : [];
+
+  return candidates.map((server) => {
+    let serverUrl = server.url;
+    for (const [name, variable] of Object.entries(server.variables ?? {})) {
+      serverUrl = serverUrl.replaceAll(`{${name}}`, String(variable.default));
+    }
+
+    if (remote) {
+      serverUrl = new URL(serverUrl, specLocation).toString();
+    }
+
+    return {
+      url: trimTrailingSlash(serverUrl),
+      description: server.description,
+    };
+  });
+}
+
 export class OpenAPIParser {
   async parse(specPath: string): Promise<ParsedSpec> {
     const api = (await SwaggerParser.bundle(specPath)) as OpenAPIV3_1.Document;
@@ -31,10 +72,7 @@ export class OpenAPIParser {
         title: api.info.title,
         version: api.info.version,
         description: api.info.description,
-        servers: (api.servers ?? []).map((s) => ({
-          url: s.url,
-          description: s.description,
-        })),
+        servers: resolveOpenApiServers(specPath, api.servers),
       },
       resources,
       operations,
@@ -47,8 +85,32 @@ export class OpenAPIParser {
     const errors: { path: string; message: string }[] = [];
     const warnings: { path: string; message: string }[] = [];
 
+    let api: OpenAPIV3_1.Document;
     try {
-      const api = (await SwaggerParser.validate(specPath)) as OpenAPIV3_1.Document;
+      api = (await SwaggerParser.bundle(specPath)) as OpenAPIV3_1.Document;
+
+      if (
+        !api ||
+        typeof api !== 'object' ||
+        typeof api.openapi !== 'string' ||
+        !api.openapi.startsWith('3.') ||
+        !api.info ||
+        typeof api.info.title !== 'string' ||
+        typeof api.info.version !== 'string' ||
+        !api.paths ||
+        typeof api.paths !== 'object'
+      ) {
+        throw new Error('Source is not a structurally valid OpenAPI 3.x document');
+      }
+
+      try {
+        await SwaggerParser.validate(specPath);
+      } catch (err) {
+        warnings.push({
+          path: '',
+          message: `OpenAPI schema validation reported: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
 
       if (!api.paths || Object.keys(api.paths).length === 0) {
         warnings.push({ path: 'paths', message: 'No paths defined in the spec' });
@@ -71,8 +133,6 @@ export class OpenAPIParser {
           }
         }
       }
-
-      return { valid: true, errors, warnings };
     } catch (err) {
       errors.push({
         path: '',
@@ -80,6 +140,8 @@ export class OpenAPIParser {
       });
       return { valid: false, errors, warnings };
     }
+
+    return { valid: true, errors, warnings };
   }
 
   private extractOperations(spec: OpenAPIV3_1.Document): Operation[] {
@@ -101,9 +163,14 @@ export class OpenAPIParser {
         if (!op) continue;
 
         const opRecord = op as unknown as Record<string, unknown>;
-        const resourceName = (opRecord['x-cortex-resource'] as string) ?? op.tags?.[0] ?? 'default';
+        const extensionResource =
+          typeof opRecord['x-cortex-resource'] === 'string'
+            ? opRecord['x-cortex-resource'].trim()
+            : '';
+        const firstTag = op.tags?.find((tag) => typeof tag === 'string' && tag.trim())?.trim();
+        const resourceName = extensionResource || firstTag || 'default';
 
-        const operationId = op.operationId ?? `${method}_${path.replace(/\//g, '_')}`;
+        const operationId = op.operationId?.trim() || `${method}_${path.replace(/\//g, '_')}`;
 
         const operationParameters = this.extractParameters(op.parameters, spec);
         const parameters = new Map(
@@ -271,7 +338,7 @@ export class OpenAPIParser {
       enum: schema.enum as (string | number)[],
     };
 
-    if (schema.required) {
+    if (Array.isArray(schema.required)) {
       result.required = schema.required;
     }
 

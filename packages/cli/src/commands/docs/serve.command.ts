@@ -3,7 +3,12 @@ import * as path from 'node:path';
 import { SubCommand, CommandRunner, Option } from 'nest-commander';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
-import { resolveDocsUiPath, resolveNextBin } from './runtime';
+import {
+  prepareDocsUiRuntime,
+  resolveDevRuntimeDirName,
+  resolveDocsUiPath,
+  resolveNextBin,
+} from './runtime';
 import { assertTemplateRoot } from '@cortex/codegen';
 import {
   getAllLanguageTemplateDirs,
@@ -104,13 +109,16 @@ export class DocsServeCommand extends CommandRunner {
 
     const cliRoot = path.resolve(__dirname, '..', '..', '..');
     const docsUiPath = resolveDocsUiPath();
+    const runtimeDir = path.join(docsUiPath, resolveDevRuntimeDirName(projectDir));
+    prepareDocsUiRuntime(docsUiPath, runtimeDir);
     this.logger.info(`Starting docs server at http://localhost:${port}`);
     this.logger.info('Press Ctrl+C to stop');
 
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       PORT: String(port),
-      CORTEX_DIST_DIR: path.join(projectDir, '.next'),
+      CORTEX_DIST_DIR: '.next',
+      CORTEX_DOCS_UI_ROOT: docsUiPath,
     };
     if (configPath) env.CORTEX_CONFIG_PATH = configPath;
     if (specPath) env.CORTEX_SPEC_PATH = specPath;
@@ -150,14 +158,14 @@ export class DocsServeCommand extends CommandRunner {
     const nextBinResolved = resolveNextBin(docsUiPath);
 
     const child = spawn(process.execPath, [nextBinResolved, 'dev', '--port', String(port)], {
-      cwd: docsUiPath,
+      cwd: runtimeDir,
       env,
       stdio: 'inherit',
     });
 
     let debounce: ReturnType<typeof setTimeout> | null = null;
     let generating = false;
-    const IGNORE = /(^|[\\/])(generated|node_modules|\.next|assets)([\\/]|$)/;
+    const IGNORE = /(^|[\\/])(generated|node_modules|\.next|\.cortex|assets)([\\/]|$)/;
 
     const onChange = (_event: string, filename: string | Buffer | null) => {
       if (!filename || generating) return;

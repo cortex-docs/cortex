@@ -9,6 +9,8 @@ export interface GraphQLSpec {
   types: GraphQLType[];
   enums: GraphQLEnum[];
   inputs: GraphQLInput[];
+  /** Custom scalar names declared by the schema. */
+  scalars?: string[];
 }
 
 export interface GraphQLOperation {

@@ -1,6 +1,6 @@
 <% const pkgName = it.pkgName ?? it.config.languageConfig.package_name; -%>
 <% const baseUrl = it.baseUrl ?? (it.spec.info.servers[0]?.url ?? 'http://localhost:3000'); -%>
-<% const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') + '/ws'; -%>
+<% const wsUrl = it.websocketUrl ?? baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') + '/ws'; -%>
 from <%= pkgName %> import <%= it.clientClass %>
 
 ws = <%= it.clientClass %>(

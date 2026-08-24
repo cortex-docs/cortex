@@ -36,8 +36,8 @@
     "cortex": "./dist/main.js"
   },
   "scripts": {
-    "build": "npm run clean && tsc && node -e \"require('node:fs').chmodSync('dist/main.js', 0o755)\"",
-    "prepack": "npm run build",
+    "build": "tsc && node -e \"require('node:fs').chmodSync('dist/main.js', 0o755)\"",
+    "prepack": "npm run clean && npm run build",
     "dev": "tsc --watch",
     "start": "node dist/main.js",
     "test": "vitest run",

@@ -1,7 +1,7 @@
 <% const pkgFull = it.pkgName ?? it.config.languageConfig.package_name; -%>
 <% const baseUrl = it.baseUrl ?? (it.spec.info.servers[0]?.url ?? 'http://localhost:3000'); -%>
-<% const gqlEndpoint = baseUrl.replace(/\/v\d+$/, '') + '/graphql'; -%>
-<% const wsEndpoint = baseUrl.replace(/\/v\d+$/, '').replace(/^http/, 'ws') + '/graphql'; -%>
+<% const gqlEndpoint = it.graphqlEndpoint ?? baseUrl.replace(/\/v\d+$/, '') + '/graphql'; -%>
+<% const wsEndpoint = it.graphqlWsEndpoint ?? gqlEndpoint.replace(/^http/, 'ws'); -%>
 import gqlclient "<%= pkgFull %>/gqlclient"
 
 gql := gqlclient.New<%= it.clientClass %>(

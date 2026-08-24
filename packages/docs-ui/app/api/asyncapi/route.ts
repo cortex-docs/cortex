@@ -1,11 +1,11 @@
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
-import { locationExists, readTextLocation } from '@/lib/load-location';
+import { getDocsUiRoot, locationExists, readTextLocation } from '@/lib/load-location';
 
 export async function GET() {
   const specPath =
     process.env.CORTEX_ASYNCAPI_PATH ||
-    path.join(process.cwd(), '..', 'core', '__fixtures__', 'chat-asyncapi.yaml');
+    path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'chat-asyncapi.yaml');
 
   if (!locationExists(specPath)) {
     return NextResponse.json({ error: 'No AsyncAPI spec configured' }, { status: 404 });

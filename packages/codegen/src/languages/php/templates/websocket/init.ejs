@@ -1,5 +1,6 @@
 <% const pkgName = it.pkgName ?? it.config.languageConfig.package_name; -%>
 <% const baseUrl = it.baseUrl ?? it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const wsUrl = it.websocketUrl ?? baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') + '/ws'; -%>
 $ws = new <%= it.clientClass %>(
-    url: '<%= baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') %>/ws',
+    url: '<%= wsUrl %>',
 );

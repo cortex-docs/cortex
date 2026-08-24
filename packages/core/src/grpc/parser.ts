@@ -1,6 +1,12 @@
 import * as fs from 'node:fs';
 import type { GrpcSpec, GrpcService, GrpcMethod, GrpcMessage, GrpcField, GrpcEnum } from './types';
 
+interface ProtoBlock {
+  name: string;
+  body: string;
+  description?: string;
+}
+
 export class GrpcParser {
   async parse(specPath: string): Promise<GrpcSpec> {
     const content = await this.loadContent(specPath);
@@ -17,7 +23,7 @@ export class GrpcParser {
   }
 
   private parseProto(content: string): GrpcSpec {
-    const packageName = content.match(/package\s+([\w.]+)\s*;/)?.[1] ?? 'default';
+    const packageName = content.match(/\bpackage\s+([\w.]+)\s*;/)?.[1] ?? 'default';
     const services = this.extractServices(content);
     const messages = this.extractMessages(content);
     const enums = this.extractEnums(content);
@@ -38,35 +44,27 @@ export class GrpcParser {
   }
 
   private extractServices(content: string): GrpcService[] {
-    const services: GrpcService[] = [];
-    const regex = /(?:\/\/\s*(.*?)\n\s*)?service\s+(\w+)\s*\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/g;
-    let match;
-
-    while ((match = regex.exec(content)) !== null) {
-      services.push({
-        name: match[2],
-        description: match[1]?.trim(),
-        methods: this.extractMethods(match[3]),
-      });
-    }
-
-    return services;
+    return this.extractBlocks(content, 'service').map((block) => ({
+      name: block.name,
+      description: block.description,
+      methods: this.extractMethods(block.body),
+    }));
   }
 
   private extractMethods(body: string): GrpcMethod[] {
     const methods: GrpcMethod[] = [];
     const regex =
-      /(?:\/\/\s*(.*?)\n\s*)?rpc\s+(\w+)\s*\(\s*(stream\s+)?(\w+)\s*\)\s*returns\s*\(\s*(stream\s+)?(\w+)\s*\)/g;
-    let match;
+      /\brpc\s+(\w+)\s*\(\s*(stream\s+)?(\.?[\w.]+)\s*\)\s*returns\s*\(\s*(stream\s+)?(\.?[\w.]+)\s*\)/g;
+    let match: RegExpExecArray | null;
 
     while ((match = regex.exec(body)) !== null) {
       methods.push({
-        name: match[2],
-        description: match[1]?.trim(),
-        inputType: match[4],
-        outputType: match[6],
-        clientStreaming: !!match[3],
-        serverStreaming: !!match[5],
+        name: match[1],
+        description: this.extractLeadingDescription(body, match.index),
+        inputType: this.normalizeTypeName(match[3]),
+        outputType: this.normalizeTypeName(match[5]),
+        clientStreaming: Boolean(match[2]),
+        serverStreaming: Boolean(match[4]),
       });
     }
 
@@ -74,53 +72,32 @@ export class GrpcParser {
   }
 
   private extractMessages(content: string): GrpcMessage[] {
-    const messages: GrpcMessage[] = [];
-    const regex = /(?:\/\/\s*(.*?)\n\s*)?message\s+(\w+)\s*\{([^}]*)\}/g;
-    let match;
-
-    while ((match = regex.exec(content)) !== null) {
-      messages.push({
-        name: match[2],
-        description: match[1]?.trim(),
-        fields: this.extractFields(match[3]),
-      });
-    }
-
-    return messages;
+    return this.extractBlocks(content, 'message').map((block) => ({
+      name: block.name,
+      description: block.description,
+      fields: this.extractFields(block.body),
+    }));
   }
 
   private extractFields(body: string): GrpcField[] {
     const fields: GrpcField[] = [];
-    const lines = body
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('//') && !l.startsWith('reserved'));
+    const fieldRegex =
+      /(?:^|[;{}]\s*|\n\s*)(?:(repeated|optional|required)\s+)?(map\s*<\s*\.?[\w.]+\s*,\s*\.?[\w.]+\s*>|\.?[\w.]+)\s+(\w+)\s*=\s*(\d+)/g;
+    let match: RegExpExecArray | null;
 
-    for (const line of lines) {
-      const mapMatch = line.match(/^map<(\w+),\s*(\w+)>\s+(\w+)\s*=\s*(\d+)/);
-      if (mapMatch) {
-        fields.push({
-          name: mapMatch[3],
-          type: 'map',
-          number: parseInt(mapMatch[4], 10),
-          repeated: false,
-          optional: false,
-          mapKeyType: mapMatch[1],
-          mapValueType: mapMatch[2],
-        });
-        continue;
-      }
+    while ((match = fieldRegex.exec(body)) !== null) {
+      const modifier = match[1];
+      const rawType = match[2];
+      const mapMatch = rawType.match(/^map\s*<\s*(\.?[\w.]+)\s*,\s*(\.?[\w.]+)\s*>$/);
 
-      const match = line.match(/^(repeated\s+|optional\s+)?([\w.]+)\s+(\w+)\s*=\s*(\d+)/);
-      if (!match) continue;
-
-      const modifier = match[1]?.trim();
       fields.push({
         name: match[3],
-        type: match[2],
-        number: parseInt(match[4], 10),
+        type: mapMatch ? 'map' : this.normalizeTypeName(rawType),
+        number: Number.parseInt(match[4], 10),
         repeated: modifier === 'repeated',
         optional: modifier === 'optional',
+        mapKeyType: mapMatch ? this.normalizeTypeName(mapMatch[1]) : undefined,
+        mapValueType: mapMatch ? this.normalizeTypeName(mapMatch[2]) : undefined,
       });
     }
 
@@ -128,25 +105,109 @@ export class GrpcParser {
   }
 
   private extractEnums(content: string): GrpcEnum[] {
-    const enums: GrpcEnum[] = [];
-    const regex = /(?:\/\/\s*(.*?)\n\s*)?enum\s+(\w+)\s*\{([^}]*)\}/g;
-    let match;
-
-    while ((match = regex.exec(content)) !== null) {
+    return this.extractBlocks(content, 'enum').map((block) => {
       const values: { name: string; number: number }[] = [];
-      const lines = match[3]
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l && !l.startsWith('//'));
+      const valueRegex = /(?:^|[;{}]\s*|\n\s*)(\w+)\s*=\s*(-?\d+)/g;
+      let match: RegExpExecArray | null;
 
-      for (const line of lines) {
-        const vm = line.match(/^(\w+)\s*=\s*(\d+)/);
-        if (vm) values.push({ name: vm[1], number: parseInt(vm[2], 10) });
+      while ((match = valueRegex.exec(block.body)) !== null) {
+        values.push({ name: match[1], number: Number.parseInt(match[2], 10) });
       }
 
-      enums.push({ name: match[2], description: match[1]?.trim(), values });
+      return { name: block.name, description: block.description, values };
+    });
+  }
+
+  private extractBlocks(content: string, keyword: 'service' | 'message' | 'enum'): ProtoBlock[] {
+    const blocks: ProtoBlock[] = [];
+    const regex = new RegExp(`\\b${keyword}\\s+(\\w+)\\s*\\{`, 'g');
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(content)) !== null) {
+      const openBrace = content.indexOf('{', match.index);
+      const closeBrace = this.findMatchingBrace(content, openBrace);
+      if (closeBrace === -1) continue;
+
+      blocks.push({
+        name: match[1],
+        body: content.slice(openBrace + 1, closeBrace),
+        description: this.extractLeadingDescription(content, match.index),
+      });
+      regex.lastIndex = closeBrace + 1;
     }
 
-    return enums;
+    return blocks;
+  }
+
+  private findMatchingBrace(content: string, openBrace: number): number {
+    let depth = 0;
+    let inLineComment = false;
+    let inBlockComment = false;
+    let quote: '"' | "'" | undefined;
+
+    for (let index = openBrace; index < content.length; index += 1) {
+      const char = content[index];
+      const next = content[index + 1];
+
+      if (inLineComment) {
+        if (char === '\n') inLineComment = false;
+        continue;
+      }
+      if (inBlockComment) {
+        if (char === '*' && next === '/') {
+          inBlockComment = false;
+          index += 1;
+        }
+        continue;
+      }
+      if (quote) {
+        if (char === '\\') index += 1;
+        else if (char === quote) quote = undefined;
+        continue;
+      }
+      if (char === '/' && next === '/') {
+        inLineComment = true;
+        index += 1;
+      } else if (char === '/' && next === '*') {
+        inBlockComment = true;
+        index += 1;
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === '{') {
+        depth += 1;
+      } else if (char === '}') {
+        depth -= 1;
+        if (depth === 0) return index;
+      }
+    }
+
+    return -1;
+  }
+
+  private extractLeadingDescription(content: string, start: number): string | undefined {
+    const before = content.slice(0, start);
+    const blockComment = before.match(/\/\*\*?([\s\S]*?)\*\/\s*$/);
+    if (blockComment) {
+      return blockComment[1]
+        .split('\n')
+        .map((line) => line.replace(/^\s*\*\s?/, '').trim())
+        .filter(Boolean)
+        .join(' ');
+    }
+
+    const lines = before.split('\n');
+    const comments: string[] = [];
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index].trim();
+      if (!line && comments.length === 0) continue;
+      if (!line.startsWith('//')) break;
+      comments.unshift(line.replace(/^\/\/\s?/, '').trim());
+    }
+    const description = comments.filter(Boolean).join(' ');
+    return description || undefined;
+  }
+
+  private normalizeTypeName(typeName: string): string {
+    return typeName.replace(/^\./, '');
   }
 }

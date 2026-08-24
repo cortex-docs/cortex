@@ -70,7 +70,7 @@ HTTP requests default to a 15-second timeout. Set `timeout` in the client option
 | Method | HTTP | Request | Response | Description |
 |--------|------|---------|----------|-------------|
 <% for (const op of resource.operations) { -%>
-<% const params = op.pathParams.map(p => p.name); if (op.queryParams.length > 0) params.push('options?'); -%>
+<% const params = op.pathParams.map(p => p.name); if (op.hasBody) params.push('body'); for (const p of op.queryParams) params.push(`${p.name}${p.required ? '' : '?'}`); -%>
 | `<%= op.name %>(<%= params.join(', ') %>)` | `<%= op.method %>` | <%= op.hasBody ? lnkRest(op.bodyType) : '—' %> | <%= op.responseType !== 'void' ? lnkRest(op.responseType) : '—' %> | <%= op.summary || '' %> |
 <% } -%>
 <% } -%>

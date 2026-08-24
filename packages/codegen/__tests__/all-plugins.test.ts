@@ -7,6 +7,7 @@ import { getLanguageNaming } from '../src/naming';
 import type { CodegenContext } from '../src/plugin';
 
 const FIXTURE_PATH = path.join(__dirname, '../../core/__fixtures__/petstore.yaml');
+const TOLERANT_FIXTURE_PATH = path.join(__dirname, '../../core/__fixtures__/openapi-tolerant.yaml');
 
 async function createContext(language: string, packageName: string): Promise<CodegenContext> {
   const parser = new OpenAPIParser();
@@ -202,7 +203,7 @@ describe('All Language Plugins', () => {
           expect(petsResource?.content).toContain(
             'async list(limit?: number, cursor?: string): Promise<Types.ListPetsResponse>',
           );
-          expect(petsResource?.content).toContain('async delete(petId: string): Promise<void>');
+          expect(petsResource?.content).toContain('async _delete(petId: string): Promise<void>');
           expect(ownersResource?.content).toContain(
             'async create(body: Types.CreateOwnerRequest): Promise<Types.Owner>',
           );
@@ -210,6 +211,28 @@ describe('All Language Plugins', () => {
       }
     });
   }
+
+  it('generates valid TypeScript names while preserving OpenAPI wire property names', async () => {
+    const parser = new OpenAPIParser();
+    const spec = await parser.parse(TOLERANT_FIXTURE_PATH);
+    const context = await createContext('typescript', '@test/compatibility-sdk');
+    context.spec = spec;
+
+    const files = await registry.get('typescript')!.generate(context);
+    const client = files.find((file) => file.path === 'src/client.ts')?.content;
+    const types = files.find((file) => file.path === 'src/types.ts')?.content;
+
+    expect(files.map((file) => file.path)).toContain('src/resources/default.ts');
+    expect(client).toContain('readonly _default: DefaultResource;');
+    expect(types).toContain('"24-hour-value"?: number;');
+    expect(types).toContain('"data.source"?: string;');
+    expect(files.find((file) => file.path === 'src/resources/default.ts')?.content).toContain(
+      'async getMeasurements(_from: number | undefined, symbol: string)',
+    );
+    expect(files.find((file) => file.path === 'README.md')?.content).toContain(
+      'client._default.getMeasurements',
+    );
+  });
 
   it('adds the configured repository to every SDK package', async () => {
     const repository = 'https://github.com/acme/generated-sdk';

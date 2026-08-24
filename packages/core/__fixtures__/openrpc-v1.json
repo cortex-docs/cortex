@@ -1,0 +1,17 @@
+{
+  "openrpc": "1.0.0",
+  "info": {
+    "title": "OpenRPC 1.0 compatibility",
+    "version": "1.0.0"
+  },
+  "methods": [
+    {
+      "name": "ping",
+      "params": [],
+      "result": {
+        "name": "result",
+        "schema": { "type": "string" }
+      }
+    }
+  ]
+}

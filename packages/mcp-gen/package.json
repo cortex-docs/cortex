@@ -38,8 +38,8 @@
     }
   },
   "scripts": {
-    "build": "npm run clean && tsc && mkdir -p dist/templates && cp -r templates/. dist/templates/",
-    "prepack": "npm run build",
+    "build": "tsc && mkdir -p dist/templates && cp -r templates/. dist/templates/",
+    "prepack": "npm run clean && npm run build",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

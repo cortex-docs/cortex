@@ -1,0 +1,37 @@
+asyncapi: '3.0.0'
+info:
+  title: Referenced messages
+  version: 1.0.0
+servers:
+  production:
+    host: events.example.com
+    pathname: /stream
+    protocol: wss
+channels:
+  events:
+    address: /events
+    messages:
+      created:
+        $ref: '#/components/messages/created'
+operations:
+  receiveCreated:
+    action: receive
+    channel:
+      $ref: '#/channels/events'
+    messages:
+      - $ref: '#/channels/events/messages/created'
+components:
+  messages:
+    created:
+      summary: An entity was created.
+      payload:
+        schemaFormat: application/schema+yaml;version=draft-07
+        schema:
+          $ref: '#/components/schemas/CreatedEvent'
+  schemas:
+    CreatedEvent:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string

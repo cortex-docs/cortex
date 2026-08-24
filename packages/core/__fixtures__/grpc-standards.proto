@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package compatibility.v1;
+
+// Exercises every gRPC streaming shape and method option blocks.
+service CompatibilityService {
+  rpc Unary(Request) returns (Response) {}
+  rpc ServerStream(Request) returns (stream Response) {}
+  rpc ClientStream(stream Request) returns (Response) {}
+  rpc Bidirectional(stream .compatibility.v1.Request) returns (stream .compatibility.v1.Response) {
+    option deprecated = true;
+  }
+}
+
+message Request {
+  string value = 1;
+  map<string, .compatibility.v1.Response> values = 2;
+}
+
+message Response {
+  optional string value = 1;
+}
+
+enum Result {
+  RESULT_UNSPECIFIED = 0;
+  RESULT_SUCCESS = 1;
+  RESULT_LEGACY = -1;
+}

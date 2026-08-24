@@ -10,7 +10,7 @@ import {
 } from '@cortex/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
-import { resolveDocsUiPath, resolveNextBin } from './runtime';
+import { prepareDocsUiRuntime, resolveDocsUiPath, resolveNextBin } from './runtime';
 
 @SubCommand({
   name: 'build',
@@ -53,16 +53,15 @@ export class DocsBuildCommand extends CommandRunner {
     const nextBin = resolveNextBin(docsUiPath);
 
     const { execFileSync } = await import('node:child_process');
-    const buildDir = fs.mkdtempSync(path.join(docsUiPath, '.cortex-build-'));
-    const distDir = path.basename(buildDir);
-    const docsUiTsConfig = path.join(docsUiPath, 'tsconfig.json');
-    const docsUiNextEnv = path.join(docsUiPath, 'next-env.d.ts');
-    const originalTsConfig = fs.readFileSync(docsUiTsConfig, 'utf-8');
-    const originalNextEnv = fs.readFileSync(docsUiNextEnv, 'utf-8');
+    const runtimeDir = fs.mkdtempSync(path.join(docsUiPath, '.cortex-build-'));
+    prepareDocsUiRuntime(docsUiPath, runtimeDir);
+    const distDir = '.next';
+    const buildDir = path.join(runtimeDir, distDir);
 
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       CORTEX_DIST_DIR: distDir,
+      CORTEX_DOCS_UI_ROOT: docsUiPath,
       CORTEX_STANDALONE_BUILD: '1',
     };
     if (configPath) env.CORTEX_CONFIG_PATH = configPath;
@@ -72,7 +71,7 @@ export class DocsBuildCommand extends CommandRunner {
     this.logger.info('Building docs...');
     try {
       execFileSync(process.execPath, [nextBin, 'build', '--webpack'], {
-        cwd: docsUiPath,
+        cwd: runtimeDir,
         env,
         stdio: 'inherit',
       });
@@ -102,9 +101,7 @@ export class DocsBuildCommand extends CommandRunner {
         'utf-8',
       );
     } finally {
-      fs.writeFileSync(docsUiTsConfig, originalTsConfig, 'utf-8');
-      fs.writeFileSync(docsUiNextEnv, originalNextEnv, 'utf-8');
-      fs.rmSync(buildDir, { recursive: true, force: true });
+      fs.rmSync(runtimeDir, { recursive: true, force: true });
     }
 
     this.logger.success(`Docs built to ${outputDir}`);

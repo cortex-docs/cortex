@@ -16,7 +16,7 @@ export enum <%= schema.className %> {
 <% } else { %>
 export interface <%= schema.className %> {
 <% for (const prop of schema.properties) { %>
-  <%= prop.originalName %><%= prop.required ? '' : '?' %>: <%= prop.type %>;<% if (prop.description) { %> // <%= prop.description %><% } %>
+  <%= /^[A-Za-z_$][\w$]*$/.test(prop.originalName) ? prop.originalName : JSON.stringify(prop.originalName) %><%= prop.required ? '' : '?' %>: <%= prop.type %>;<% if (prop.description) { %> // <%= prop.description %><% } %>
 <% } %>
 }
 

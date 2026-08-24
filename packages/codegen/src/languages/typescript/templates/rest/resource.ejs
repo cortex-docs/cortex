@@ -10,7 +10,9 @@ export class <%= r.className %> {
   constructor(private readonly client: <%= clientClass %>) {}
 
 <% for (const op of r.operations) { %>
-<% const params = [...op.pathParams.map(p => `${p.name}: ${toSdkType(p.type)}`), ...(op.hasBody ? [`body: ${toSdkType(op.bodyType)}`] : []), ...op.queryParams.map(p => `${p.name}?: ${toSdkType(p.type)}`)]; %>
+<% const lastRequiredQuery = op.queryParams.findLastIndex(p => p.required); %>
+<% const queryParams = op.queryParams.map((p, index) => p.required ? `${p.name}: ${toSdkType(p.type)}` : index < lastRequiredQuery ? `${p.name}: ${toSdkType(p.type)} | undefined` : `${p.name}?: ${toSdkType(p.type)}`); %>
+<% const params = [...op.pathParams.map(p => `${p.name}: ${toSdkType(p.type)}`), ...(op.hasBody ? [`body: ${toSdkType(op.bodyType)}`] : []), ...queryParams]; %>
 <% let pathExpr = op.path; for (const p of op.pathParams) { pathExpr = pathExpr.replace(`{${p.originalName}}`, `\${${p.name}}`); } %>
 <% if (op.summary) { %>
   /** <%= op.summary %> */

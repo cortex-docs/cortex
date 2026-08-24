@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { Eta } from 'eta';
 import type { GeneratedFile } from './plugin';
@@ -28,8 +29,18 @@ export function assertTemplateRoot(templateRoot?: string): void {
 }
 
 export function findLanguageTemplateDir(language: string): string {
+  let installedPackageDir: string | undefined;
+  try {
+    const runtimeRequire = createRequire(path.join(process.cwd(), 'package.json'));
+    installedPackageDir = path.dirname(runtimeRequire.resolve('@cortex/codegen/package.json'));
+  } catch {
+    // Source checkouts can use the paths below.
+  }
   const candidates = [
     path.resolve(__dirname, 'languages', language, 'templates'),
+    ...(installedPackageDir
+      ? [path.join(installedPackageDir, 'dist', 'languages', language, 'templates')]
+      : []),
     path.resolve(
       process.cwd(),
       'node_modules/@cortex/codegen/dist/languages',

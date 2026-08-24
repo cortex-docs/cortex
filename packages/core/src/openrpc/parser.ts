@@ -47,10 +47,8 @@ export class OpenRpcParser {
   }
 
   private validateVersion(version: string): void {
-    const supported = ['1.2.6', '1.3.0', '1.3.1', '1.3.2'];
-    const major = version.split('.').slice(0, 2).join('.');
-    if (!supported.some((v) => v.startsWith(major))) {
-      throw new Error(`Unsupported OpenRPC version: ${version}. Supported: 1.2.x, 1.3.x`);
+    if (!/^1\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+      throw new Error(`Unsupported OpenRPC version: ${version}. Supported: 1.x`);
     }
   }
 

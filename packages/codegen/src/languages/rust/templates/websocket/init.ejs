@@ -1,5 +1,6 @@
 <% const crateName = it.utils.toSnakeCase(it.config.languageConfig.package_name); -%>
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const wsUrl = it.websocketUrl ?? baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') + '/ws'; -%>
 use <%= crateName %>::ws::<%= it.clientClass %>;
 
-let ws = <%= it.clientClass %>::new("<%= baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') %>/ws");
+let ws = <%= it.clientClass %>::new("<%= wsUrl %>");

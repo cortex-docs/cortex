@@ -152,6 +152,7 @@ function schemaToMcpProperty(schema: SchemaObject, description?: string): McpPro
 function mapSchemaType(type?: string): string {
   switch (type) {
     case 'integer':
+    case 'number':
       return 'number';
     case 'array':
       return 'array';

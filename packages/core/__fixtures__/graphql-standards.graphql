@@ -1,0 +1,35 @@
+directive @category(name: String!) on OBJECT
+
+scalar DateTime
+
+interface Node {
+  id: ID!
+}
+
+schema {
+  query: RootQuery
+  mutation: RootMutation
+}
+
+"""A result returned by a search."""
+type SearchResult implements Node @category(name: "search") {
+  id: ID!
+  label: String!
+  updatedAt: DateTime!
+}
+
+union SearchEntity = SearchResult
+
+type RootQuery implements Node @category(name: "root") {
+  id: ID!
+
+  """Search for matching results."""
+  search(
+    text: String!
+    limit: Int = 10
+  ): [SearchResult!]!
+}
+
+type RootMutation @category(name: "root") {
+  rename(id: ID!, label: String!): SearchResult!
+}

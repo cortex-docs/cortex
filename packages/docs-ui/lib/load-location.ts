@@ -3,6 +3,10 @@ import * as path from 'node:path';
 
 const MAX_REMOTE_BYTES = 20 * 1024 * 1024;
 
+export function getDocsUiRoot(): string {
+  return process.env.CORTEX_DOCS_UI_ROOT || process.cwd();
+}
+
 export function isRemoteLocation(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }

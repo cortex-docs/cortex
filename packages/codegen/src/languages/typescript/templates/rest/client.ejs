@@ -107,7 +107,8 @@ export class <%= clientClass %> {
     path: string,
     options: RequestOptions,
   ): Promise<{ response: Response; cleanup: () => void }> {
-    const url = new URL(path, this.baseUrl);
+    const baseUrl = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`;
+    const url = new URL(path.replace(/^\/+/, ''), baseUrl);
     if (options.query) {
       for (const [key, value] of Object.entries(options.query)) {
         if (value !== undefined) url.searchParams.set(key, String(value));

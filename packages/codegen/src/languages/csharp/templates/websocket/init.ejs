@@ -1,5 +1,6 @@
 <% const ns = it.utils.toPascalCase(it.config.languageConfig.package_name); -%>
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const wsUrl = it.websocketUrl ?? baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') + '/ws'; -%>
 using <%= ns %>;
 
-var ws = new <%= it.clientClass %>(url: "<%= baseUrl.replace(/^http/, 'ws').replace(/\/v\d+$/, '') %>/ws");
+var ws = new <%= it.clientClass %>(url: "<%= wsUrl %>");

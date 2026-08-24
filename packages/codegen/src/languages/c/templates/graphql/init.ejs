@@ -1,11 +1,13 @@
 <% const baseUrl = it.spec.info.servers[0]?.url ?? 'http://localhost:3000'; -%>
+<% const gqlEndpoint = it.graphqlEndpoint ?? baseUrl.replace(/\/v\d+$/, '') + '/graphql'; -%>
+<% const wsEndpoint = it.graphqlWsEndpoint ?? gqlEndpoint.replace(/^http/, 'ws'); -%>
 #include "gql_client.h"
 #include "gql_types.h"
 #include "gql_query_builder.h"
 
 gql_client_options_t opts = {
-  .endpoint = "<%= baseUrl.replace(/\/v\d+$/, '') %>/graphql",
-  .ws_endpoint = "<%= baseUrl.replace(/\/v\d+$/, '').replace(/^http/, 'ws') %>/graphql",
+  .endpoint = "<%= gqlEndpoint %>",
+  .ws_endpoint = "<%= wsEndpoint %>",
 };
 gql_client_t gql;
 gql_client_init(&gql, &opts);

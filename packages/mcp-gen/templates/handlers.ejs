@@ -11,7 +11,8 @@ async function apiRequest(
     resolvedPath = resolvedPath.replace(`{${p}}`, String(params[p] ?? ''));
   }
 
-  const url = new URL(resolvedPath, baseUrl);
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const url = new URL(resolvedPath.replace(/^\/+/, ''), normalizedBaseUrl);
   for (const q of queryParams) {
     if (params[q] !== undefined) {
       url.searchParams.set(q, String(params[q]));

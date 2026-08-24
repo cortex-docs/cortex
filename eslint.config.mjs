@@ -9,6 +9,8 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/.next*/**',
       '**/.cortex/**',
+      '**/.cortex-dev-*/**',
+      '**/.cortex-build-*/**',
       '**/generated/**',
       '**/templates/**',
       '**/__fixtures__/**',

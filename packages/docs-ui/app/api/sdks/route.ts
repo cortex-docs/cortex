@@ -43,6 +43,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   'openapi-spec': 'REST',
   'asyncapi-spec': 'WebSocket',
   'graphql-spec': 'GraphQL',
+  'grpc-spec': 'gRPC',
   'openrpc-spec': 'OpenRPC',
 };
 

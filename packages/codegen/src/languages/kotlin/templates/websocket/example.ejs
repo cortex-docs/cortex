@@ -1,7 +1,8 @@
 <% const channel = it.channel ?? {}; -%>
 <% const channelId = channel.channelId ?? 'channel'; -%>
-<% const handlerName = 'on' + channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(''); -%>
-<% const sendName = 'send' + channelId.split('/').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(''); -%>
+<% const className = channel.className ?? it.utils.toPascalCase(channelId.replace(/[^a-zA-Z0-9]+/g, '-')); -%>
+<% const handlerName = channel.handlerName ?? ('on' + className); -%>
+<% const sendName = channel.sendName ?? ('send' + className); -%>
 <% if (channel.canSubscribe !== false && channel.subscribeMessage) { -%>
     // Subscribe to <%= channelId %>
     ws.<%= handlerName %> { payload ->

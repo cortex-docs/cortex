@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import * as yaml from 'js-yaml';
 import type { ParsedSpec, Parameter, ResponseInfo, SchemaObject } from '@cortex/core';
 import { renderLanguageTemplate, type NamingConventions } from '@cortex/codegen';
+import { getDocsUiRoot, locationExists } from '@/lib/load-location';
 
 interface ReadmeResourceOperation {
   name: string;
@@ -69,9 +70,9 @@ export async function GET(request: Request) {
 
   const specPath =
     process.env.CORTEX_SPEC_PATH ||
-    path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.yaml');
+    path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore.yaml');
 
-  if (!fs.existsSync(specPath)) {
+  if (!locationExists(specPath)) {
     return NextResponse.json({ error: 'Spec file not found' }, { status: 404 });
   }
 
@@ -93,15 +94,17 @@ export async function GET(request: Request) {
     const fallbackPkg = spec.info.title.toLowerCase().replace(/\s+/g, '-');
     const hasWs = !!(
       process.env.CORTEX_ASYNCAPI_PATH ||
-      fs.existsSync(path.join(process.cwd(), '..', 'core', '__fixtures__', 'chat-asyncapi.yaml'))
+      fs.existsSync(path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'chat-asyncapi.yaml'))
     );
     const hasGql = !!(
       process.env.CORTEX_GRAPHQL_PATH ||
-      fs.existsSync(path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.graphql'))
+      fs.existsSync(path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore.graphql'))
     );
     const hasOpenRpc = !!(
       process.env.CORTEX_OPENRPC_PATH ||
-      fs.existsSync(path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore-openrpc.json'))
+      fs.existsSync(
+        path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore-openrpc.json'),
+      )
     );
 
     const configPkgNames: Record<string, string> = {};
@@ -147,7 +150,12 @@ export async function GET(request: Request) {
       }
     } catch {}
 
-    const langsToGenerate = lang ? [lang] : [...LANGUAGES];
+    const configuredLanguages = LANGUAGES.filter((language) => configPkgNames[language]);
+    const langsToGenerate = lang
+      ? [lang]
+      : configuredLanguages.length > 0
+        ? configuredLanguages
+        : [...LANGUAGES];
     const results: Record<string, string> = {};
 
     for (const l of langsToGenerate) {
@@ -255,7 +263,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      languages: LANGUAGES.map((l) => ({ id: l, name: DISPLAY_NAMES[l] })),
+      languages: langsToGenerate.map((l) => ({ id: l, name: DISPLAY_NAMES[l] })),
       readmes: htmlResults,
     });
   } catch (err) {

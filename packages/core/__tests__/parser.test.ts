@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import * as path from 'node:path';
-import { OpenAPIParser } from '../src/openapi/parser';
+import { OpenAPIParser, resolveOpenApiServers } from '../src/openapi/parser';
 
 const FIXTURE_PATH = path.join(__dirname, '../__fixtures__/petstore.yaml');
 const COMPONENT_FIXTURE_PATH = path.join(__dirname, '../__fixtures__/openapi-path-components.yaml');
+const TOLERANT_FIXTURE_PATH = path.join(__dirname, '../__fixtures__/openapi-tolerant.yaml');
 
 describe('OpenAPIParser', () => {
   const parser = new OpenAPIParser();
@@ -111,6 +112,32 @@ describe('OpenAPIParser', () => {
       expect(operation.requestBody?.schema.properties).toHaveProperty('name');
       expect(operation.responses[0].schema?.properties).toHaveProperty('id');
     });
+
+    it('falls back to a default resource for blank or missing tags', async () => {
+      const spec = await parser.parse(TOLERANT_FIXTURE_PATH);
+
+      expect(spec.resources.map((resource) => resource.name)).toEqual(['default']);
+      expect(spec.operations[0].resourceName).toBe('default');
+      expect(spec.schemas.get('Measurement')?.required).toBeUndefined();
+    });
+
+    it('resolves relative remote servers and their default variables', () => {
+      expect(
+        resolveOpenApiServers('https://docs.example.com/openapi.json', [
+          {
+            url: '/{version}/',
+            variables: { version: { default: 'v2' } },
+          },
+        ]),
+      ).toEqual([{ url: 'https://docs.example.com/v2', description: undefined }]);
+    });
+
+    it('uses the remote document origin when servers are omitted', () => {
+      expect(resolveOpenApiServers('https://api.example.com/spec/openapi.json', [])).toEqual([
+        { url: 'https://api.example.com', description: undefined },
+      ]);
+      expect(resolveOpenApiServers(TOLERANT_FIXTURE_PATH, [])).toEqual([]);
+    });
   });
 
   describe('validate', () => {
@@ -126,6 +153,16 @@ describe('OpenAPIParser', () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('reports non-structural producer incompatibilities as warnings', async () => {
+      const result = await parser.validate(TOLERANT_FIXTURE_PATH);
+
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.warnings.some((warning) => warning.message.includes('schema validation'))).toBe(
+        true,
+      );
     });
   });
 });

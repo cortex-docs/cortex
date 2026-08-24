@@ -1,10 +1,11 @@
 <% const channel = it.channel ?? {}; -%>
 <% const channelId = channel.channelId ?? 'channel'; -%>
-<% const snakeName = channelId.split('/').map(s => s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')).join('_').replace(/-/g, '_'); -%>
+<% const snakeName = channel.methodName ?? channelId.replace(/[^a-zA-Z0-9]+/g, '-').split('-').filter(Boolean).map(s => s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')).join('_'); -%>
+<% const className = channel.className ?? it.utils.toPascalCase(channelId.replace(/[^a-zA-Z0-9]+/g, '-')); -%>
 <% if (channel.canSubscribe !== false && channel.subscribeMessage) { -%>
 // Subscribe to <%= channelId %>
 ws.on_<%= snakeName %>([](const nlohmann::json& msg) {
-  auto payload = msg.get<sdk::ws::<%= it.utils.toPascalCase(channelId) %>Message>();
+  auto payload = msg.get<sdk::ws::<%= className %>Message>();
   std::cout << "<%= channelId %>: " << msg.dump() << std::endl;
 });
 
@@ -12,5 +13,5 @@ ws.on_<%= snakeName %>([](const nlohmann::json& msg) {
 <% if (channel.canPublish !== false && channel.publishMessage) { -%>
 // Send to <%= channelId %>
 <% const props = (channel.publishMessage.properties ?? []).map(p => `.${p.name} = ${p.type === 'number' || p.type === 'integer' ? '0' : '"value"'}`).join(', '); -%>
-ws.send_<%= snakeName %>(nlohmann::json(sdk::ws::<%= it.utils.toPascalCase(channelId) %>Payload{<%= props %>}));
+ws.send_<%= snakeName %>(nlohmann::json(sdk::ws::<%= className %>Payload{<%= props %>}));
 <% } -%>

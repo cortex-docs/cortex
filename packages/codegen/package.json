@@ -39,8 +39,8 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "npm run clean && tsc && npm run copy-templates",
-    "prepack": "npm run build",
+    "build": "tsc && npm run copy-templates",
+    "prepack": "npm run clean && npm run build",
     "copy-templates": "for dir in src/languages/*/templates; do lang=$(basename $(dirname $dir)); mkdir -p dist/languages/$lang && cp -r $dir dist/languages/$lang/; done",
     "dev": "tsc --watch",
     "test": "vitest run",

@@ -4,31 +4,50 @@
 <% const args = op?.args ?? it.args ?? []; -%>
 <% const exVal = (a) => { if (['Int', 'Float', 'number', 'integer'].includes(a.type)) return '10'; if (['Boolean', 'boolean'].includes(a.type)) return 'true'; if (a.type === 'ID') return `'example-${a.name}'`; return `'value'`; }; -%>
 <% const argsObj = args.length > 0 ? `{ ${args.map(a => `${a.name}: ${exVal(a)}`).join(', ')} }` : '{}'; -%>
+<% const isScalarReturn = it.isScalarReturn ?? false; -%>
+<% const selectionFields = (it.selectionFields?.length ? it.selectionFields : ['id', 'name']).slice(0, 2); -%>
+<% const selection = selectionFields.map(f => `${f}()`).join('.'); -%>
 <% if (opType === 'query') { -%>
 // Query <%= opName %>
 const result = await gql.query(q =>
-  q.<%= opName %>(<%= argsObj %>, p =>
-    p.id().name()
+<% if (isScalarReturn) { -%>
+  q.<%= opName %>(<%= args.length > 0 ? argsObj : '' %>)
+<% } else { -%>
+  q.<%= opName %>(<%= args.length > 0 ? `${argsObj}, ` : '' %>p =>
+    p.<%= selection %>
   )
+<% } -%>
 );
 <% } else if (opType === 'mutation') { -%>
 // Mutation <%= opName %>
 const result = await gql.mutate(m =>
-  m.<%= opName %>(<%= argsObj %>, p =>
-    p.id().name()
+<% if (isScalarReturn) { -%>
+  m.<%= opName %>(<%= args.length > 0 ? argsObj : '' %>)
+<% } else { -%>
+  m.<%= opName %>(<%= args.length > 0 ? `${argsObj}, ` : '' %>p =>
+    p.<%= selection %>
   )
+<% } -%>
 );
 <% } else { -%>
 // One-shot subscription
 const event = await gql.subscribeOnce(s =>
-  s.<%= opName %>(<%= argsObj %>, p =>
-    p.id().name()
+<% if (isScalarReturn) { -%>
+  s.<%= opName %>(<%= args.length > 0 ? argsObj : '' %>)
+<% } else { -%>
+  s.<%= opName %>(<%= args.length > 0 ? `${argsObj}, ` : '' %>p =>
+    p.<%= selection %>
   )
+<% } -%>
 );
 
 // Continuous subscription
 const unsubscribe = gql.subscribe(
-  s => s.<%= opName %>(p => p.id().name()),
+<% if (isScalarReturn) { -%>
+  s => s.<%= opName %>(<%= args.length > 0 ? argsObj : '' %>),
+<% } else { -%>
+  s => s.<%= opName %>(<%= args.length > 0 ? `${argsObj}, ` : '' %>p => p.<%= selection %>),
+<% } -%>
   (data) => console.log('Event:', data),
 );
 // Later: unsubscribe();

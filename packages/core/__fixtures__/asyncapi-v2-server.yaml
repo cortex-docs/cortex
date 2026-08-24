@@ -1,0 +1,31 @@
+asyncapi: '2.6.0'
+info:
+  title: Scheme-less WebSocket API
+  version: 1.0.0
+servers:
+  production:
+    url: socket.example.com/events
+    protocol: wss
+channels:
+  /:
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Ping'
+          - $ref: '#/components/messages/Command'
+components:
+  messages:
+    Ping:
+      payload:
+        type: object
+        required: [event]
+        properties:
+          event:
+            type: string
+            const: ping
+    Command:
+      payload:
+        type: object
+        properties:
+          command:
+            type: string

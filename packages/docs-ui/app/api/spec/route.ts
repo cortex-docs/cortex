@@ -1,7 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
-import { locationExists, readTextLocation, resolveLocation } from '@/lib/load-location';
+import {
+  getDocsUiRoot,
+  locationExists,
+  readTextLocation,
+  resolveLocation,
+} from '@/lib/load-location';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +28,7 @@ function resolveSpecPath(): string | null {
     return process.env.CORTEX_SPEC_PATH;
   }
 
-  const fallback = path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.yaml');
+  const fallback = path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore.yaml');
   if (fs.existsSync(fallback)) return fallback;
   return null;
 }

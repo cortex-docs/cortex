@@ -7,6 +7,7 @@ import {
   toUpperSnakeCase,
   singularize,
   pluralize,
+  titleToPascalCase,
 } from '../src/utils/naming';
 
 describe('naming utilities', () => {
@@ -26,6 +27,12 @@ describe('naming utilities', () => {
     it('handles multiple words', () => {
       expect(toCamelCase('get-user-by-id')).toBe('getUserById');
     });
+
+    it('sanitizes punctuation, leading digits, and reserved identifiers', () => {
+      expect(toCamelCase('data.source')).toBe('dataSource');
+      expect(toCamelCase('24-hour-value')).toBe('_24HourValue');
+      expect(toCamelCase('default')).toBe('_default');
+    });
   });
 
   describe('toPascalCase', () => {
@@ -40,6 +47,10 @@ describe('naming utilities', () => {
     it('keeps PascalCase', () => {
       expect(toPascalCase('MyVariable')).toBe('MyVariable');
     });
+
+    it('creates a valid identifier from a numeric name', () => {
+      expect(toPascalCase('24-hour-value')).toBe('_24HourValue');
+    });
   });
 
   describe('toSnakeCase', () => {
@@ -53,6 +64,11 @@ describe('naming utilities', () => {
 
     it('converts kebab-case', () => {
       expect(toSnakeCase('my-variable')).toBe('my_variable');
+    });
+
+    it('sanitizes arbitrary separators and reserved identifiers', () => {
+      expect(toSnakeCase('data.source')).toBe('data_source');
+      expect(toSnakeCase('type')).toBe('_type');
     });
   });
 
@@ -73,6 +89,13 @@ describe('naming utilities', () => {
   describe('toUpperSnakeCase', () => {
     it('converts camelCase', () => {
       expect(toUpperSnakeCase('myVariable')).toBe('MY_VARIABLE');
+    });
+  });
+
+  describe('titleToPascalCase', () => {
+    it('creates a valid client class identifier', () => {
+      expect(titleToPascalCase('24 hour API')).toBe('_24HourApi');
+      expect(titleToPascalCase('')).toBe('_');
     });
   });
 

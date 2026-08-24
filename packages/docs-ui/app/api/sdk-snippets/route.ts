@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
-import { renderSnippet } from '@cortex/codegen';
-import { locationExists, resolveLocation } from '@/lib/load-location';
+import { getLanguageNaming, renderSnippet } from '@cortex/codegen';
+import { getDocsUiRoot, locationExists, resolveLocation } from '@/lib/load-location';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +101,7 @@ interface GqlOperationInfo {
   args: GqlFieldInfo[];
   returnType: string;
   returnFields?: GqlFieldInfo[];
+  isScalarReturn?: boolean;
 }
 
 interface GraphQLInfo {
@@ -204,6 +205,7 @@ interface WsSourceData {
   title: string;
   intro?: string;
   url: string;
+  protocol: string;
   channels: WsChannelInfo[];
   templateDirs?: Record<string, string>;
 }
@@ -211,6 +213,7 @@ interface WsSourceData {
 interface GqlSourceData {
   title: string;
   intro?: string;
+  endpoint: string;
   queries: GqlOperationInfo[];
   mutations: GqlOperationInfo[];
   subscriptions: GqlOperationInfo[];
@@ -536,7 +539,7 @@ export async function GET() {
 
     // --- Step A: Find and read config to discover ALL sources ---
     const configPath = process.env.CORTEX_CONFIG_PATH;
-    let configDir = process.cwd();
+    let configDir = getDocsUiRoot();
     let configSources: any[] = [];
 
     if (configPath && fs.existsSync(configPath)) {
@@ -605,7 +608,7 @@ export async function GET() {
         {
           title: 'REST API',
           type: 'openapi-spec',
-          spec: path.join(process.cwd(), '..', 'core', '__fixtures__', 'petstore.yaml'),
+          spec: path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore.yaml'),
         },
       ];
     }
@@ -840,7 +843,8 @@ export async function GET() {
         const asyncParser = new AsyncAPIParser();
         const asyncSpec = await asyncParser.parse(resolvedSpec);
 
-        const wsUrl = asyncSpec.servers[0]?.url ?? '';
+        const asyncServer = asyncSpec.servers[0];
+        const wsUrl = asyncServer?.url ?? '';
 
         const mapWsMessage = (op: any): WsMessageInfo | undefined => {
           if (!op?.message) return undefined;
@@ -884,6 +888,7 @@ export async function GET() {
           title: src.title ?? 'WebSocket',
           intro,
           url: wsUrl,
+          protocol: asyncServer?.protocol ?? '',
           channels,
           templateDirs: sourceTemplateDirs(src),
         });
@@ -983,13 +988,17 @@ export async function GET() {
           return resolveFields(returnType, 3, new Set());
         };
 
-        const mapGqlOp = (op: any): GqlOperationInfo => ({
-          name: op.name,
-          description: op.description,
-          args: (op.args ?? []).map(mapGqlField),
-          returnType: op.returnTypeRaw ?? op.returnType ?? '',
-          returnFields: resolveReturnFields(op.returnTypeRaw ?? op.returnType ?? ''),
-        });
+        const mapGqlOp = (op: any): GqlOperationInfo => {
+          const returnType = op.returnTypeRaw ?? op.returnType ?? '';
+          return {
+            name: op.name,
+            description: op.description,
+            args: (op.args ?? []).map(mapGqlField),
+            returnType,
+            returnFields: resolveReturnFields(returnType),
+            isScalarReturn: !typeMap.has(stripGqlType(returnType)),
+          };
+        };
 
         let intro: string | undefined;
         if (src.intro) {
@@ -1002,6 +1011,7 @@ export async function GET() {
         graphqlSources.push({
           title: src.title ?? 'GraphQL',
           intro,
+          endpoint: gqlSpec.endpoint,
           queries: gqlSpec.queries.map(mapGqlOp),
           mutations: gqlSpec.mutations.map(mapGqlOp),
           subscriptions: gqlSpec.subscriptions.map(mapGqlOp),
@@ -1285,18 +1295,25 @@ export async function GET() {
 
         for (const lang of configuredLangs) {
           const langPkgName = srcPkgNames[lang] ?? restSrc.packageName;
+          const naming = getLanguageNaming(lang);
 
           for (const res of restSrc.resources) {
             for (const op of res.operations) {
+              const languageNames = op.names[lang];
               const ejsOp = {
-                name: op.operationId,
+                name: languageNames?.methodName ?? naming.methodName(op.operationId),
                 method: op.method,
                 summary: op.summary,
                 pathParams: op.pathParams.map((p: { name: string }) => ({
                   ...p,
                   originalName: p.name,
+                  name: naming.parameterName(p.name),
                 })),
-                queryParams: op.queryParams,
+                queryParams: op.queryParams.map((p) => ({
+                  ...p,
+                  originalName: p.name,
+                  name: naming.parameterName(p.name),
+                })),
                 hasBody: op.hasBody,
                 contentType: op.contentType,
                 isMultipart: op.contentType?.toLowerCase() === 'multipart/form-data',
@@ -1307,8 +1324,8 @@ export async function GET() {
                   isFile: p.type === 'file',
                   isFileArray: p.type === 'array of file',
                 })),
-                bodyType: op.bodyTypeName,
-                responseType: op.responseTypeName,
+                bodyType: languageNames?.bodyType ?? op.bodyTypeName,
+                responseType: languageNames?.responseType ?? op.responseTypeName,
               };
               const ejsSchemas =
                 op.bodyProperties?.length > 0
@@ -1317,7 +1334,7 @@ export async function GET() {
                         className: op.bodyTypeName,
                         properties: op.bodyProperties.map(
                           (p: { name: string; type: string; required: boolean }) => ({
-                            name: p.name,
+                            name: naming.propertyName(p.name),
                             type: p.type,
                             required: p.required,
                           }),
@@ -1331,7 +1348,12 @@ export async function GET() {
                 pkgName: langPkgName,
                 baseUrl: restSrc.baseUrl,
                 op: ejsOp,
-                resource: res,
+                resource: {
+                  ...res,
+                  name: naming.propertyName(res.name),
+                  className: `${naming.className(singularize(res.name))}Resource`,
+                  fileName: naming.fileName(res.name),
+                },
                 resources: [],
                 schemas: ejsSchemas,
                 config: { languageConfig: { package_name: langPkgName } },
@@ -1366,40 +1388,20 @@ export async function GET() {
         const gqlSrc = graphqlSources[srcIdx];
         const srcGqlClientClass = titleToPascalCase(gqlSrc.title ?? 'Gql');
 
-        const allGqlOps = [
-          ...(gqlSrc.queries ?? []).map(
-            (q: { name: string; args?: Array<{ name: string; type: string }> }) => ({
-              ...q,
-              opType: 'query',
-            }),
-          ),
-          ...(gqlSrc.mutations ?? []).map(
-            (m: { name: string; args?: Array<{ name: string; type: string }> }) => ({
-              ...m,
-              opType: 'mutation',
-            }),
-          ),
-          ...(gqlSrc.subscriptions ?? []).map(
-            (s: { name: string; args?: Array<{ name: string; type: string }> }) => ({
-              ...s,
-              opType: 'subscription',
-            }),
-          ),
+        const allGqlOps: Array<
+          GqlOperationInfo & { opType: 'query' | 'mutation' | 'subscription' }
+        > = [
+          ...(gqlSrc.queries ?? []).map((q) => ({ ...q, opType: 'query' as const })),
+          ...(gqlSrc.mutations ?? []).map((m) => ({ ...m, opType: 'mutation' as const })),
+          ...(gqlSrc.subscriptions ?? []).map((s) => ({
+            ...s,
+            opType: 'subscription' as const,
+          })),
         ];
-        const gqlQueries = (gqlSrc.queries ?? []).map(
-          (q: { name: string; args?: Array<{ name: string; type: string }> }) => ({
-            name: q.name,
-            args: (q.args ?? []).map((a: { name: string; type: string }) => ({
-              name: a.name,
-              type: a.type,
-            })),
-          }),
-        );
-
         const baseTemplateData = {
           resources: firstRest?.resources ?? [],
           config: { languageConfig: { package_name: packageName } },
-          spec: { info: { servers: [{ url: firstRest?.baseUrl ?? '' }] } },
+          spec: { info: { servers: [] } },
         };
 
         for (const gqlOp of allGqlOps) {
@@ -1414,13 +1416,19 @@ export async function GET() {
                   clientClass: srcGqlClientClass,
                   opType: gqlOp.opType,
                   opName: gqlOp.name,
+                  op: gqlOp,
+                  isScalarReturn: gqlOp.isScalarReturn,
+                  selectionFields: (gqlOp.returnFields ?? [])
+                    .filter((field: GqlFieldInfo) => !field.children?.length)
+                    .slice(0, 2)
+                    .map((field: GqlFieldInfo) => field.name),
                   args: (gqlOp.args ?? []).map((a: { name: string; type: string }) => ({
                     name: a.name,
                     type: a.type,
                   })),
-                  queries: gqlOp.opType === 'query' ? gqlQueries : undefined,
                   pkgName: langPkgName,
                   baseUrl: firstRest?.baseUrl ?? '',
+                  graphqlEndpoint: gqlSrc.endpoint,
                   config: { languageConfig: { package_name: langPkgName } },
                 },
                 {
@@ -1451,14 +1459,26 @@ export async function GET() {
         const baseTemplateData = {
           resources: firstRest?.resources ?? [],
           config: { languageConfig: { package_name: packageName } },
-          spec: { info: { servers: [{ url: firstRest?.baseUrl ?? '' }] } },
+          spec: { info: { servers: [{ url: wsSrc.url }] } },
         };
 
         for (const ch of wsSrc.channels ?? []) {
           for (const lang of configuredLangs) {
             try {
               const langPkgName = allPackageNames[lang] ?? packageName;
-              const wsChannel = { ...ch, channelId: ch.name };
+              const naming = getLanguageNaming(lang);
+              const normalizedName =
+                ch.name.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'root';
+              const className = toPascalCase(normalizedName);
+              const methodName = naming.methodName(normalizedName);
+              const wsChannel = {
+                ...ch,
+                channelId: ch.name,
+                className,
+                methodName,
+                handlerName: lang === 'csharp' ? `On${className}` : `on${className}`,
+                sendName: lang === 'csharp' ? `Send${className}Async` : `send${className}`,
+              };
               const snippet = renderSnippet(
                 lang,
                 'websocket/snippet',
@@ -1467,7 +1487,8 @@ export async function GET() {
                   clientClass: srcWsClientClass,
                   channel: wsChannel,
                   pkgName: langPkgName,
-                  baseUrl: firstRest?.baseUrl ?? '',
+                  baseUrl: wsSrc.url,
+                  websocketUrl: wsSrc.url,
                   config: { languageConfig: { package_name: langPkgName } },
                 },
                 {
@@ -1496,7 +1517,7 @@ export async function GET() {
         const srcGrpcClientClass = titleToPascalCase(grpcSrc.title) || grpcClientClass;
         const baseTemplateData = {
           resources: firstRest?.resources ?? [],
-          spec: { info: { servers: [{ url: firstRest?.baseUrl ?? '' }] } },
+          spec: { info: { servers: [{ url: 'http://localhost:50051' }] } },
         };
 
         for (const service of grpcSrc.services) {
@@ -1504,15 +1525,17 @@ export async function GET() {
             for (const lang of configuredLangs) {
               try {
                 const langPkgName = allPackageNames[lang] ?? packageName;
+                const clientVar = lang === 'php' ? '$client' : 'client';
                 const snippet = renderSnippet(
                   lang,
                   'grpc/snippet',
                   {
                     ...baseTemplateData,
                     clientClass: srcGrpcClientClass,
-                    service: { serviceName: service.name, packageName: langPkgName },
+                    service: { serviceName: service.name, packageName: langPkgName, clientVar },
                     method: { ...method, methodName: method.name },
                     pkgName: langPkgName,
+                    baseUrl: 'http://localhost:50051',
                     config: { languageConfig: { package_name: langPkgName } },
                   },
                   {
@@ -1559,9 +1582,9 @@ export async function GET() {
                   ...baseTemplateData,
                   clientClass: srcOpenRpcClientClass,
                   method: { ...m, methodName: m.name, params: m.params },
-                  serverUrl: openRpcSrc.serverUrl ?? firstRest?.baseUrl ?? '',
+                  serverUrl: openRpcSrc.serverUrl,
                   pkgName: langPkgName,
-                  baseUrl: openRpcSrc.serverUrl ?? firstRest?.baseUrl ?? '',
+                  baseUrl: openRpcSrc.serverUrl,
                   config: { languageConfig: { package_name: langPkgName } },
                 },
                 {

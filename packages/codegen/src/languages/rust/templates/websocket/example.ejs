@@ -1,6 +1,6 @@
 <% const channel = it.channel ?? {}; -%>
 <% const channelId = channel.channelId ?? 'channel'; -%>
-<% const snakeName = channelId.split('/').map(s => s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')).join('_').replace(/-/g, '_'); -%>
+<% const snakeName = channel.methodName ?? channelId.replace(/[^a-zA-Z0-9]+/g, '-').split('-').filter(Boolean).map(s => s.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '')).join('_'); -%>
 <% if (channel.canSubscribe !== false && channel.subscribeMessage) { -%>
 // Subscribe to <%= channelId %>
 ws.on_<%= snakeName %>(|msg| {

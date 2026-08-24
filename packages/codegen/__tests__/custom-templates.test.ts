@@ -23,6 +23,37 @@ function writeTemplate(root: string, relativePath: string, content: string): voi
 }
 
 describe('custom generator templates', () => {
+  it('removes the legacy blank-tag resource artifact during regeneration', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-codegen-legacy-resource-'));
+    const outputDir = path.join(workspace, 'output');
+    const legacyResource = path.join(outputDir, 'src', 'resources', '.ts');
+    writeTemplate(outputDir, 'src/resources/.ts', '');
+
+    const spec = await new OpenAPIParser().parse(REST_FIXTURE);
+    const config: CortexConfig = {
+      project: 'test',
+      sources: [
+        {
+          title: 'REST API V1',
+          type: 'openapi-spec',
+          spec: REST_FIXTURE,
+          languages: [{ language: 'typescript', package_name: '@test/sdk' }],
+        },
+      ],
+      output: { base_dir: outputDir },
+      languages: [{ language: 'typescript', package_name: '@test/sdk', output_dir: outputDir }],
+    };
+
+    const result = await new CodegenEngine(createDefaultRegistry(), new FileEmitter()).generate(
+      spec,
+      config,
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(fs.existsSync(legacyResource)).toBe(false);
+    fs.rmSync(workspace, { recursive: true });
+  });
+
   it('uses sparse language overrides and final-file overrides', async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-codegen-custom-'));
     const templateRoot = path.join(workspace, 'templates');
