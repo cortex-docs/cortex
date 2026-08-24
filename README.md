@@ -150,14 +150,16 @@ The generated package contains local copies of every configured specification. I
 
 ## Packages
 
-| Package                | Purpose                                        |
-| ---------------------- | ---------------------------------------------- |
-| `@cortex-docs/cli`     | Command-line interface and project workflow    |
-| `@cortex-docs/core`    | Configuration loader and specification parsers |
-| `@cortex-docs/codegen` | SDK generation engine and language templates   |
-| `@cortex-docs/mcp-gen` | MCP server generator                           |
-| `@cortex-docs/mcp`     | MCP server for the Cortex Docs documentation   |
-| `@cortex-docs/docs-ui` | Documentation runtime used by the CLI          |
+The release workflow publishes `@cortex-docs/cli` and `@cortex-docs/mcp`. The CLI tarball includes the internal runtime workspaces.
+
+| Package                | Distribution    | Purpose                                        |
+| ---------------------- | --------------- | ---------------------------------------------- |
+| `@cortex-docs/cli`     | npm             | Command-line interface and project workflow    |
+| `@cortex-docs/mcp`     | npm             | MCP server for the Cortex Docs documentation   |
+| `@cortex-docs/core`    | Included in CLI | Configuration loader and specification parsers |
+| `@cortex-docs/codegen` | Included in CLI | SDK generation engine and language templates   |
+| `@cortex-docs/mcp-gen` | Included in CLI | MCP server generator                           |
+| `@cortex-docs/docs-ui` | Included in CLI | Documentation runtime used by the CLI          |
 
 ## Documentation
 

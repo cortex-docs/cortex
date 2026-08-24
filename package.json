@@ -19,7 +19,7 @@
     "test:sdk:ci": "docker compose -f e2e/docker/docker-compose.ci.yml up --abort-on-container-exit --exit-code-from sdk-tests",
     "test:publish:e2e": "docker build -t cortex-base -f Dockerfile . && docker compose -f e2e/publish/docker-compose.yml down --volumes --remove-orphans && docker compose -f e2e/publish/docker-compose.yml up --build --abort-on-container-exit --exit-code-from publish-tests",
     "test:publish:e2e:ci": "docker compose -f e2e/publish/docker-compose.ci.yml down --volumes --remove-orphans && docker compose -f e2e/publish/docker-compose.ci.yml up --abort-on-container-exit --exit-code-from publish-tests",
-    "pack:check": "npm pack --dry-run --workspace=@cortex-docs/core && npm pack --dry-run --workspace=@cortex-docs/codegen && npm pack --dry-run --workspace=@cortex-docs/mcp-gen && npm pack --dry-run --workspace=@cortex-docs/docs-ui && npm pack --dry-run --workspace=@cortex-docs/cli && node scripts/publish-docs-mcp.mjs 0.0.0 --dry-run"
+    "pack:check": "node scripts/publish-cli.mjs 0.0.0 --dry-run && node scripts/publish-docs-mcp.mjs 0.0.0 --dry-run"
   },
   "devDependencies": {
     "@apollo/server": "^5.5.1",

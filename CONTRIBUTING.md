@@ -45,7 +45,9 @@ Do not open a feature pull request to `main`. Maintainers promote `pre-release` 
 
 The promotion pull request runs all Docker integration tests. A merge to `main` publishes a new patch version.
 
-The release also publishes `@cortex-docs/mcp` and deploys `docs.cortexdocs.dev`. The demo deploys through its separate workflow.
+The release publishes `@cortex-docs/cli` and the generated `@cortex-docs/mcp` package. It also deploys `docs.cortexdocs.dev`.
+
+The release does not publish the other workspaces. The CLI package includes the internal workspaces that it uses.
 
 Read [RELEASING.md](RELEASING.md) for the complete promotion and release flow.
 
