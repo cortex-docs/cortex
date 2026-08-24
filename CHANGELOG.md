@@ -18,6 +18,23 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.2] - 2026-08-24
+
+### New Features
+
+- Added a "Try now" button to the mobile SDK reference code panel for quickly opening the interactive request tester.
+
+### Bug Fixes
+
+- Fixed the docs dev script not waiting for the demo API worker to become healthy before starting, which could cause flaky local development and demo failures.
+- Fixed SVG logo sanitization stripping text elements and their typography (font family, size, weight, decoration, anchor), so text-based logos now render correctly.
+- Fixed the demo API worker's GraphQL module resolution via an explicit `graphql` alias in the Wrangler config.
+- Packages are now published under the `@cortex-docs` npm scope instead of `@cortex`; update install commands (e.g. `npm install --global @cortex-docs/cli`) accordingly.
+
+### Improvements
+
+- The mobile SDK code panel now truncates long labels and keeps the expand toggle icon from shrinking, improving layout on small screens.
+
 ## [0.1.1] - 2026-08-24
 
 ### New Features
