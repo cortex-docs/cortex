@@ -8,7 +8,7 @@ https://github.com/scalar/scalar
 License: MIT
 Copyright (c) Scalar
 
-Used in @cortex/docs-ui for rendering OpenAPI specification references.
+Used in @cortex-docs/docs-ui for rendering OpenAPI specification references.
 ================================================================================
 
 License texts for installed dependencies are available in their respective `node_modules/<package>/LICENSE` files.

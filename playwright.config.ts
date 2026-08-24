@@ -19,7 +19,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'cross-env PORT=3100 npm run --workspace=@cortex/docs-ui dev',
+    command: 'cross-env PORT=3100 npm run --workspace=@cortex-docs/docs-ui dev',
     url: 'http://localhost:3100',
     reuseExistingServer: !process.env.CI,
     timeout: 300000,

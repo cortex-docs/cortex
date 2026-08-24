@@ -5,7 +5,7 @@ import type {
   GraphQLField,
   GraphQLEnum,
   GraphQLInput,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import {
   toPascalCase,
   titleToPascalCase,
@@ -13,7 +13,7 @@ import {
   toSnakeCase,
   toKebabCase,
   toUpperSnakeCase,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import type { GeneratedFile, NamingConventions } from '../plugin';
 import {
   applyFileTemplateOverrides,

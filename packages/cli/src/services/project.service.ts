@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigLoader, OpenAPIParser } from '@cortex/core';
-import type { CortexConfig, ParsedSpec } from '@cortex/core';
+import { ConfigLoader, OpenAPIParser } from '@cortex-docs/core';
+import type { CortexConfig, ParsedSpec } from '@cortex-docs/core';
 
 @Injectable()
 export class ProjectService {

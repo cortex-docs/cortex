@@ -1,11 +1,11 @@
-# @cortex/cli
+# @cortex-docs/cli
 
-`@cortex/cli` is the command-line interface for Cortex Docs.
+`@cortex-docs/cli` is the command-line interface for Cortex Docs.
 
 Install the CLI:
 
 ```bash
-npm install --global @cortex/cli
+npm install --global @cortex-docs/cli
 ```
 
 Create a project:

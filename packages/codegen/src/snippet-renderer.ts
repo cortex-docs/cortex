@@ -5,7 +5,7 @@ import {
   toSnakeCase,
   toKebabCase,
   toUpperSnakeCase,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import { getLanguageNaming } from './naming';
 import { createLanguageTemplateRenderer, type TemplateRenderOptions } from './template-renderer';
 

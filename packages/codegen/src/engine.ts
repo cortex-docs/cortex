@@ -7,8 +7,8 @@ import type {
   AsyncApiSpec,
   GrpcSpec,
   OpenRpcSpec,
-} from '@cortex/core';
-import { getSourceLanguageTemplateDir, resolveGeneratorTemplateRoot } from '@cortex/core';
+} from '@cortex-docs/core';
+import { getSourceLanguageTemplateDir, resolveGeneratorTemplateRoot } from '@cortex-docs/core';
 import { FileEmitter, type EmitResult } from './emitter';
 import type { CodegenContext, GeneratedFile } from './plugin';
 import { PluginRegistry } from './plugin';

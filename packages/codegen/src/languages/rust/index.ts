@@ -1,4 +1,4 @@
-import { toPascalCase, toSnakeCase } from '@cortex/core';
+import { toPascalCase, toSnakeCase } from '@cortex-docs/core';
 import { TemplateBasedPlugin, type LanguageTemplateConfig } from '../template-plugin';
 
 export class RustPlugin extends TemplateBasedPlugin {

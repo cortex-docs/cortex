@@ -3,6 +3,7 @@ dist/
 .next/
 .next-build/
 .open-next/
+.wrangler/
 .cortex-demo/
 .cortex-dev-*/
 .cortex-build-*/

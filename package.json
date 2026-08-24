@@ -6,7 +6,7 @@
   ],
   "scripts": {
     "build": "turbo run build",
-    "build:cli": "npm run build --workspace=@cortex/core && npm run build --workspace=@cortex/codegen && npm run build --workspace=@cortex/mcp-gen && npm run build --workspace=@cortex/cli",
+    "build:cli": "npm run build --workspace=@cortex-docs/core && npm run build --workspace=@cortex-docs/codegen && npm run build --workspace=@cortex-docs/mcp-gen && npm run build --workspace=@cortex-docs/cli",
     "dev": "turbo run dev --parallel",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
@@ -19,7 +19,7 @@
     "test:sdk:ci": "docker compose -f e2e/docker/docker-compose.ci.yml up --abort-on-container-exit --exit-code-from sdk-tests",
     "test:publish:e2e": "docker build -t cortex-base -f Dockerfile . && docker compose -f e2e/publish/docker-compose.yml down --volumes --remove-orphans && docker compose -f e2e/publish/docker-compose.yml up --build --abort-on-container-exit --exit-code-from publish-tests",
     "test:publish:e2e:ci": "docker compose -f e2e/publish/docker-compose.ci.yml down --volumes --remove-orphans && docker compose -f e2e/publish/docker-compose.ci.yml up --abort-on-container-exit --exit-code-from publish-tests",
-    "pack:check": "npm pack --dry-run --workspace=@cortex/core && npm pack --dry-run --workspace=@cortex/codegen && npm pack --dry-run --workspace=@cortex/mcp-gen && npm pack --dry-run --workspace=@cortex/docs-ui && npm pack --dry-run --workspace=@cortex/cli"
+    "pack:check": "npm pack --dry-run --workspace=@cortex-docs/core && npm pack --dry-run --workspace=@cortex-docs/codegen && npm pack --dry-run --workspace=@cortex-docs/mcp-gen && npm pack --dry-run --workspace=@cortex-docs/docs-ui && npm pack --dry-run --workspace=@cortex-docs/cli"
   },
   "devDependencies": {
     "@apollo/server": "^5.5.1",

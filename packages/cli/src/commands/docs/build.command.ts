@@ -1,13 +1,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { SubCommand, CommandRunner, Option } from 'nest-commander';
-import { assertTemplateRoot } from '@cortex/codegen';
+import { assertTemplateRoot } from '@cortex-docs/codegen';
 import {
   getAllLanguageTemplateDirs,
   getFirstSpecPath,
   isRemoteLocation,
   resolveGeneratorTemplateRoot,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
 import { prepareDocsUiRuntime, resolveDocsUiPath, resolveNextBin } from './runtime';
@@ -126,7 +126,7 @@ export class DocsBuildCommand extends CommandRunner {
         try {
           const packageJson = JSON.parse(fs.readFileSync(candidate, 'utf-8')) as { name?: string };
           const serverPath = path.join(directory, 'server.js');
-          if (packageJson.name === '@cortex/docs-ui' && fs.existsSync(serverPath)) {
+          if (packageJson.name === '@cortex-docs/docs-ui' && fs.existsSync(serverPath)) {
             return serverPath;
           }
         } catch {

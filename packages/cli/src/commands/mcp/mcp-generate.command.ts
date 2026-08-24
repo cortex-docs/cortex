@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { SubCommand, CommandRunner, Option } from 'nest-commander';
-import { McpGenerator } from '@cortex/mcp-gen';
+import { McpGenerator } from '@cortex-docs/mcp-gen';
 import {
   AsyncAPIParser,
   GraphQLParser,
@@ -9,7 +9,7 @@ import {
   getSourcesByType,
   isRemoteLocation,
   resolveGeneratorTemplateRoot,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
 import {

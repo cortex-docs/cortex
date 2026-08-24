@@ -26,6 +26,18 @@ describe('user content security', () => {
     expect(svg).toContain('<path');
   });
 
+  it('keeps safe logo text and its typography', () => {
+    const svg = sanitizeSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg"><text x="26" y="15" font-family="sans-serif" font-size="16" font-weight="600">Petstore</text></svg>',
+    );
+
+    expect(svg).toContain('<text');
+    expect(svg).toContain('font-family="sans-serif"');
+    expect(svg).toContain('font-size="16"');
+    expect(svg).toContain('font-weight="600"');
+    expect(svg).toContain('>Petstore</text>');
+  });
+
   it('keeps remote locations intact and resolves local locations from the project', () => {
     expect(resolveLocation('https://example.com/openapi.yaml', '/workspace/project')).toBe(
       'https://example.com/openapi.yaml',

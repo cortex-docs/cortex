@@ -4,7 +4,7 @@ import {
   toSnakeCase,
   toKebabCase,
   toUpperSnakeCase,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import type { NamingConventions } from './plugin';
 
 export function getLanguageNaming(language: string): NamingConventions {

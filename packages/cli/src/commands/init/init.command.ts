@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { Command, CommandRunner } from 'nest-commander';
-import type { CortexConfig, SourceLanguageConfig } from '@cortex/core';
+import type { CortexConfig, SourceLanguageConfig } from '@cortex-docs/core';
 import { LoggerService } from '../../services/logger.service';
 
 function buildIntroTemplate(projectName: string, baseUrl: string): string {
@@ -44,7 +44,7 @@ An MCP (Model Context Protocol) server is generated alongside your SDKs, enablin
 `;
 
 function getFixturesDir(): string {
-  const corePath = require.resolve('@cortex/core');
+  const corePath = require.resolve('@cortex-docs/core');
   return path.resolve(path.dirname(corePath), '..', '__fixtures__');
 }
 

@@ -94,11 +94,11 @@ node scripts/set-release-version.mjs --check
 Run this command to build the demo for the Cloudflare runtime:
 
 ```bash
-npm run --workspace=@cortex/docs-ui demo:build
+npm run --workspace=@cortex-docs/docs-ui demo:build
 ```
 
 Run this command to preview the Cloudflare build:
 
 ```bash
-npm run --workspace=@cortex/docs-ui demo:preview
+npm run --workspace=@cortex-docs/docs-ui demo:preview
 ```

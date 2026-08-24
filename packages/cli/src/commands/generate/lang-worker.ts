@@ -15,7 +15,7 @@ interface WorkerInput {
   openRpcSpecJson: string | null;
   version: string;
   asyncapiSourceTitle?: string;
-  asyncapiHeartbeat?: import('@cortex/core').WebSocketHeartbeatConfig;
+  asyncapiHeartbeat?: import('@cortex-docs/core').WebSocketHeartbeatConfig;
   graphqlSourceTitle?: string;
   grpcSourceTitle?: string;
   openRpcSourceTitle?: string;
@@ -46,7 +46,7 @@ async function run() {
     createGrpcPluginForLanguage,
     OpenRpcTemplateEngine,
     createOpenRpcPluginForLanguage,
-  } = await import('@cortex/codegen');
+  } = await import('@cortex-docs/codegen');
 
   const emitter = new FileEmitter();
   const langDir = input.outputDir;

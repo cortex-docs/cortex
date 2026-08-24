@@ -7,7 +7,7 @@ Generated SDKs include HTTP timeouts, chunked-response streams, connection recov
 ## Installation
 
 ```bash
-npm install -g @cortex/cli
+npm install -g @cortex-docs/cli
 ```
 
 ## Quick Start

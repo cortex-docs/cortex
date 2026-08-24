@@ -1,5 +1,5 @@
 {
-  "name": "@cortex/docs-site",
+  "name": "@cortex-docs/docs-site",
   "version": "0.1.1",
   "private": true,
   "description": "Product documentation for Cortex Docs",
@@ -9,6 +9,6 @@
     "clean": "rm -rf .cortex"
   },
   "dependencies": {
-    "@cortex/cli": "0.1.1"
+    "@cortex-docs/cli": "0.1.1"
   }
 }

@@ -7,9 +7,9 @@ import {
   FileEmitter,
   assertTemplateRoot,
   createDefaultRegistry,
-} from '@cortex/codegen';
-import { McpGenerator } from '@cortex/mcp-gen';
-import type { AsyncApiSpec, LanguageConfig, SourceConfig } from '@cortex/core';
+} from '@cortex-docs/codegen';
+import { McpGenerator } from '@cortex-docs/mcp-gen';
+import type { AsyncApiSpec, LanguageConfig, SourceConfig } from '@cortex-docs/core';
 import {
   AsyncAPIParser,
   GraphQLParser,
@@ -20,7 +20,7 @@ import {
   resolveGeneratorTemplateRoot,
   resolveLanguageTemplateDir,
   sourceHasLanguage,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
 import {

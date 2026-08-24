@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
-import { getLanguageNaming, renderSnippet } from '@cortex/codegen';
+import { getLanguageNaming, renderSnippet } from '@cortex-docs/codegen';
 import { getDocsUiRoot, locationExists, resolveLocation } from '@/lib/load-location';
 
 export const dynamic = 'force-dynamic';
@@ -533,7 +533,7 @@ export async function GET() {
       toPascalCase,
       toSnakeCase,
       singularize,
-    } = await import('@cortex/core');
+    } = await import('@cortex-docs/core');
     const yaml = await import('js-yaml');
     const { renderMarkdown } = await import('@/lib/markdown');
 

@@ -4,7 +4,7 @@ import type {
   AsyncApiChannel,
   GraphQLOperation,
   OpenRpcMethod,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 
 export interface McpTool {
   name: string;

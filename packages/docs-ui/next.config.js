@@ -9,7 +9,11 @@ if (process.env.CORTEX_CLOUDFLARE === '1') {
 /** @type {import('next').NextConfig} */
 module.exports = {
   reactStrictMode: true,
-  serverExternalPackages: ['@cortex/core', '@cortex/codegen', '@apidevtools/swagger-parser'],
+  serverExternalPackages: [
+    '@cortex-docs/core',
+    '@cortex-docs/codegen',
+    '@apidevtools/swagger-parser',
+  ],
   output: process.env.CORTEX_STANDALONE_BUILD === '1' ? 'standalone' : undefined,
   distDir: process.env.CORTEX_DIST_DIR || '.next',
   outputFileTracingRoot: path.resolve(docsUiRoot, '../..'),

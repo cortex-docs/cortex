@@ -8,7 +8,7 @@ import type {
   Resource,
   ResourceExtension,
   SchemaObject,
-} from '@cortex/core';
+} from '@cortex-docs/core';
 
 function duplicateError(kind: string, name: string): Error {
   return new Error(`Cannot merge sources: duplicate ${kind} "${name}".`);

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { CortexConfig } from '@cortex/core';
-import { findLanguageTemplateDir } from '@cortex/codegen';
+import type { CortexConfig } from '@cortex-docs/core';
+import { findLanguageTemplateDir } from '@cortex-docs/codegen';
 import {
   exportGeneratorTemplates,
   resolveGeneratorExportRoot,

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { NextResponse } from 'next/server';
-import { gitRepositoryUrl, normalizeRepositoryUrl } from '@cortex/core';
+import { gitRepositoryUrl, normalizeRepositoryUrl } from '@cortex-docs/core';
 import { locationExists } from '@/lib/load-location';
 import {
   buildToolInfos,
@@ -9,7 +9,7 @@ import {
   generateSetupSection,
   renderMcpTemplate,
   type McpToolInfo,
-} from '@cortex/mcp-gen';
+} from '@cortex-docs/mcp-gen';
 
 interface McpInfo {
   serverName: string;
@@ -48,7 +48,7 @@ export async function GET() {
     let configDir: string | undefined;
     if (configPath) {
       try {
-        const { ConfigLoader } = await import('@cortex/core');
+        const { ConfigLoader } = await import('@cortex-docs/core');
         const loader = new ConfigLoader();
         config = await loader.load(configPath);
         configDir = path.dirname(configPath);
@@ -59,7 +59,7 @@ export async function GET() {
 
     let spec;
     if (specPath && locationExists(specPath)) {
-      const { OpenAPIParser } = await import('@cortex/core');
+      const { OpenAPIParser } = await import('@cortex-docs/core');
       const parser = new OpenAPIParser();
       spec = await parser.parse(specPath);
     }
@@ -67,7 +67,7 @@ export async function GET() {
     let asyncApiSpec;
     if (asyncApiPath && locationExists(asyncApiPath)) {
       try {
-        const { AsyncAPIParser } = await import('@cortex/core');
+        const { AsyncAPIParser } = await import('@cortex-docs/core');
         const asyncParser = new AsyncAPIParser();
         asyncApiSpec = await asyncParser.parse(asyncApiPath);
       } catch {
@@ -79,7 +79,7 @@ export async function GET() {
     const graphqlPath = process.env.CORTEX_GRAPHQL_PATH;
     if (graphqlPath && locationExists(graphqlPath)) {
       try {
-        const { GraphQLParser } = await import('@cortex/core');
+        const { GraphQLParser } = await import('@cortex-docs/core');
         const gqlParser = new GraphQLParser();
         const graphqlSource = config?.sources?.find(
           (source: { type?: string; spec?: string }) =>
@@ -95,7 +95,7 @@ export async function GET() {
     const openRpcPath = process.env.CORTEX_OPENRPC_PATH;
     if (openRpcPath && locationExists(openRpcPath)) {
       try {
-        const { OpenRpcParser } = await import('@cortex/core');
+        const { OpenRpcParser } = await import('@cortex-docs/core');
         const openRpcParser = new OpenRpcParser();
         openRpcSpec = await openRpcParser.parse(openRpcPath);
       } catch {

@@ -44,13 +44,13 @@ cortex/
   e2e/                      Playwright E2E tests
 
   packages/
-    core/                   @cortex/core
-    codegen/                @cortex/codegen
-    cli/                    @cortex/cli
-    mcp-gen/                @cortex/mcp-gen
-    docs-ui/                @cortex/docs-ui
-    docs-site/              @cortex/docs-site
-    demo-api/               @cortex/demo-api Cloudflare Worker
+    core/                   @cortex-docs/core
+    codegen/                @cortex-docs/codegen
+    cli/                    @cortex-docs/cli
+    mcp-gen/                @cortex-docs/mcp-gen
+    docs-ui/                @cortex-docs/docs-ui
+    docs-site/              @cortex-docs/docs-site
+    demo-api/               @cortex-docs/demo-api Cloudflare Worker
 ```
 
 ### Package Dependency Graph
@@ -72,21 +72,21 @@ Build order is enforced by Turborepo — `npm run build` handles it automaticall
 
 ### Package Overview
 
-| Package             | Purpose                                           | Tech                                                   |
-| ------------------- | ------------------------------------------------- | ------------------------------------------------------ |
-| `@cortex/core`      | OpenAPI parsing, config loading, naming utilities | `@apidevtools/swagger-parser`, `zod`, `js-yaml`        |
-| `@cortex/codegen`   | SDK code generation engine with language plugins  | Programmatic string templates                          |
-| `@cortex/cli`       | Command-line interface                            | `nest-commander` (NestJS)                              |
-| `@cortex/mcp-gen`   | MCP server code generation                        | Programmatic templates                                 |
-| `@cortex/docs-ui`   | API reference documentation viewer                | Next.js 16, `@scalar/api-reference-react`, Tailwind v4 |
-| `@cortex/docs-site` | Cortex Docs product documentation configuration   | Markdown and the Cortex Docs CLI                       |
-| `@cortex/demo-api`  | Public demo API                                   | Cloudflare Workers and Web APIs                        |
+| Package                  | Purpose                                           | Tech                                                   |
+| ------------------------ | ------------------------------------------------- | ------------------------------------------------------ |
+| `@cortex-docs/core`      | OpenAPI parsing, config loading, naming utilities | `@apidevtools/swagger-parser`, `zod`, `js-yaml`        |
+| `@cortex-docs/codegen`   | SDK code generation engine with language plugins  | Programmatic string templates                          |
+| `@cortex-docs/cli`       | Command-line interface                            | `nest-commander` (NestJS)                              |
+| `@cortex-docs/mcp-gen`   | MCP server code generation                        | Programmatic templates                                 |
+| `@cortex-docs/docs-ui`   | API reference documentation viewer                | Next.js 16, `@scalar/api-reference-react`, Tailwind v4 |
+| `@cortex-docs/docs-site` | Cortex Docs product documentation configuration   | Markdown and the Cortex Docs CLI                       |
+| `@cortex-docs/demo-api`  | Public demo API                                   | Cloudflare Workers and Web APIs                        |
 
 ## Development Workflow
 
 ### Docs UI Development Server
 
-`npm run --workspace=@cortex/docs-ui dev` runs a local simulation of `cortex docs serve`.
+`npm run --workspace=@cortex-docs/docs-ui dev` runs a local simulation of `cortex docs serve`.
 
 The command uses the Cloudflare Workers runtime for the demo API.
 
@@ -118,13 +118,13 @@ To reset the test project, delete `test-project/` and re-run the dev command:
 
 ```bash
 rm -rf test-project
-npm run --workspace=@cortex/docs-ui dev
+npm run --workspace=@cortex-docs/docs-ui dev
 ```
 
 To run only the Next.js server without the orchestration (e.g., if you already have the mock server running):
 
 ```bash
-npm run --workspace=@cortex/docs-ui dev:next
+npm run --workspace=@cortex-docs/docs-ui dev:next
 ```
 
 ### Cloudflare demo
@@ -137,19 +137,19 @@ The public demo uses two Cloudflare Workers:
 Run the API Worker without the docs UI:
 
 ```bash
-npm run --workspace=@cortex/demo-api dev
+npm run --workspace=@cortex-docs/demo-api dev
 ```
 
 Build the docs UI for the Cloudflare runtime:
 
 ```bash
-npm run --workspace=@cortex/docs-ui demo:build
+npm run --workspace=@cortex-docs/docs-ui demo:build
 ```
 
 Preview the complete docs UI Worker locally:
 
 ```bash
-npm run --workspace=@cortex/docs-ui demo:preview
+npm run --workspace=@cortex-docs/docs-ui demo:preview
 ```
 
 ### Building
@@ -341,7 +341,7 @@ The spec is served via the `/api/spec` route, which reads the file path from the
 ## Docs Site Development Server
 
 ```bash
-npm run --workspace=@cortex/docs-site dev
+npm run --workspace=@cortex-docs/docs-site dev
 ```
 
 Starts the product documentation site locally on `:3200` with hot reload. Edit a Markdown file in `packages/docs-site/docs/` to update a page.

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
-import { OpenAPIParser } from '@cortex/core';
-import type { CortexConfig } from '@cortex/core';
+import { OpenAPIParser } from '@cortex-docs/core';
+import type { CortexConfig } from '@cortex-docs/core';
 import { McpGenerator } from '../src/generator';
 import { mapOperationsToTools } from '../src/tool-mapper';
 

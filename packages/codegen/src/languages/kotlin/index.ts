@@ -1,4 +1,4 @@
-import { toPascalCase, toCamelCase, toUpperSnakeCase } from '@cortex/core';
+import { toPascalCase, toCamelCase, toUpperSnakeCase } from '@cortex-docs/core';
 import { TemplateBasedPlugin, type LanguageTemplateConfig } from '../template-plugin';
 
 export class KotlinPlugin extends TemplateBasedPlugin {

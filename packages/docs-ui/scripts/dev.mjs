@@ -16,6 +16,7 @@ const DEMO_API_CONFIG = join(WORKSPACE_ROOT, 'packages', 'demo-api', 'wrangler.j
 
 const PORT = process.env.PORT || '3012';
 const MOCK_PORT = process.env.MOCK_PORT || '4010';
+const MOCK_START_TIMEOUT_MS = 15_000;
 
 function log(tag, msg) {
   const color =
@@ -69,6 +70,16 @@ function initTestProject() {
     writeFileSync(
       asyncApiPath,
       content.replace(/url:\s*wss?:\/\/[^\n]+/, `url: ${websocketUrl}`),
+      'utf-8',
+    );
+  }
+
+  const restIntroPath = join(TEST_PROJECT_DIR, 'docs', 'REST_INTRO.md');
+  if (existsSync(restIntroPath)) {
+    const content = readFileSync(restIntroPath, 'utf-8');
+    writeFileSync(
+      restIntroPath,
+      content.replace(/(## Base URL\s+```(?:\w+)?\s*)https?:\/\/[^\s`]+/, `$1${apiUrl}`),
       'utf-8',
     );
   }
@@ -128,6 +139,54 @@ async function isMockHealthy() {
   }
 }
 
+function waitForMockHealth(proc) {
+  return new Promise((resolveHealth, rejectHealth) => {
+    const startedAt = Date.now();
+    let timer;
+    let finished = false;
+
+    const finish = (error) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      proc.off('exit', onExit);
+      proc.off('error', onError);
+      if (error) rejectHealth(error);
+      else resolveHealth();
+    };
+
+    const onExit = (code, signal) => {
+      finish(
+        new Error(
+          `Demo API Worker stopped before it became healthy (${signal ? `signal ${signal}` : `exit code ${code ?? 1}`}).`,
+        ),
+      );
+    };
+    const onError = (error) =>
+      finish(new Error(`Failed to start the demo API Worker: ${error.message}`));
+
+    const check = async () => {
+      if (await isMockHealthy()) {
+        finish();
+        return;
+      }
+      if (Date.now() - startedAt >= MOCK_START_TIMEOUT_MS) {
+        finish(
+          new Error(
+            `Demo API Worker did not become healthy within ${MOCK_START_TIMEOUT_MS / 1000}s.`,
+          ),
+        );
+        return;
+      }
+      timer = setTimeout(check, 100);
+    };
+
+    proc.once('exit', onExit);
+    proc.once('error', onError);
+    void check();
+  });
+}
+
 function signalProcess(proc, signal, processGroup = false) {
   if (!proc?.pid || proc.exitCode !== null || proc.signalCode !== null) return;
   try {
@@ -185,6 +244,13 @@ async function startDemoApiWorker() {
     if (code && code !== 0) logError('mock', `Exited with code ${code}`);
   });
   proc.on('error', (err) => logError('mock', `Failed to start: ${err.message}`));
+  try {
+    await waitForMockHealth(proc);
+  } catch (error) {
+    await stopProcess(proc);
+    throw error;
+  }
+  log('mock', `Demo API Worker is healthy on :${MOCK_PORT}`);
   return proc;
 }
 
@@ -213,6 +279,8 @@ function watchPackageSources(onChange) {
       filename.includes('node_modules/') ||
       filename.includes('/coverage/') ||
       filename.includes('coverage/') ||
+      filename.includes('/.wrangler/') ||
+      filename.includes('.wrangler/') ||
       filename.includes('/.next/') ||
       filename.includes('.next/') ||
       filename.includes('/generated/')
@@ -238,7 +306,7 @@ function rebuildLibraries() {
   log('build', 'Rebuilding library packages...');
   try {
     execSync(
-      'npx turbo build --only --filter=@cortex/core --filter=@cortex/codegen --filter=@cortex/mcp-gen --filter=@cortex/cli',
+      'npx turbo build --only --filter=@cortex-docs/core --filter=@cortex-docs/codegen --filter=@cortex-docs/mcp-gen --filter=@cortex-docs/cli',
       { cwd: WORKSPACE_ROOT, stdio: 'inherit' },
     );
     log('build', 'Rebuild complete');
