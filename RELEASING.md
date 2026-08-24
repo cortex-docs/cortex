@@ -39,18 +39,20 @@ The release workflow performs these actions:
 
 1. Read the current CLI version and the latest npm version.
 2. Increase the patch number in the `x.x.x` version.
-3. Set the same version in all public package manifests.
+3. Set the version in the CLI and product docs workspace manifests.
 4. Run `copilot -p` to create the release notes.
 5. Update `CHANGELOG.md` with the release notes.
 6. Commit the version and changelog changes to `main`.
 7. Create the matching `vX.X.X` tag.
-8. Publish the five public workspace packages to npm.
+8. Publish only `@cortex-docs/cli` from the workspaces.
 9. Generate `@cortex-docs/mcp` from the product documentation.
 10. Publish `@cortex-docs/mcp` with the same release version.
 11. Build the product documentation with OpenNext.
 12. Deploy the release to `docs.cortexdocs.dev`.
 
 The release stops before the product docs deployment if an npm publication fails. A rerun skips package versions that already exist.
+
+The CLI tarball includes the internal workspace packages that it uses. The release does not publish these workspaces as separate npm packages.
 
 The release notes always contain these sections:
 
