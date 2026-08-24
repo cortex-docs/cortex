@@ -60,10 +60,13 @@ Add these GitHub Actions repository secrets:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ZONE_ID`
 - `NPM_TOKEN`
+- `PERSONAL_ACCESS_TOKEN`
 
 Create a protected GitHub environment named `npm`. Permit the release workflow to use this environment.
 
-Enable Copilot CLI for GitHub Actions in the organization policy. The release workflow uses the built-in `GITHUB_TOKEN` for Copilot requests.
+Create `PERSONAL_ACCESS_TOKEN` from a user account that has a Copilot subscription. Give the token the `Copilot Requests` account permission.
+
+The release workflow provides this secret to Copilot CLI as `COPILOT_GITHUB_TOKEN`.
 
 Protect `pre-release` with these required checks:
 
