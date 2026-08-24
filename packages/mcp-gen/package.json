@@ -1,6 +1,6 @@
 {
   "name": "@cortex/mcp-gen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Model Context Protocol server generator for Cortex Docs",
   "license": "MIT",
   "repository": {
@@ -46,7 +46,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@cortex/core": "0.1.0",
+    "@cortex/core": "0.1.1",
     "eta": "^3.5.0"
   },
   "devDependencies": {
