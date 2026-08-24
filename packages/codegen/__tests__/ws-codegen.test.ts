@@ -85,4 +85,12 @@ describe('WebSocket Codegen — resilience', () => {
     expect(client.content).toContain('heartbeatInterval: options.heartbeatInterval ?? 0');
     expect(client.content).not.toContain("{ type: 'ping' }");
   });
+
+  it('makes C# disconnect safe after a remote close', async () => {
+    const files = await generateWs('csharp', heartbeat);
+    const client = files.find((file) => file.path.includes('ws-client'))!;
+    expect(client.content).toContain('catch (WebSocketException) { }');
+    expect(client.content).toContain('catch (ObjectDisposedException) { }');
+    expect(client.content).toContain('if (!_shouldReconnect) return;');
+  });
 });

@@ -76,7 +76,10 @@ async function verifyTransportResilience(language) {
 
 async function runLanguage(language, name, cmd, opts) {
   await resetTransportFaults();
-  tryRun(name, cmd, { timeout: 90000, ...opts });
+  // Cold Gradle and Cargo caches on GitHub-hosted runners can take more than
+  // 90 seconds even when the build succeeds. Keep the language command below
+  // the five-minute command limit used by run(), but do not cut it off early.
+  tryRun(name, cmd, { timeout: 300000, ...opts });
   await verifyTransportResilience(language);
 }
 

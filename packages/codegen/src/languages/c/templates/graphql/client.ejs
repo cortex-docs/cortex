@@ -296,8 +296,24 @@ static void* gql_sub_thread(void* arg) {
       "\r\n", path, host, port);
     send(sock, handshake, strlen(handshake), MSG_NOSIGNAL);
 
+    /* Read only through the HTTP upgrade headers. A peer can send its first
+       WebSocket frame in the same TCP packet as the 101 response. Reading a
+       large buffer here would discard that frame and make reconnect behavior
+       depend on packet timing. */
     char buf[4096];
-    if (recv(sock, buf, sizeof(buf) - 1, 0) <= 0) connection_lost = 1;
+    size_t handshake_len = 0;
+    while (!connection_lost && handshake_len < sizeof(buf) - 1) {
+      ssize_t received = recv(sock, buf + handshake_len, 1, 0);
+      if (received <= 0) {
+        connection_lost = 1;
+        break;
+      }
+      handshake_len += (size_t)received;
+      if (handshake_len >= 4 &&
+          memcmp(buf + handshake_len - 4, "\r\n\r\n", 4) == 0) break;
+    }
+    buf[handshake_len] = '\0';
+    if (!connection_lost && strstr(buf, " 101 ") == NULL) connection_lost = 1;
 
     if (!connection_lost) gql_ws_send(sock, "{\"type\":\"connection_init\"}");
 
