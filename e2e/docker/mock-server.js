@@ -440,14 +440,22 @@ async function startServer() {
 
   // === 3. GraphQL Subscriptions via graphql-ws ===
   wsGql = new WebSocketServer({ noServer: true, perMessageDeflate: false });
-  useServer({ schema }, wsGql);
-  wsGql.on('connection', (ws) => {
+  useServer(
+    {
+      schema,
+      onConnect: (ctx) => {
+        if (!forceNextGqlDisconnect) return;
+        forceNextGqlDisconnect = false;
+        transportStats.gqlForcedDisconnects++;
+        // Close after connection_init so clients can finish the WebSocket upgrade
+        // and exercise their reconnect path instead of racing the HTTP handshake.
+        setTimeout(() => ctx.extra.socket.close(4205, 'E2E initial reconnect test'), 0);
+      },
+    },
+    wsGql,
+  );
+  wsGql.on('connection', () => {
     transportStats.gqlConnections++;
-    if (forceNextGqlDisconnect) {
-      forceNextGqlDisconnect = false;
-      transportStats.gqlForcedDisconnects++;
-      ws.close(4205, 'E2E initial reconnect test');
-    }
   });
 
   // Route WebSocket upgrades by path
