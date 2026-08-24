@@ -3,15 +3,14 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const publicPackages = ['core', 'codegen', 'mcp-gen', 'docs-ui', 'cli'];
-const versionedPackages = [...publicPackages, 'docs-site'];
 const publishedArgument = process.argv.find((argument) => argument.startsWith('--published='));
 const checkOnly = process.argv.includes('--check');
 const publishedVersion = publishedArgument?.slice('--published='.length).trim();
 
 function parseVersion(value, label) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value || '');
-  if (!match) throw new Error(`${label} must use the x.x.x format. Received: ${value || '(empty)'}`);
+  if (!match)
+    throw new Error(`${label} must use the x.x.x format. Received: ${value || '(empty)'}`);
   return match.slice(1).map(Number);
 }
 
@@ -27,13 +26,9 @@ function readManifest(name) {
   return { path, value: JSON.parse(readFileSync(path, 'utf8')) };
 }
 
-const manifests = new Map(versionedPackages.map((name) => [name, readManifest(name)]));
-const currentVersions = publicPackages.map((name) => manifests.get(name).value.version);
-if (new Set(currentVersions).size !== 1) {
-  throw new Error(`Public package versions differ: ${currentVersions.join(', ')}`);
-}
-
-const current = parseVersion(currentVersions[0], 'The current package version');
+const cli = readManifest('cli');
+const docsSite = readManifest('docs-site');
+const current = parseVersion(cli.value.version, 'The current CLI version');
 let base = current;
 if (publishedVersion) {
   const published = parseVersion(publishedVersion, 'The published CLI version');
@@ -42,18 +37,11 @@ if (publishedVersion) {
 const nextVersion = `${base[0]}.${base[1]}.${base[2] + 1}`;
 
 if (!checkOnly) {
-  const publicNames = new Set(publicPackages.map((name) => `@cortex-docs/${name}`));
-  for (const { path, value } of manifests.values()) {
-    value.version = nextVersion;
-    for (const dependencyType of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
-      const dependencies = value[dependencyType];
-      if (!dependencies) continue;
-      for (const dependencyName of Object.keys(dependencies)) {
-        if (publicNames.has(dependencyName)) dependencies[dependencyName] = nextVersion;
-      }
-    }
-    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  }
+  cli.value.version = nextVersion;
+  docsSite.value.version = nextVersion;
+  docsSite.value.dependencies['@cortex-docs/cli'] = nextVersion;
+  writeFileSync(cli.path, `${JSON.stringify(cli.value, null, 2)}\n`, 'utf8');
+  writeFileSync(docsSite.path, `${JSON.stringify(docsSite.value, null, 2)}\n`, 'utf8');
 }
 
 if (process.env.GITHUB_OUTPUT && !checkOnly) {

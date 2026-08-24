@@ -65,14 +65,14 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add CHANGELOG.md package-lock.json packages/*/package.json
+          git add CHANGELOG.md package-lock.json packages/cli/package.json packages/docs-site/package.json
           git commit -m "chore(release): v${RELEASE_VERSION}"
           git tag -a "v${RELEASE_VERSION}" -m "Cortex Docs v${RELEASE_VERSION}"
           git push origin HEAD:main "v${RELEASE_VERSION}"
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   publish:
-    name: publish packages and deploy docs
+    name: publish CLI and docs MCP, then deploy docs
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -92,11 +92,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run pack:check
-      - name: Publish packages that are not in npm
+      - name: Publish the Cortex CLI
         env:
           GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: node scripts/publish-packages.mjs "${{ needs.prepare.outputs.version }}"
+        run: node scripts/publish-cli.mjs "${{ needs.prepare.outputs.version }}"
       - name: Publish the product docs MCP package
         env:
           GITHUB_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
