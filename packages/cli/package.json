@@ -59,10 +59,10 @@
     "rxjs": "^7.8.0"
   },
   "bundleDependencies": [
-    "@cortex-docs/codegen",
     "@cortex-docs/core",
-    "@cortex-docs/docs-ui",
-    "@cortex-docs/mcp-gen"
+    "@cortex-docs/codegen",
+    "@cortex-docs/mcp-gen",
+    "@cortex-docs/docs-ui"
   ],
   "devDependencies": {
     "@types/glob": "^8.1.0",
