@@ -1,6 +1,6 @@
 {
   "name": "@cortex/codegen",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SDK code generation engine for Cortex Docs",
   "license": "MIT",
   "repository": {
@@ -48,7 +48,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@cortex/core": "0.1.0",
+    "@cortex/core": "0.1.1",
     "eta": "^3.5.0",
     "graphql": "^16.14.0",
     "js-yaml": "^4.3.1"
