@@ -138,8 +138,8 @@ describe('REST', () => {
     expect(raw.content_type).toBe('application/pdf');
   });
 
-  test('rest.pets.delete()', async () => {
-    await rest.pets.delete('pet-1');
+  test('rest.pets._delete()', async () => {
+    await rest.pets._delete('pet-1');
   });
 
   test('rest.owners.list()', async () => {

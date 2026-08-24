@@ -77,7 +77,7 @@ class TestKotlin {
 
         @Test
         fun `rest pets delete`() {
-            rest.pets.delete("pet-1")
+            rest.pets._delete("pet-1")
         }
 
         @Test

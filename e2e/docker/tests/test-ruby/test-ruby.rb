@@ -110,7 +110,7 @@ class TestREST < Minitest::Test
   end
 
   def test_rest_pets_delete
-    @rest.pets.delete('pet-1')
+    @rest.pets._delete('pet-1')
   end
 
   def test_rest_owners_list

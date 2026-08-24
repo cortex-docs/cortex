@@ -162,6 +162,14 @@ describe('MCP Server', () => {
       spec: fixturePath,
       output: { base_dir: './generated' },
       languages: [{ language: 'typescript', package_name: 'test', output_dir: './out' }],
+      sources: [
+        {
+          title: 'Petstore API',
+          type: 'openapi-spec',
+          spec: fixturePath,
+          languages: [{ language: 'typescript', package_name: 'test' }],
+        },
+      ],
     };
 
     const generator = new McpGenerator();

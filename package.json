@@ -15,7 +15,7 @@
     "format:check": "prettier --check --no-error-on-unmatched-pattern \"packages/**/*.{ts,tsx,js,mjs,json,md,yml,yaml}\" \"e2e/**/*.ts\" \"*.{ts,js,mjs,json,md,yml,yaml}\" \".github/**/*.{yml,yaml,md}\"",
     "clean": "turbo run clean",
     "test:sdk": "docker build -t cortex-base -f Dockerfile . && docker compose -f e2e/docker/docker-compose.yml up --build --abort-on-container-exit --exit-code-from sdk-tests",
-    "test:publish:e2e": "docker build -t cortex-base -f Dockerfile . && docker compose -f e2e/publish/docker-compose.yml up --build --abort-on-container-exit --exit-code-from publish-tests",
+    "test:publish:e2e": "docker build -t cortex-base -f Dockerfile . && docker compose -f e2e/publish/docker-compose.yml down --volumes --remove-orphans && docker compose -f e2e/publish/docker-compose.yml up --build --abort-on-container-exit --exit-code-from publish-tests",
     "pack:check": "npm pack --dry-run --workspace=@cortex/core && npm pack --dry-run --workspace=@cortex/codegen && npm pack --dry-run --workspace=@cortex/mcp-gen && npm pack --dry-run --workspace=@cortex/docs-ui && npm pack --dry-run --workspace=@cortex/cli"
   },
   "devDependencies": {

@@ -71,6 +71,9 @@ function assertGitHubVersion(language, version) {
 function createProject() {
   fs.rmSync(WORK, { recursive: true, force: true });
   fs.mkdirSync(WORK, { recursive: true });
+  for (const entry of fs.readdirSync('/shared')) {
+    fs.rmSync(path.join('/shared', entry), { recursive: true, force: true });
+  }
   fs.mkdirSync('/shared/nuget', { recursive: true });
 
   const spec = yaml.load(fs.readFileSync(path.join(ROOT, 'packages/core/__fixtures__/petstore.yaml'), 'utf8'));
@@ -378,7 +381,7 @@ function testCsharp() {
 `);
   run('dotnet', ['add', 'package', 'Cortex.E2E.Sdk', '--version', VERSION], { cwd: dir });
   write(path.join(dir, 'Program.cs'), `
-using Cortex.E2E.Sdk;
+using CortexE2ESdk;
 using var client = new PetstoreApi("${API_URL}");
 var result = await client.Pets.ListAsync(new Dictionary<string, string> { ["limit"] = "1" });
 if (result.Data.Count == 0) throw new Exception("C# list returned no data");

@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text;
-using TestProject.Sdk;
-using TestProject.Sdk.Models;
-using Gql = TestProject.Sdk.Gql;
-using Grpc = TestProject.Sdk.Grpc;
+using TestProjectSdk;
+using TestProjectSdk.Models;
+using Gql = TestProjectSdk.Gql;
+using Grpc = TestProjectSdk.Grpc;
 using Xunit;
 
 namespace TestCsharp;

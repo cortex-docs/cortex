@@ -126,7 +126,7 @@ mod tests {
     #[tokio::test]
     async fn rest_delete_pet() {
         let client = RestApiV1::new(&base_url());
-        client.pets.delete(&client, "pet-1").await.unwrap();
+        client.pets._delete(&client, "pet-1").await.unwrap();
     }
 
     #[tokio::test]

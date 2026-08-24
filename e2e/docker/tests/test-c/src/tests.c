@@ -180,7 +180,7 @@ int main(void) {
   TEST("rest.pets.delete()")
     sdk_client_t rest;
     sdk_client_init(&rest, MOCK_URL);
-    sdk_pets_delete_(&rest, "pet-1");
+    sdk_pets__delete(&rest, "pet-1");
     sdk_client_free(&rest);
   END_TEST
 

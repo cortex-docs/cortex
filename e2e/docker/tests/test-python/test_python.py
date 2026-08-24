@@ -96,7 +96,7 @@ class TestREST:
         assert raw.content_type == 'application/pdf'
 
     def test_pets_delete(self):
-        rest.pets.delete('pet-1')
+        rest.pets._delete('pet-1')
 
     def test_owners_list(self):
         r = rest.owners.list()

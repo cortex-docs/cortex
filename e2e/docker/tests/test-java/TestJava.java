@@ -82,7 +82,7 @@ public class TestJava {
 
     @Test
     void restPetsDelete() throws Exception {
-        rest.getPets().delete("pet-1");
+        rest.getPets()._delete("pet-1");
     }
 
     @Test
