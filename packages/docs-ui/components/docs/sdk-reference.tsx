@@ -2099,6 +2099,7 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
         languages={[...(data?.languages ?? SUPPORTED_LANGUAGES)]}
         onSelectLanguage={selectLanguage}
         selectedLanguage={language}
+        onTryNow={activeItem && getTryNowConfig() ? () => setTryNowOpen(true) : undefined}
       />
 
       {/* Try Now modal — rendered at root level for full-viewport blur */}
@@ -2205,6 +2206,7 @@ function MobileCodePanel({
   languages,
   onSelectLanguage,
   selectedLanguage,
+  onTryNow,
 }: {
   snippet: string;
   language: string;
@@ -2212,31 +2214,45 @@ function MobileCodePanel({
   languages: string[];
   onSelectLanguage: (lang: string) => void;
   selectedLanguage: string;
+  onTryNow?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className={cn('fixed inset-x-0 bottom-0 z-30 xl:hidden', expanded ? 'top-1/3' : '')}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-between border-t bg-muted/40 px-4 py-2 text-muted-foreground"
-      >
-        <span className="font-mono text-xs">{activeLabel ?? 'SDK Snippet'}</span>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={cn('transition-transform', expanded ? 'rotate-180' : '')}
+      <div className="flex w-full items-center border-t bg-muted/40 text-muted-foreground">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex min-w-0 flex-1 items-center justify-between px-4 py-2"
         >
-          <path d="m18 15-6-6-6 6" />
-        </svg>
-      </button>
+          <span className="truncate font-mono text-xs">{activeLabel ?? 'SDK Snippet'}</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={cn('shrink-0 transition-transform', expanded ? 'rotate-180' : '')}
+          >
+            <path d="m18 15-6-6-6 6" />
+          </svg>
+        </button>
+        {onTryNow && (
+          <button
+            onClick={onTryNow}
+            className="mr-2 inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Try now
+          </button>
+        )}
+      </div>
 
       {expanded && (
         <div className="flex h-full flex-col bg-muted/40">
