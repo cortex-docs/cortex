@@ -258,6 +258,12 @@ function startDocsServe() {
   log('serve', `Starting cortex docs serve on http://localhost:${PORT}`);
   const proc = spawn('node', [CLI_MAIN, 'docs', 'serve', '--port', PORT], {
     cwd: TEST_PROJECT_DIR,
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL:
+        process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL ||
+        `http://localhost:${MOCK_PORT}/assets/built-by-cortex.svg`,
+    },
     detached: false,
     stdio: 'inherit',
   });
