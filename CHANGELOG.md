@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.5] - 2026-08-24
+
+### New Features
+
+- The "Built by Cortex" badge on docs pages is now served as an image from a Cloudflare-hosted endpoint instead of inline markup.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
 ## [0.1.4] - 2026-08-24
 
 ### New Features
