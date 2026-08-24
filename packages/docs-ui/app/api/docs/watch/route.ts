@@ -16,6 +16,10 @@ const IGNORE = /[\\/](generated|node_modules|\.next)[\\/]/;
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  if (process.env.CORTEX_CLOUDFLARE === '1') {
+    return new Response(null, { status: 204 });
+  }
+
   const projectDir = findProjectDir();
 
   const watchers: fs.FSWatcher[] = [];

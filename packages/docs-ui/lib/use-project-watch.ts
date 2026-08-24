@@ -35,6 +35,8 @@ function disconnect() {
 
 export function useProjectWatch(onChange: () => void) {
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_CORTEX_CLOUDFLARE === '1') return;
+
     listeners.add(onChange);
     refCount++;
     if (refCount === 1) connect();

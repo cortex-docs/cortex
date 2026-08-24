@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["src"]
+}

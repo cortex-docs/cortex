@@ -4,8 +4,8 @@
   "private": true,
   "description": "Product documentation for Cortex Docs",
   "scripts": {
-    "dev": "cortex docs serve --port 3200",
-    "build": "cortex docs build --output .cortex/docs",
+    "dev": "node ../cli/dist/main.js docs serve --port 3200",
+    "build": "node ../cli/dist/main.js docs build --output .cortex/docs",
     "clean": "rm -rf .cortex"
   },
   "dependencies": {

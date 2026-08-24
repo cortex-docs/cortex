@@ -10,3 +10,4 @@ test-project/
 packages/codegen/.pytest_cache/
 packages/codegen/src/languages/*/templates/
 packages/mcp-gen/templates/
+packages/docs-ui/next-env.d.ts

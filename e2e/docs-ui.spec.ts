@@ -19,8 +19,17 @@ test.describe('Docs UI', () => {
 
   test('displays server URL', async ({ page }) => {
     await page.goto('/api-reference');
-    await expect(page.locator('text=https://api.petstore.example.com/v1').first()).toBeVisible({
+    await expect(page.locator('text=http://localhost:4010').first()).toBeVisible({
       timeout: 15000,
+    });
+  });
+
+  test('uses the Worker-native demo API', async ({ request }) => {
+    const response = await request.get('http://localhost:4010/health');
+    expect(response.ok()).toBeTruthy();
+    await expect(response.json()).resolves.toEqual({
+      status: 'ok',
+      runtime: 'cloudflare-worker',
     });
   });
 

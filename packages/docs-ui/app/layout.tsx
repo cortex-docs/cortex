@@ -165,12 +165,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body suppressHydrationWarning>
         {primaryCss && <style data-primary="" dangerouslySetInnerHTML={{ __html: primaryCss }} />}
         <SiteConfigProvider config={siteConfig}>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme={siteConfig.theme ?? 'system'}
-            enableSystem
-            disableTransitionOnChange
-          >
+          <ThemeProvider defaultTheme={siteConfig.theme ?? 'system'} disableTransitionOnChange>
             <SearchProvider>{children}</SearchProvider>
           </ThemeProvider>
         </SiteConfigProvider>

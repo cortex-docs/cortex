@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [pre-release, main]
   pull_request:
+    branches: [pre-release, main]
 
 permissions:
   contents: read
@@ -13,13 +14,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  branch-flow:
+    name: branch-flow
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Enforce the promotion path
+        env:
+          PR_BASE: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.head_ref }}
+        run: node scripts/check-pr-flow.mjs
+
   quality:
     name: quality
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -33,12 +46,12 @@ jobs:
 
   browser:
     name: browser
-    needs: quality
+    needs: [branch-flow, quality]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -46,8 +59,24 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/
           if-no-files-found: ignore
+
+  integration:
+    name: integration
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    needs: [branch-flow, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:sdk
+      - run: npm run test:publish:e2e
