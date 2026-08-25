@@ -18,6 +18,23 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.14] - 2026-08-25
+
+### New Features
+
+- The CLI now supports `--version`/`-V` to print the installed Cortex Docs version.
+
+### Bug Fixes
+
+- Fixed the published CLI package so it installs with all required runtime dependencies and runs correctly (the previous release was not runnable after install).
+- Fixed a hydration warning triggered by custom `<head>` HTML injected via site configuration.
+
+### Improvements
+
+- Docs and SDK pages are now pre-rendered at build time instead of forced dynamic rendering, improving page load performance.
+- Increased the Cloudflare Worker CPU time limit to prevent timeouts on larger documentation builds.
+- Enabled cache interception with a static-assets incremental cache for faster repeat responses on the deployed docs site.
+
 ## [0.1.13] - 2026-08-25
 
 ### New Features
