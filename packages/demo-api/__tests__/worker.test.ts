@@ -25,6 +25,7 @@ describe('demo API Worker', () => {
     expect(body).toContain('<title id="title">Built with Cortex</title>');
     expect(body).toContain('>Built with</text>');
     expect(body).toContain('<text x="85"');
+    expect(body).toContain('font-size="12" font-weight="600">Cortex</text>');
     expect(body).toContain('width="128" height="20"');
     expect(body).not.toContain('<rect');
   });
