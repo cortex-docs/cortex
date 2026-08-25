@@ -4,14 +4,16 @@ Cortex Docs generates typed SDKs, interactive documentation, and Model Context P
 
 Generated SDKs include HTTP timeouts, chunked-response streams, connection recovery, WebSocket heartbeats, and gRPC streams.
 
+Explore the generated documentation, SDK references, and MCP tools in the [live Cortex Docs demo](https://demo.cortexdocs.dev).
+
 ## Main Features
 
 - Combine multiple API specifications in one project and one generated SDK.
 - Generate typed clients for 11 programming languages.
 - Build interactive documentation for each API source.
 - Add custom Markdown pages and SDK guides to the documentation site.
-- Generate MCP tools and resources from API specifications, custom Markdown pages, and SDK guides.
-- Publish generated packages to language registries and GitHub repositories.
+- Generate MCP server and resources from API specifications, custom Markdown pages, and SDK guides.
+- Publish generated packages and MCP to language registries and GitHub repositories.
 
 ## Supported API Sources
 
