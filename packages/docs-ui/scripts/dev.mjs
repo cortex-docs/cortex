@@ -260,10 +260,11 @@ function startDocsServe() {
     cwd: TEST_PROJECT_DIR,
     env: {
       ...process.env,
-      NEXT_PUBLIC_CORTEX_BUILT_BY_LOGO_URL:
+      NEXT_PUBLIC_CORTEX_BUILT_WITH_LOGO_URL:
+        process.env.NEXT_PUBLIC_CORTEX_BUILT_WITH_LOGO_URL ||
         process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_LOGO_URL ||
         process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL ||
-        `http://localhost:${MOCK_PORT}/images/built-by-cortex.svg`,
+        `http://localhost:${MOCK_PORT}/images/built-with-cortex.svg`,
     },
     detached: false,
     stdio: 'inherit',

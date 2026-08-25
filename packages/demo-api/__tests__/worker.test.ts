@@ -12,9 +12,9 @@ describe('demo API Worker', () => {
     await expect(response.json()).resolves.toEqual({ status: 'ok', runtime: 'cloudflare-worker' });
   });
 
-  it('serves the transparent Built by Cortex logo as a cached Cloudflare asset', async () => {
+  it('serves the transparent Built with Cortex logo as a cached Cloudflare asset', async () => {
     const response = await worker.fetch(
-      new Request('https://static.cortexdocs.dev/images/built-by-cortex.svg'),
+      new Request('https://static.cortexdocs.dev/images/built-with-cortex.svg'),
     );
     const body = await response.text();
 
@@ -22,19 +22,23 @@ describe('demo API Worker', () => {
     expect(response.headers.get('Content-Type')).toBe('image/svg+xml; charset=utf-8');
     expect(response.headers.get('Cache-Control')).toContain('max-age=86400');
     expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
-    expect(body).toContain('<title id="title">Built by Cortex</title>');
+    expect(body).toContain('<title id="title">Built with Cortex</title>');
+    expect(body).toContain('>Built with</text>');
     expect(body).toContain('width="128" height="20"');
     expect(body).not.toContain('<rect');
   });
 
-  it('redirects the old badge URL to the static image host', async () => {
-    const response = await request('/assets/built-by-cortex.svg', { redirect: 'manual' });
+  it.each(['/images/built-by-cortex.svg', '/assets/built-by-cortex.svg'])(
+    'redirects the old logo URL %s to the renamed static asset',
+    async (path) => {
+      const response = await request(path, { redirect: 'manual' });
 
-    expect(response.status).toBe(308);
-    expect(response.headers.get('Location')).toBe(
-      'https://static.cortexdocs.dev/images/built-by-cortex.svg',
-    );
-  });
+      expect(response.status).toBe(308);
+      expect(response.headers.get('Location')).toBe(
+        'https://static.cortexdocs.dev/images/built-with-cortex.svg',
+      );
+    },
+  );
 
   it('does not expose demo API routes on the static image host', async () => {
     const response = await worker.fetch(new Request('https://static.cortexdocs.dev/pets'));

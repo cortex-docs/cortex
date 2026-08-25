@@ -3,7 +3,7 @@
 import { use, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
-import { BuiltByCortexCard } from '@/components/docs/built-by-cortex-card';
+import { BuiltWithCortexCard } from '@/components/docs/built-with-cortex-card';
 import { DocsBreadcrumb, type BreadcrumbSegment } from '@/components/docs/docs-breadcrumb';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -250,7 +250,7 @@ export default function DocSlugPage({ params }: { params: Promise<{ slug: string
                 )}
                 {tocSpacer > 0 && <div style={{ height: tocSpacer }} aria-hidden="true" />}
                 <footer className="mt-12 flex justify-center pb-2">
-                  <BuiltByCortexCard />
+                  <BuiltWithCortexCard />
                 </footer>
               </>
             ) : !data ? (
