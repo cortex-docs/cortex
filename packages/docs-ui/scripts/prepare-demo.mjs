@@ -62,6 +62,11 @@ export function prepareDemo(apiUrl = process.env.CORTEX_DEMO_API_URL || 'http://
 
   cpSync(join(docsSiteDir, 'assets'), join(demoDir, 'assets'), { recursive: true });
   cpSync(join(docsSiteDir, 'docs'), join(demoDir, 'docs'), { recursive: true });
+  writeFileSync(
+    join(demoDir, 'assets', 'custom.css'),
+    ':root { --cortex-custom-head-loaded: yes; }\n',
+    'utf8',
+  );
 
   const languages = sourceLanguages();
   const config = {
@@ -72,6 +77,11 @@ export function prepareDemo(apiUrl = process.env.CORTEX_DEMO_API_URL || 'http://
     logoHeight: 24,
     showLogoDocsLabel: true,
     favicon: './assets/favicon.svg',
+    custom_head_html: [
+      '<meta name="theme-color" content="#ffffff">',
+      '<link rel="stylesheet" href="/assets/custom.css">',
+      "<script>document.documentElement.dataset.cortexCustomHead = 'loaded';</script>",
+    ].join('\n'),
     theme: 'system',
     primaryColor: '#ffffff',
     home: {

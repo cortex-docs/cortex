@@ -91,11 +91,29 @@ function initTestProject() {
     writeFileSync(openRpcPath, `${JSON.stringify(document, null, 2)}\n`, 'utf-8');
   }
 
-  const configContent = readFileSync(configPath, 'utf-8').replace(
+  let configContent = readFileSync(configPath, 'utf-8').replace(
     /endpoint:\s*https?:\/\/[^\n]+\/graphql/,
     `endpoint: ${apiUrl}/graphql`,
   );
+  if (!configContent.includes('\ncustom_head_html:')) {
+    configContent = configContent.replace(
+      /^home:/m,
+      [
+        'custom_head_html: |-',
+        '  <meta name="theme-color" content="#ffffff">',
+        '  <link rel="stylesheet" href="/assets/custom.css">',
+        "  <script>document.documentElement.dataset.cortexCustomHead = 'loaded';</script>",
+        'home:',
+      ].join('\n'),
+    );
+  }
   writeFileSync(configPath, configContent, 'utf-8');
+  mkdirSync(join(TEST_PROJECT_DIR, 'assets'), { recursive: true });
+  writeFileSync(
+    join(TEST_PROJECT_DIR, 'assets', 'custom.css'),
+    ':root { --cortex-custom-head-loaded: yes; }\n',
+    'utf-8',
+  );
   log('init', `Configured demo endpoints for ${apiUrl}`);
 }
 
