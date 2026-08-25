@@ -136,6 +136,19 @@ mcp:
 
 See [Custom Generators](/docs/custom-generators) for export commands, template data, and override rules.
 
+## Appearance Query Parameter
+
+Add `?appearance=dark` or `?appearance=light` to any documentation URL. The parameter selects the initial appearance for that page.
+
+```text
+/docs/quickstart?appearance=dark
+/api-reference?appearance=light
+```
+
+The parameter takes priority over the project `theme` value and the visitor's stored preference. The theme button can change the appearance after the page loads.
+
+Cortex ignores other `appearance` values.
+
 ## Custom Head HTML
 
 `custom_head_html` adds trusted HTML to the `<head>` element on every documentation page. The value can contain metadata, stylesheets, and analytics scripts.

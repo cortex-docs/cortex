@@ -6,12 +6,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 
 export type Theme = 'light' | 'dark' | 'system';
 type ResolvedTheme = Exclude<Theme, 'system'>;
+
+export function getAppearanceFromSearch(search: string): ResolvedTheme | undefined {
+  const appearance = new URLSearchParams(search).get('appearance');
+  return appearance === 'light' || appearance === 'dark' ? appearance : undefined;
+}
 
 interface ThemeContextValue {
   theme: Theme;
@@ -61,6 +67,7 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(defaultTheme);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>();
+  const initializedTheme = useRef(false);
 
   const setTheme = useCallback((nextTheme: Theme) => {
     setThemeState(nextTheme);
@@ -70,18 +77,26 @@ export function ThemeProvider({
   }, []);
 
   useEffect(() => {
-    try {
-      const storedTheme = localStorage.getItem('theme');
-      if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
-        setThemeState(storedTheme);
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
+    let activeTheme = theme;
+
+    if (!initializedTheme.current) {
+      initializedTheme.current = true;
+      const appearance = getAppearanceFromSearch(window.location.search);
+      let storedTheme: Theme | undefined;
+      try {
+        const storedValue = localStorage.getItem('theme');
+        if (storedValue === 'light' || storedValue === 'dark' || storedValue === 'system') {
+          storedTheme = storedValue;
+        }
+      } catch {}
+
+      activeTheme = appearance ?? storedTheme ?? defaultTheme;
+      if (activeTheme !== theme) setThemeState(activeTheme);
+    }
+
     const updateTheme = () => {
-      const nextTheme = theme === 'system' ? getSystemTheme() : theme;
+      const nextTheme = activeTheme === 'system' ? getSystemTheme() : activeTheme;
       setResolvedTheme(nextTheme);
       applyTheme(nextTheme, disableTransitionOnChange);
     };
@@ -89,7 +104,7 @@ export function ThemeProvider({
     updateTheme();
     media.addEventListener('change', updateTheme);
     return () => media.removeEventListener('change', updateTheme);
-  }, [disableTransitionOnChange, theme]);
+  }, [defaultTheme, disableTransitionOnChange, theme]);
 
   const value = useMemo(
     () => ({ theme, resolvedTheme, setTheme }),
