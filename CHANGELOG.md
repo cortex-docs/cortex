@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.15] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed the demo docs Cloudflare Worker deployment to work on the Cloudflare Workers Free plan.
+
+### Improvements
+
+- None.
+
 ## [0.1.14] - 2026-08-25
 
 ### New Features
