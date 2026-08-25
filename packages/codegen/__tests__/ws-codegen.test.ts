@@ -93,4 +93,17 @@ describe('WebSocket Codegen — resilience', () => {
     expect(client.content).toContain('catch (ObjectDisposedException) { }');
     expect(client.content).toContain('if (!_shouldReconnect) return;');
   });
+
+  it('registers Ruby socket callbacks before the reader thread starts', async () => {
+    const files = await generateWs('ruby', heartbeat);
+    const client = files.find((file) => file.path.includes('ws-client'))!;
+
+    expect(client.content).toContain('WebSocket::Client::Simple.connect(@url) do |socket|');
+    expect(client.content).toContain('@ws = socket');
+    expect(client.content).toContain('socket.on :open do');
+    expect(client.content).toContain('client.send(:_handle_open)');
+    expect(client.content).toContain('def _handle_open');
+    expect(client.content).toContain('socket.on :close do |_e|');
+    expect(client.content).not.toContain('@ws = WebSocket::Client::Simple.connect(@url)');
+  });
 });
