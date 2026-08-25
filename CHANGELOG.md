@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.12] - 2026-08-25
+
+### New Features
+
+- Added `custom_head_html` configuration option to inject trusted HTML (metadata, stylesheets, analytics scripts) into the `<head>` of every documentation page.
+
+### Bug Fixes
+
+- Fixed the generated PHP GraphQL client to properly reconnect after receiving WebSocket close frames instead of treating them as regular messages.
+
+### Improvements
+
+- None.
+
 ## [0.1.11] - 2026-08-25
 
 ### New Features
