@@ -18,6 +18,21 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.9] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Redesigned the "Built by Cortex" footer badge into a themed card with a new transparent, dark-mode-aware logo.
+- The Cortex logo is now served from a dedicated static asset host (`static.cortexdocs.dev`), with the previous asset URL permanently redirecting to it for backward compatibility.
+
 ## [0.1.8] - 2026-08-25
 
 ### New Features
