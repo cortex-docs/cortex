@@ -1,9 +1,9 @@
 'use client';
 
 import { use, useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 
+import { BuiltByCortexCard } from '@/components/docs/built-by-cortex-card';
 import { DocsBreadcrumb, type BreadcrumbSegment } from '@/components/docs/docs-breadcrumb';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -14,10 +14,6 @@ interface TocItem {
   text: string;
   level: number;
 }
-
-const BUILT_BY_CORTEX_BADGE_URL =
-  process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL ??
-  'https://api.demo.cortexdocs.dev/assets/built-by-cortex.svg';
 
 function extractToc(html: string): TocItem[] {
   const items: TocItem[] = [];
@@ -254,21 +250,7 @@ export default function DocSlugPage({ params }: { params: Promise<{ slug: string
                 )}
                 {tocSpacer > 0 && <div style={{ height: tocSpacer }} aria-hidden="true" />}
                 <footer className="mt-12 flex justify-center pb-2">
-                  <a
-                    href="https://cortexdocs.dev"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Built by Cortex"
-                    className="inline-flex rounded-[10px] shadow-sm transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  >
-                    <Image
-                      src={BUILT_BY_CORTEX_BADGE_URL}
-                      alt="Built by Cortex"
-                      width={148}
-                      height={36}
-                      unoptimized
-                    />
-                  </a>
+                  <BuiltByCortexCard />
                 </footer>
               </>
             ) : !data ? (
