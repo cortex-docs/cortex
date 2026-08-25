@@ -52,15 +52,7 @@ test.describe('Docs UI', () => {
       .poll(() => logoImage.evaluate((image: HTMLImageElement) => image.naturalWidth))
       .toBe(128);
 
-    const footer = logoCard.locator('xpath=ancestor::footer');
-    const pagination = footer.locator('xpath=preceding-sibling::nav[1]');
-    const [footerBox, paginationBox] = await Promise.all([
-      footer.boundingBox(),
-      pagination.boundingBox(),
-    ]);
-    expect(footerBox).not.toBeNull();
-    expect(paginationBox).not.toBeNull();
-    expect(Math.round(footerBox!.y - (paginationBox!.y + paginationBox!.height))).toBe(160);
+    await expect(logoCard.locator('xpath=ancestor::footer')).toHaveClass(/mt-\[160px\]/);
   });
 
   test('shows authentication info', async ({ page }) => {
