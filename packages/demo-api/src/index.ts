@@ -108,16 +108,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
 };
 
-const builtByCortexBadge = `<svg xmlns="http://www.w3.org/2000/svg" width="148" height="36" viewBox="0 0 148 36" role="img" aria-labelledby="title">
+const builtByCortexLogoUrl = 'https://static.cortexdocs.dev/images/built-by-cortex.svg';
+const builtByCortexLogo = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="20" viewBox="0 0 128 20" role="img" aria-labelledby="title">
   <title id="title">Built by Cortex</title>
-  <rect x="0.5" y="0.5" width="147" height="35" rx="9.5" fill="#0a0a0a" stroke="#ffffff" stroke-opacity="0.15"/>
-  <g transform="translate(7 8)" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(0 0.5)" fill="none" stroke="#18181b" stroke-linecap="round" stroke-linejoin="round">
     <path d="M9 2.5Q11 1 13 2.5L18 5Q20 6 18 7L13 9.5Q11 11 9 9.5L4 7Q2 6 4 5L9 2.5Z" stroke-width="1.5" fill="#ffffff" fill-opacity="0.1"/>
     <path d="M3 10L9 13.5Q11 14.8 13 13.5L19 10" stroke-width="1.5"/>
     <path d="M3 13.5L9 17Q11 18.3 13 17L19 13.5" stroke-width="1.5" opacity="0.5"/>
   </g>
-  <text x="37" y="21.5" fill="#a1a1aa" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11">Built by</text>
-  <text x="77" y="21.5" fill="#ffffff" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Cortex</text>
+  <text x="30" y="13.5" fill="#71717a" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11">Built by</text>
+  <text x="70" y="13.5" fill="#18181b" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Cortex</text>
 </svg>`;
 
 function json(data: unknown, status = 200): Response {
@@ -136,8 +136,8 @@ function withCors(response: Response): Response {
   return new Response(response.body, { status: response.status, headers });
 }
 
-function builtByCortexBadgeResponse(method: string): Response {
-  return new Response(method === 'HEAD' ? null : builtByCortexBadge, {
+function builtByCortexLogoResponse(method: string): Response {
+  return new Response(method === 'HEAD' ? null : builtByCortexLogo, {
     headers: {
       ...corsHeaders,
       'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
@@ -351,8 +351,23 @@ async function handleRequest(request: Request): Promise<Response> {
 
   if (method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
 
+  if (path === '/images/built-by-cortex.svg' && (method === 'GET' || method === 'HEAD')) {
+    return builtByCortexLogoResponse(method);
+  }
+
   if (path === '/assets/built-by-cortex.svg' && (method === 'GET' || method === 'HEAD')) {
-    return builtByCortexBadgeResponse(method);
+    return new Response(null, {
+      status: 308,
+      headers: {
+        ...corsHeaders,
+        'Cache-Control': 'public, max-age=3600',
+        Location: builtByCortexLogoUrl,
+      },
+    });
+  }
+
+  if (url.hostname === 'static.cortexdocs.dev') {
+    return json({ code: 'not_found' }, 404);
   }
 
   if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {

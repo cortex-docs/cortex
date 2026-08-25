@@ -5,16 +5,20 @@
   "compatibility_date": "2026-08-24",
   "compatibility_flags": ["nodejs_compat"],
   "alias": {
-    "graphql": "graphql/index.js"
+    "graphql": "graphql/index.js",
   },
   "workers_dev": false,
   "routes": [
     {
       "pattern": "api.demo.cortexdocs.dev",
-      "custom_domain": true
-    }
+      "custom_domain": true,
+    },
+    {
+      "pattern": "static.cortexdocs.dev",
+      "custom_domain": true,
+    },
   ],
   "observability": {
-    "enabled": true
-  }
+    "enabled": true,
+  },
 }

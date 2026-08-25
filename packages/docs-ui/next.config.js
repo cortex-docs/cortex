@@ -13,15 +13,15 @@ module.exports = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'api.demo.cortexdocs.dev',
+        hostname: 'static.cortexdocs.dev',
         port: '',
-        pathname: '/assets/built-by-cortex.svg',
+        pathname: '/images/built-by-cortex.svg',
         search: '',
       },
       {
         protocol: 'http',
         hostname: 'localhost',
-        pathname: '/assets/built-by-cortex.svg',
+        pathname: '/images/built-by-cortex.svg',
         search: '',
       },
     ],
