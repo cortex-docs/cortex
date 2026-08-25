@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.16] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed the demo docs Cloudflare Worker deployment by removing a CPU time limit setting that is unsupported on the Cloudflare Workers Free plan, which was blocking deployment.
+
+### Improvements
+
+- None.
+
 ## [0.1.15] - 2026-08-25
 
 ### New Features
