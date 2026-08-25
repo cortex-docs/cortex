@@ -18,6 +18,81 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.14] - 2026-08-25
+
+### New Features
+
+- The CLI now supports `--version`/`-V` to print the installed Cortex Docs version.
+
+### Bug Fixes
+
+- Fixed the published CLI package so it installs with all required runtime dependencies and runs correctly (the previous release was not runnable after install).
+- Fixed a hydration warning triggered by custom `<head>` HTML injected via site configuration.
+
+### Improvements
+
+- Docs and SDK pages are now pre-rendered at build time instead of forced dynamic rendering, improving page load performance.
+- Increased the Cloudflare Worker CPU time limit to prevent timeouts on larger documentation builds.
+- Enabled cache interception with a static-assets incremental cache for faster repeat responses on the deployed docs site.
+
+## [0.1.13] - 2026-08-25
+
+### New Features
+
+- Documentation pages now support an `appearance` query parameter (`?appearance=dark` or `?appearance=light`) to set the initial theme for that page, taking priority over the project theme and the visitor's stored preference.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
+## [0.1.12] - 2026-08-25
+
+### New Features
+
+- Added `custom_head_html` configuration option to inject trusted HTML (metadata, stylesheets, analytics scripts) into the `<head>` of every documentation page.
+
+### Bug Fixes
+
+- Fixed the generated PHP GraphQL client to properly reconnect after receiving WebSocket close frames instead of treating them as regular messages.
+
+### Improvements
+
+- None.
+
+## [0.1.11] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Clarified documentation to describe the generated MCP server (rather than MCP tools) for REST, GraphQL, OpenRPC, and WebSocket payload preparation.
+- Clarified that generated packages and the MCP server can be published to language registries and GitHub repositories.
+
+## [0.1.10] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed `cortex docs serve` not picking up changes to docs UI source files (app, components, hooks, lib, public) during local preview, requiring a manual restart.
+
+### Improvements
+
+- Renamed the "Built by Cortex" footer badge to "Built with Cortex," with updated branding, sizing, and asset URLs (`/images/built-with-cortex.svg`), plus backward-compatible redirects from the old badge URLs.
+- Expanded the Getting Started guide with a features overview, a supported API sources table, a link to the live demo, guidance on adding custom Markdown docs, and instructions for generating the MCP server standalone.
+
 ## [0.1.9] - 2026-08-25
 
 ### New Features
