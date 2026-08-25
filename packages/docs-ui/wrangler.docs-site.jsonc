@@ -27,6 +27,9 @@
   "observability": {
     "enabled": true,
   },
+  "limits": {
+    "cpu_ms": 300000,
+  },
   "vars": {
     "NEXTJS_ENV": "production",
     "CORTEX_CLOUDFLARE": "1",

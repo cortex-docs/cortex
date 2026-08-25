@@ -61,6 +61,27 @@ function extractPackage(archive, target) {
   execFileSync('tar', ['-xzf', archive, '-C', target, '--strip-components=1']);
 }
 
+function addBundledRuntimeDependencies(stagedManifest, bundledManifests) {
+  const dependencies = { ...(stagedManifest.dependencies ?? {}) };
+
+  for (const [packageName, manifest] of bundledManifests) {
+    for (const [dependency, version] of Object.entries(manifest.dependencies ?? {})) {
+      if (bundledPackages.includes(dependency)) continue;
+      const existingVersion = dependencies[dependency];
+      if (existingVersion && existingVersion !== version) {
+        throw new Error(
+          `${packageName} requires ${dependency}@${version}, but the staged CLI requires ${existingVersion}.`,
+        );
+      }
+      dependencies[dependency] = version;
+    }
+  }
+
+  stagedManifest.dependencies = Object.fromEntries(
+    Object.entries(dependencies).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
 try {
   const bundledArchives = new Map(
     bundledPackages.map((packageName) => [packageName, packWorkspace(packageName)]),
@@ -69,14 +90,21 @@ try {
 
   const stagedManifestPath = join(stagingPackage, 'package.json');
   const stagedManifest = JSON.parse(readFileSync(stagedManifestPath, 'utf8'));
-  stagedManifest.version = expectedVersion;
-  stagedManifest.bundleDependencies = bundledPackages;
-  writeFileSync(stagedManifestPath, `${JSON.stringify(stagedManifest, null, 2)}\n`);
+  const bundledManifests = new Map();
 
   for (const packageName of bundledPackages) {
     const target = join(stagingPackage, 'node_modules', ...packageName.split('/'));
     extractPackage(bundledArchives.get(packageName), target);
+    bundledManifests.set(
+      packageName,
+      JSON.parse(readFileSync(join(target, 'package.json'), 'utf8')),
+    );
   }
+
+  stagedManifest.version = expectedVersion;
+  stagedManifest.bundleDependencies = bundledPackages;
+  addBundledRuntimeDependencies(stagedManifest, bundledManifests);
+  writeFileSync(stagedManifestPath, `${JSON.stringify(stagedManifest, null, 2)}\n`);
 
   execFileSync(
     'npm',
@@ -84,11 +112,15 @@ try {
     { cwd: stagingPackage, stdio: 'inherit' },
   );
 
-  const packOutput = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
-    cwd: stagingPackage,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
+  const packOutput = execFileSync(
+    'npm',
+    ['pack', '--json', '--ignore-scripts', `--pack-destination=${stagingRoot}`],
+    {
+      cwd: stagingPackage,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+    },
+  );
   const [packed] = JSON.parse(packOutput);
   const missingPackages = bundledPackages.filter((name) => !packed.bundled.includes(name));
   if (missingPackages.length > 0) {
@@ -97,6 +129,11 @@ try {
 
   console.log(
     `Checked ${cliManifest.name}@${expectedVersion} with ${packed.bundled.length} bundled workspace packages.`,
+  );
+  execFileSync(
+    process.execPath,
+    [join(scriptDir, 'smoke-cli-package.mjs'), join(stagingRoot, packed.filename), expectedVersion],
+    { cwd: workspaceRoot, stdio: 'inherit' },
   );
   if (dryRun) process.exitCode = 0;
   else {

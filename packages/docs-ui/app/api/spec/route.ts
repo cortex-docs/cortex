@@ -8,7 +8,7 @@ import {
   resolveLocation,
 } from '@/lib/load-location';
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-static';
 
 function resolveSpecPath(): string | null {
   const configPath = process.env.CORTEX_CONFIG_PATH;

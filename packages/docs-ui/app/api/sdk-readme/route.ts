@@ -6,6 +6,8 @@ import type { ParsedSpec, Parameter, ResponseInfo, SchemaObject } from '@cortex-
 import { renderLanguageTemplate, type NamingConventions } from '@cortex-docs/codegen';
 import { getDocsUiRoot, locationExists } from '@/lib/load-location';
 
+export const dynamic = 'force-static';
+
 interface ReadmeResourceOperation {
   name: string;
   method: string;

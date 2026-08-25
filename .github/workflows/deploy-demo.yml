@@ -53,3 +53,5 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CORTEX_DEMO_API_URL: https://api.demo.cortexdocs.dev
         run: npm run --workspace=@cortex-docs/docs-ui demo:deploy
+      - name: Verify the deployed demo under concurrent load
+        run: node scripts/check-demo.mjs https://demo.cortexdocs.dev
