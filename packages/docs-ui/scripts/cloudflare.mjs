@@ -27,17 +27,16 @@ const wranglerConfig = resolve(
   docsUiDir,
   target === 'demo' ? 'wrangler.jsonc' : 'wrangler.docs-site.jsonc',
 );
-const badgeUrl =
+const builtByCortexLogoUrl =
+  process.env.CORTEX_BUILT_BY_LOGO_URL ||
   process.env.CORTEX_BUILT_BY_BADGE_URL ||
-  (target === 'demo'
-    ? `${demoApiUrl}/assets/built-by-cortex.svg`
-    : 'https://api.demo.cortexdocs.dev/assets/built-by-cortex.svg');
+  'https://static.cortexdocs.dev/images/built-by-cortex.svg';
 
 const env = {
   ...process.env,
   CORTEX_CLOUDFLARE: '1',
   NEXT_PUBLIC_CORTEX_CLOUDFLARE: '1',
-  NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL: badgeUrl,
+  NEXT_PUBLIC_CORTEX_BUILT_BY_LOGO_URL: builtByCortexLogoUrl,
   CORTEX_DIST_DIR: '.next',
   CORTEX_DOCS_UI_ROOT: docsUiDir,
   CORTEX_CONFIG_PATH: prepared.configPath,

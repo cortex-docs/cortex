@@ -12,8 +12,10 @@ describe('demo API Worker', () => {
     await expect(response.json()).resolves.toEqual({ status: 'ok', runtime: 'cloudflare-worker' });
   });
 
-  it('serves the Built by Cortex badge as a cached Cloudflare asset', async () => {
-    const response = await request('/assets/built-by-cortex.svg');
+  it('serves the transparent Built by Cortex logo as a cached Cloudflare asset', async () => {
+    const response = await worker.fetch(
+      new Request('https://static.cortexdocs.dev/images/built-by-cortex.svg'),
+    );
     const body = await response.text();
 
     expect(response.status).toBe(200);
@@ -21,7 +23,23 @@ describe('demo API Worker', () => {
     expect(response.headers.get('Cache-Control')).toContain('max-age=86400');
     expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
     expect(body).toContain('<title id="title">Built by Cortex</title>');
-    expect(body).toContain('<svg');
+    expect(body).toContain('width="128" height="20"');
+    expect(body).not.toContain('<rect');
+  });
+
+  it('redirects the old badge URL to the static image host', async () => {
+    const response = await request('/assets/built-by-cortex.svg', { redirect: 'manual' });
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get('Location')).toBe(
+      'https://static.cortexdocs.dev/images/built-by-cortex.svg',
+    );
+  });
+
+  it('does not expose demo API routes on the static image host', async () => {
+    const response = await worker.fetch(new Request('https://static.cortexdocs.dev/pets'));
+
+    expect(response.status).toBe(404);
   });
 
   it('returns the Petstore collection with CORS headers', async () => {
