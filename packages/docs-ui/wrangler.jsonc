@@ -8,8 +8,8 @@
     {
       "type": "Text",
       "globs": ["server-functions/default/packages/docs-ui/.cortex-demo/**/*"],
-      "fallthrough": true
-    }
+      "fallthrough": true,
+    },
   ],
   "compatibility_date": "2026-08-24",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -17,18 +17,15 @@
   "routes": [
     {
       "pattern": "demo.cortexdocs.dev",
-      "custom_domain": true
-    }
+      "custom_domain": true,
+    },
   ],
   "assets": {
     "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
   },
   "observability": {
-    "enabled": true
-  },
-  "limits": {
-    "cpu_ms": 300000
+    "enabled": true,
   },
   "vars": {
     "NEXTJS_ENV": "production",
@@ -41,6 +38,6 @@
     "CORTEX_GRPC_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/specs/petstore.proto",
     "CORTEX_OPENRPC_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/specs/petstore-openrpc.json",
     "CORTEX_LOGO_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/assets/logo_light.svg",
-    "CORTEX_FAVICON_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/assets/favicon.svg"
-  }
+    "CORTEX_FAVICON_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-demo/assets/favicon.svg",
+  },
 }
