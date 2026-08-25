@@ -16,6 +16,9 @@ title: My Project Documentation
 logo: ./assets/logo.svg
 theme: system
 primaryColor: '#ffffff'
+custom_head_html: |-
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="/assets/custom.css">
 
 sources:
   - title: 'REST API V1'
@@ -120,6 +123,7 @@ mcp:
 | `logoHeight`           | number  | No       | Logo height in pixels                                                                                                                                                                                                                                                                        |
 | `showLogoDocsLabel`    | boolean | No       | Show the `Docs` label next to the logo                                                                                                                                                                                                                                                       |
 | `favicon`              | string  | No       | Path to a custom favicon                                                                                                                                                                                                                                                                     |
+| `custom_head_html`     | string  | No       | Trusted HTML that Cortex adds to the `<head>` element on every documentation page                                                                                                                                                                                                            |
 | `theme`                | string  | No       | Color theme: `light`, `dark`, or `system` (default: `system`)                                                                                                                                                                                                                                |
 | `primaryColor`         | string  | No       | Brand accent color as a hex code (e.g. `"#01FFB2"`). Styles buttons, active nav icons, card tints, and hover accents. Automatically adjusts brightness per theme for readability — dark colors brighten on dark backgrounds, light colors deepen on light backgrounds (default: `"#ffffff"`) |
 | `sources`              | array   | Yes      | List of API spec sources (see below)                                                                                                                                                                                                                                                         |
@@ -131,6 +135,31 @@ mcp:
 | `publish`              | object  | No       | Package registry and GitHub publication settings                                                                                                                                                                                                                                             |
 
 See [Custom Generators](/docs/custom-generators) for export commands, template data, and override rules.
+
+## Custom Head HTML
+
+`custom_head_html` adds trusted HTML to the `<head>` element on every documentation page. The value can contain metadata, stylesheets, and analytics scripts.
+
+Files in the project `assets` directory are available under `/assets/*`.
+
+```yaml
+custom_head_html: |-
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="/assets/custom.css">
+
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+```
+
+Replace `G-XXXXXXXXXX` with your Google Analytics measurement ID.
+
+CAUTION: Add only HTML that you trust. Scripts in this field can execute in every visitor's browser.
 
 ## Sources
 

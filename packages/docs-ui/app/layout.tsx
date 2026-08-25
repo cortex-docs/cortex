@@ -5,9 +5,26 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import type { Metadata } from 'next';
 import { ThemeProvider } from '@/components/docs/theme-provider';
-import { SiteConfigProvider, type HomeSection } from '@/components/docs/site-config-provider';
+import {
+  SiteConfigProvider,
+  type HomeSection,
+  type SiteConfig,
+} from '@/components/docs/site-config-provider';
 import { SearchProvider } from '@/components/docs/search-provider';
 import { sanitizeSvg } from '@/lib/sanitize-svg';
+
+interface LoadedSiteConfig extends SiteConfig {
+  customHeadHtml?: string;
+}
+
+function emptySiteConfig(): LoadedSiteConfig {
+  return {
+    title: '',
+    project: '',
+    hasLogo: false,
+    customHeadHtml: undefined,
+  };
+}
 
 function adj(r: number, g: number, b: number, mul: number) {
   return `rgb(${Math.min(255, Math.round(r * mul))},${Math.min(255, Math.round(g * mul))},${Math.min(255, Math.round(b * mul))})`;
@@ -36,7 +53,7 @@ function parsePrimary(hex: string) {
   return { lightColor, darkColor, lightFg, darkFg, lightText, darkText, cardTint };
 }
 
-function readSiteConfig() {
+function readSiteConfig(): LoadedSiteConfig {
   let configFile: string | null = null;
   let dir: string | null = null;
 
@@ -48,7 +65,7 @@ function readSiteConfig() {
 
   if (!configFile) {
     const specPath = process.env.CORTEX_SPEC_PATH;
-    if (!specPath) return { title: '', project: '', hasLogo: false };
+    if (!specPath) return emptySiteConfig();
     dir = path.dirname(specPath);
     for (const name of ['cortex.config.yml', 'cortex.config.yaml', 'cortex.yml']) {
       const candidate = path.join(dir, name);
@@ -59,7 +76,7 @@ function readSiteConfig() {
     }
   }
 
-  if (!configFile || !dir) return { title: '', project: '', hasLogo: false };
+  if (!configFile || !dir) return emptySiteConfig();
 
   try {
     const yaml = require('js-yaml');
@@ -104,6 +121,11 @@ function readSiteConfig() {
     const sources = raw?.sources as Array<unknown> | undefined;
     const docs = raw?.docs as Array<unknown> | undefined;
     const mcp = raw?.mcp as Record<string, unknown> | undefined;
+    const customHeadHtmlValue = raw?.custom_head_html;
+    const customHeadHtml =
+      typeof customHeadHtmlValue === 'string' && customHeadHtmlValue.trim()
+        ? customHeadHtmlValue
+        : undefined;
     return {
       title: (raw?.title as string) ?? '',
       project: (raw?.project as string) ?? '',
@@ -114,6 +136,7 @@ function readSiteConfig() {
       logoHeight: (raw?.logoHeight as number) ?? undefined,
       showLogoDocsLabel: (raw?.showLogoDocsLabel as boolean) ?? true,
       favicon,
+      customHeadHtml,
       primaryColor,
       theme,
       hasSources: Array.isArray(sources) && sources.length > 0,
@@ -129,7 +152,7 @@ function readSiteConfig() {
         : undefined,
     };
   } catch {
-    return { title: '', project: '', hasLogo: false };
+    return emptySiteConfig();
   }
 }
 
@@ -141,11 +164,12 @@ export function generateMetadata(): Metadata {
   return {
     title,
     description: siteConfig.home?.description || `API documentation for ${title}`,
+    icons: siteConfig.favicon ? { icon: siteConfig.favicon } : undefined,
   };
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const siteConfig = readSiteConfig();
+  const { customHeadHtml, ...siteConfig } = readSiteConfig();
 
   const pc = siteConfig.primaryColor;
   const primaryCss = pc
@@ -161,7 +185,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${GeistSans.variable} ${GeistMono.variable}`}
       suppressHydrationWarning
     >
-      <head>{siteConfig.favicon && <link rel="icon" href={siteConfig.favicon} />}</head>
+      {customHeadHtml && <head dangerouslySetInnerHTML={{ __html: customHeadHtml }} />}
       <body suppressHydrationWarning>
         {primaryCss && <style data-primary="" dangerouslySetInnerHTML={{ __html: primaryCss }} />}
         <SiteConfigProvider config={siteConfig}>
