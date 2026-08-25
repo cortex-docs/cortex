@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.13] - 2026-08-25
+
+### New Features
+
+- Documentation pages now support an `appearance` query parameter (`?appearance=dark` or `?appearance=light`) to set the initial theme for that page, taking priority over the project theme and the visitor's stored preference.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
 ## [0.1.12] - 2026-08-25
 
 ### New Features
