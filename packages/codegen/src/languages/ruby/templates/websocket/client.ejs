@@ -39,25 +39,29 @@ class <%= it.clientClass %>
 
   def connect
     @manually_closed = false
-    @ws = WebSocket::Client::Simple.connect(@url)
-    @reconnect_attempts = 0
     client = self
 
-    @ws.on :message do |msg|
-      client.send(:_handle_message, msg.data)
-    end
+    # websocket-client-simple starts its reader thread before connect returns.
+    # Register callbacks in its setup block so an immediate open or close event
+    # cannot occur before the generated client is listening for it.
+    WebSocket::Client::Simple.connect(@url) do |socket|
+      @ws = socket
 
-    @ws.on :open do
-      @last_activity = Time.now
-      client.send(:_start_heartbeat)
-    end
+      socket.on :message do |msg|
+        client.send(:_handle_message, msg.data)
+      end
 
-    @ws.on :close do |_e|
-      client.send(:_handle_close)
-    end
+      socket.on :open do
+        client.send(:_handle_open)
+      end
 
-    @ws.on :error do |e|
-      # connection error
+      socket.on :close do |_e|
+        client.send(:_handle_close)
+      end
+
+      socket.on :error do |_e|
+        # connection error
+      end
     end
 
     self
@@ -114,6 +118,12 @@ class <%= it.clientClass %>
 <% } -%>
 <% } -%>
   private
+
+  def _handle_open
+    @reconnect_attempts = 0
+    @last_activity = Time.now
+    _start_heartbeat
+  end
 
   def _handle_message(raw)
     if _heartbeat_matches(raw, @server_heartbeat_message)
