@@ -22,6 +22,14 @@ export function resolveDevRuntimeDirName(projectDir: string): string {
 export function prepareDocsUiRuntime(docsUiPath: string, runtimeDir: string): void {
   fs.mkdirSync(runtimeDir, { recursive: true });
 
+  syncDocsUiRuntimeSources(docsUiPath, runtimeDir);
+
+  for (const name of RUNTIME_FILES) {
+    fs.copyFileSync(path.join(docsUiPath, name), path.join(runtimeDir, name));
+  }
+}
+
+export function syncDocsUiRuntimeSources(docsUiPath: string, runtimeDir: string): void {
   for (const name of RUNTIME_DIRECTORIES) {
     const source = path.join(docsUiPath, name);
     const target = path.join(runtimeDir, name);
@@ -30,14 +38,19 @@ export function prepareDocsUiRuntime(docsUiPath: string, runtimeDir: string): vo
     }
     mirrorSourceDirectory(source, target);
   }
-
-  for (const name of RUNTIME_FILES) {
-    fs.copyFileSync(path.join(docsUiPath, name), path.join(runtimeDir, name));
-  }
 }
 
 function mirrorSourceDirectory(source: string, target: string): void {
   fs.mkdirSync(target, { recursive: true });
+
+  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+    const sourceEntry = path.join(source, entry.name);
+    const targetEntry = path.join(target, entry.name);
+    if (entry.isSymbolicLink() && !fs.existsSync(sourceEntry)) {
+      fs.unlinkSync(targetEntry);
+    }
+  }
+
   for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
     const sourceEntry = path.join(source, entry.name);
     const targetEntry = path.join(target, entry.name);
