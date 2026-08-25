@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.8] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed a race condition in generated Ruby WebSocket clients where the reader thread could fire an open or close event before callbacks were registered, causing missed connection events.
+
+### Improvements
+
+- None.
+
 ## [0.1.7] - 2026-08-24
 
 ### New Features
