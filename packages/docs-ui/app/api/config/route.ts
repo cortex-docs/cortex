@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import * as yaml from 'js-yaml';
 import { sanitizeSvg } from '@/lib/sanitize-svg';
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-static';
 
 function findConfigFile(): string | null {
   const configPath = process.env.CORTEX_CONFIG_PATH;

@@ -3,6 +3,8 @@ import * as path from 'node:path';
 import { NextResponse } from 'next/server';
 import * as yaml from 'js-yaml';
 
+export const dynamic = 'force-static';
+
 interface DocsDocument {
   title: string;
   document: string;

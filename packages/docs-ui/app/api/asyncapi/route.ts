@@ -2,6 +2,8 @@ import * as path from 'node:path';
 import { NextResponse } from 'next/server';
 import { getDocsUiRoot, locationExists, readTextLocation } from '@/lib/load-location';
 
+export const dynamic = 'force-static';
+
 export async function GET() {
   const specPath =
     process.env.CORTEX_ASYNCAPI_PATH ||

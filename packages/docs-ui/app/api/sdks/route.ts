@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server';
 import * as yaml from 'js-yaml';
 import { normalizeRepositoryUrl } from '@cortex-docs/core';
 
+export const dynamic = 'force-static';
+
 interface SourceLanguage {
   language: string;
   package_name: string;

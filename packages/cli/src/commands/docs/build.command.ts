@@ -10,7 +10,7 @@ import {
 } from '@cortex-docs/core';
 import { LoggerService } from '../../services/logger.service';
 import { ProjectService } from '../../services/project.service';
-import { prepareDocsUiRuntime, resolveDocsUiPath, resolveNextBin } from './runtime';
+import { prepareDocsUiBuildRuntime, resolveDocsUiPath, resolveNextBin } from './runtime';
 
 @SubCommand({
   name: 'build',
@@ -54,7 +54,7 @@ export class DocsBuildCommand extends CommandRunner {
 
     const { execFileSync } = await import('node:child_process');
     const runtimeDir = fs.mkdtempSync(path.join(docsUiPath, '.cortex-build-'));
-    prepareDocsUiRuntime(docsUiPath, runtimeDir);
+    prepareDocsUiBuildRuntime(docsUiPath, runtimeDir);
     const distDir = '.next';
     const buildDir = path.join(runtimeDir, distDir);
 
