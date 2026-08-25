@@ -19,10 +19,10 @@ One project can combine OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC
 - Combine multiple specification files in one generated SDK.
 - Generate HTTP, WebSocket, GraphQL, gRPC, and JSON-RPC clients.
 - Generate a production documentation server with interactive API reference pages.
-- Generate MCP tools for REST, GraphQL, OpenRPC, and WebSocket payload preparation.
+- Generate MCP server for REST, GraphQL, OpenRPC, and WebSocket payload preparation.
 - Add Markdown pages, SDK guides, and all API specifications to the MCP server.
 - Customize generated output with sparse Eta template overrides.
-- Publish generated packages to language registries and GitHub repositories.
+- Publish generated packages and MCP to language registries and GitHub repositories.
 
 ## Requirements
 
