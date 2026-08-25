@@ -33,6 +33,31 @@ test.describe('Docs UI', () => {
     });
   });
 
+  test('renders custom head HTML and serves project assets', async ({ page }) => {
+    await page.goto('/');
+
+    await expect(page.locator('head meta[name="theme-color"]')).toHaveAttribute(
+      'content',
+      '#ffffff',
+    );
+    await expect(page.locator('head link[href="/assets/custom.css"]')).toHaveAttribute(
+      'rel',
+      'stylesheet',
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          getComputedStyle(document.documentElement)
+            .getPropertyValue('--cortex-custom-head-loaded')
+            .trim(),
+        ),
+      )
+      .toBe('yes');
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.dataset.cortexCustomHead))
+      .toBe('loaded');
+  });
+
   test('loads the transparent Built with Cortex logo inside a theme-aware card', async ({
     page,
   }) => {

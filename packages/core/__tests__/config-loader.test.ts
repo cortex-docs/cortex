@@ -478,11 +478,12 @@ describe('ConfigLoader', () => {
       expect(config.languages[0].github_repository).toBe('github.com/acme/sdk');
     });
 
-    it('puts title/logo/theme at root level', () => {
+    it('puts documentation site settings at root level', () => {
       const config = loader.validate({
         project: 'acme',
         title: 'Acme API',
         logo: './logo.png',
+        custom_head_html: '<meta name="theme-color" content="#ffffff">',
         theme: 'light',
         sources: [
           {
@@ -496,6 +497,7 @@ describe('ConfigLoader', () => {
 
       expect(config.title).toBe('Acme API');
       expect(config.logo).toBe('./logo.png');
+      expect(config.custom_head_html).toBe('<meta name="theme-color" content="#ffffff">');
       expect(config.theme).toBe('light');
     });
   });
