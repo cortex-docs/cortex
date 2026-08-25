@@ -117,7 +117,7 @@ const builtWithCortexLogo = `<svg xmlns="http://www.w3.org/2000/svg" width="128"
     <path d="M3 13.5L9 17Q11 18.3 13 17L19 13.5" stroke-width="1.5" opacity="0.5"/>
   </g>
   <text x="30" y="13.5" fill="#71717a" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11">Built with</text>
-  <text x="79" y="13.5" fill="#18181b" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Cortex</text>
+  <text x="85" y="13.5" fill="#18181b" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="600">Cortex</text>
 </svg>`;
 
 function json(data: unknown, status = 200): Response {

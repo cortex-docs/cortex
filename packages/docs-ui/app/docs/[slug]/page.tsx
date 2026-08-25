@@ -248,10 +248,10 @@ export default function DocSlugPage({ params }: { params: Promise<{ slug: string
                     )}
                   </nav>
                 )}
-                {tocSpacer > 0 && <div style={{ height: tocSpacer }} aria-hidden="true" />}
                 <footer className="mt-6 flex justify-center pb-2">
                   <BuiltWithCortexCard />
                 </footer>
+                {tocSpacer > 0 && <div style={{ height: tocSpacer }} aria-hidden="true" />}
               </>
             ) : !data ? (
               <div className="flex items-center justify-center py-20">

@@ -24,6 +24,7 @@ describe('demo API Worker', () => {
     expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
     expect(body).toContain('<title id="title">Built with Cortex</title>');
     expect(body).toContain('>Built with</text>');
+    expect(body).toContain('<text x="85"');
     expect(body).toContain('width="128" height="20"');
     expect(body).not.toContain('<rect');
   });

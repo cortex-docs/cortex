@@ -10,7 +10,8 @@ const BUILT_WITH_CORTEX_LOGO_URL =
   process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_LOGO_URL ??
   process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL ??
   'https://static.cortexdocs.dev/images/built-with-cortex.svg';
-const LOCAL_BUILT_WITH_CORTEX_LOGO_URL = 'http://localhost:4010/images/built-with-cortex.svg';
+const LOCAL_BUILT_WITH_CORTEX_LOGO_URL =
+  'http://localhost:4010/images/built-with-cortex.svg?spacing=2';
 
 export function BuiltWithCortexCard({ className }: { className?: string }) {
   const [logoUrl, setLogoUrl] = useState(BUILT_WITH_CORTEX_LOGO_URL);
