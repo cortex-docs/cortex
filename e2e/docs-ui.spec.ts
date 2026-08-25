@@ -100,6 +100,31 @@ test.describe('Docs UI', () => {
     await expect(html).toHaveClass(/light|^(?!.*dark)/);
   });
 
+  test('appearance query selects dark mode on a nested docs route', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('theme', 'light'));
+
+    await page.goto('/docs/quickstart?appearance=dark');
+
+    await expect(page.locator('html')).toHaveClass(/dark/);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.style.colorScheme))
+      .toBe('dark');
+  });
+
+  test('appearance query selects light mode on an API route', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.setItem('theme', 'dark'));
+
+    await page.goto('/api-reference?source=embed&appearance=light');
+
+    await expect(page.locator('html')).toHaveClass(/light/);
+    await expect(page.locator('html')).not.toHaveClass(/dark/);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.style.colorScheme))
+      .toBe('light');
+  });
+
   test('API spec endpoint returns valid content', async ({ request }) => {
     const response = await request.get('/api/spec');
     expect(response.ok()).toBeTruthy();

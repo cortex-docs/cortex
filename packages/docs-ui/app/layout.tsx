@@ -53,6 +53,10 @@ function parsePrimary(hex: string) {
   return { lightColor, darkColor, lightFg, darkFg, lightText, darkText, cardTint };
 }
 
+function createThemeInitializationScript(defaultTheme: 'light' | 'dark' | 'system'): string {
+  return `(()=>{try{const e=document.documentElement,p=new URLSearchParams(location.search).get("appearance");let t=p==="light"||p==="dark"?p:"";if(!t){try{const s=localStorage.getItem("theme");if(s==="light"||s==="dark"||s==="system")t=s}catch{}}if(!t)t="${defaultTheme}";const r=t==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):t;e.classList.remove("light","dark");e.classList.add(r);e.style.colorScheme=r}catch{}})();`;
+}
+
 function readSiteConfig(): LoadedSiteConfig {
   let configFile: string | null = null;
   let dir: string | null = null;
@@ -170,6 +174,7 @@ export function generateMetadata(): Metadata {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const { customHeadHtml, ...siteConfig } = readSiteConfig();
+  const defaultTheme = siteConfig.theme ?? 'system';
 
   const pc = siteConfig.primaryColor;
   const primaryCss = pc
@@ -187,9 +192,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       {customHeadHtml && <head dangerouslySetInnerHTML={{ __html: customHeadHtml }} />}
       <body suppressHydrationWarning>
+        <script
+          data-cortex-theme-init=""
+          dangerouslySetInnerHTML={{ __html: createThemeInitializationScript(defaultTheme) }}
+        />
         {primaryCss && <style data-primary="" dangerouslySetInnerHTML={{ __html: primaryCss }} />}
         <SiteConfigProvider config={siteConfig}>
-          <ThemeProvider defaultTheme={siteConfig.theme ?? 'system'} disableTransitionOnChange>
+          <ThemeProvider defaultTheme={defaultTheme} disableTransitionOnChange>
             <SearchProvider>{children}</SearchProvider>
           </ThemeProvider>
         </SiteConfigProvider>
