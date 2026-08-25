@@ -255,6 +255,7 @@ export const cortexConfigSchema = z
     logoHeight: z.number().positive().optional(),
     showLogoDocsLabel: z.boolean().optional(),
     favicon: z.string().optional(),
+    custom_head_html: z.string().optional(),
     theme: z.enum(['light', 'dark', 'system']).default('system'),
     primaryColor: z
       .string()

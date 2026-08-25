@@ -177,6 +177,7 @@ export interface CortexConfig {
   logoHeight?: number;
   showLogoDocsLabel?: boolean;
   favicon?: string;
+  custom_head_html?: string;
   theme?: 'light' | 'dark' | 'system';
   primaryColor?: string;
   home?: HomeConfig;
