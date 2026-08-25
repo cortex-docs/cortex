@@ -209,6 +209,7 @@ class <%= it.clientClass %>
         if ($header === false || strlen($header) < 2) {
             return null;
         }
+        $opcode = ord($header[0]) & 0x0F;
         $len = ord($header[1]) & 0x7F;
         if ($len === 126) {
             $ext = fread($socket, 2);
@@ -233,6 +234,9 @@ class <%= it.clientClass %>
             for ($i = 0; $i < strlen($data); $i++) {
                 $data[$i] = $data[$i] ^ $mask[$i % 4];
             }
+        }
+        if ($opcode === 0x8) {
+            return null;
         }
         return $data;
     }

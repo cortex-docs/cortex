@@ -167,6 +167,15 @@ describe('GraphQL Codegen — All Languages', () => {
         });
       }
 
+      if (language === 'php') {
+        it('reconnects when a GraphQL WebSocket sends a close frame', async () => {
+          const files = await generateForLanguage(language);
+          const client = getFile(files, 'gql-client')!;
+          expect(client.content).toContain('$opcode = ord($header[0]) & 0x0F;');
+          expect(client.content).toContain('if ($opcode === 0x8)');
+        });
+      }
+
       if (language === 'rust') {
         it('generates query/mutate/subscribe methods on client', async () => {
           const files = await generateForLanguage(language);

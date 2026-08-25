@@ -53,6 +53,9 @@ project: my-api
 title: My API Docs
 logo: ./assets/logo.svg
 theme: system
+custom_head_html: |-
+  <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="/assets/custom.css">
 
 sources:
   - title: REST API
@@ -92,6 +95,12 @@ docs:
 mcp:
   package_name: '@my-org/my-api-mcp'
 ```
+
+`custom_head_html` adds trusted HTML to every documentation page. This field supports metadata, stylesheets, and analytics scripts.
+
+Store local head resources in the project `assets` directory. Cortex serves these files from `/assets/*`.
+
+Cortex does not sanitize this value. Add only HTML that you trust.
 
 Sources that use the same language and `package_name` are merged into one SDK. Cortex Docs rejects duplicate operation and type names that would make a merge ambiguous.
 
