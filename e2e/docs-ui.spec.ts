@@ -33,22 +33,26 @@ test.describe('Docs UI', () => {
     });
   });
 
-  test('loads the transparent Built by Cortex logo inside a theme-aware card', async ({ page }) => {
+  test('loads the transparent Built with Cortex logo inside a theme-aware card', async ({
+    page,
+  }) => {
     await page.goto('/docs/quickstart');
-    const logoCard = page.getByRole('link', { name: 'Built by Cortex' });
-    const logoImage = logoCard.getByRole('img', { name: 'Built by Cortex' });
+    const logoCard = page.getByRole('link', { name: 'Built with Cortex' });
+    const logoImage = logoCard.getByRole('img', { name: 'Built with Cortex' });
 
     await expect(logoCard).toHaveAttribute('href', 'https://cortexdocs.dev');
     await logoCard.scrollIntoViewIfNeeded();
     await expect(logoCard).toHaveClass(/dark:bg-zinc-950/);
     await expect(logoImage).toHaveAttribute(
       'src',
-      'http://localhost:4010/images/built-by-cortex.svg',
+      'http://localhost:4010/images/built-with-cortex.svg',
     );
     await expect(logoImage).toHaveClass(/dark:invert/);
     await expect
       .poll(() => logoImage.evaluate((image: HTMLImageElement) => image.naturalWidth))
       .toBe(128);
+
+    await expect(logoCard.locator('xpath=ancestor::footer')).toHaveClass(/mt-\[160px\]/);
   });
 
   test('shows authentication info', async ({ page }) => {

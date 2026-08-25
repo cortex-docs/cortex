@@ -1,8 +1,31 @@
 # Getting Started
 
-Cortex generates typed SDKs from OpenAPI, AsyncAPI, GraphQL, OpenRPC, and Protocol Buffer specifications.
+Cortex Docs generates typed SDKs, interactive documentation, and Model Context Protocol (MCP) servers.
 
 Generated SDKs include HTTP timeouts, chunked-response streams, connection recovery, WebSocket heartbeats, and gRPC streams.
+
+Explore the generated documentation, SDK references, and MCP tools in the [live Cortex Docs demo](https://demo.cortexdocs.dev).
+
+## Main Features
+
+- Combine multiple API specifications in one project and one generated SDK.
+- Generate typed clients for 11 programming languages.
+- Build interactive documentation for each API source.
+- Add custom Markdown pages and SDK guides to the documentation site.
+- Generate MCP server and resources from API specifications, custom Markdown pages, and SDK guides.
+- Publish generated packages and MCP to language registries and GitHub repositories.
+
+## Supported API Sources
+
+| Source          | Generated SDK                             | Documentation                 | Generated MCP server               |
+| --------------- | ----------------------------------------- | ----------------------------- | ---------------------------------- |
+| OpenAPI         | REST clients                              | Interactive API reference     | Callable tools and specifications  |
+| AsyncAPI        | WebSocket clients                         | Channel and message reference | Payload tools and specifications   |
+| GraphQL SDL     | Query, mutation, and subscription clients | Operation and type reference  | Callable tools and embedded schema |
+| Protocol Buffer | Unary and streaming gRPC clients          | Service and message reference | Embedded `.proto` resources        |
+| OpenRPC         | JSON-RPC clients                          | Method and schema reference   | Callable tools and specifications  |
+
+The generated MCP server exposes Protocol Buffer files as resources. It does not call gRPC methods.
 
 ## Installation
 
@@ -18,17 +41,33 @@ npm install -g @cortex-docs/cli
 cortex init my-project
 ```
 
-This scaffolds a new project with starter files:
+This command creates a new project with starter files:
 
 - `cortex.config.yml` — project configuration
-- `specs/` — sample API spec files (OpenAPI, AsyncAPI, GraphQL, OpenRPC, and Protocol Buffers)
+- `specs/` — sample API specification files (OpenAPI, AsyncAPI, GraphQL, OpenRPC, and Protocol Buffers)
 - `docs/quickstart.md` — starter documentation page
 - `docs/REST_INTRO.md` — starter intro document (rendered at the top of the API Reference)
 - `assets/` — logos, favicon, and section icons
 
 ### Add your API sources
 
-Edit `cortex.config.yml` to add your spec files. See the [Configuration](/docs/configuration) guide for the full reference.
+Edit `cortex.config.yml` to add your specification files. See the [Configuration](/docs/configuration) guide for the full reference.
+
+### Add custom Markdown docs
+
+Add Markdown files to the `docs` section of `cortex.config.yml`:
+
+```yaml
+docs:
+  - section: Get started
+    sources:
+      - title: Quickstart
+        document: ./docs/quickstart.md
+      - title: Authentication
+        document: ./docs/authentication.md
+```
+
+Cortex Docs adds these pages to the documentation site. The generated MCP server also includes their content as tools.
 
 ### Generate SDKs
 
@@ -36,7 +75,15 @@ Edit `cortex.config.yml` to add your spec files. See the [Configuration](/docs/c
 cortex generate
 ```
 
-This reads your config and generates SDKs, MCP server, and documentation for all configured sources and languages.
+This command generates SDKs, the MCP server, and documentation for all configured sources and languages.
+
+### Generate only the MCP server
+
+```bash
+cortex mcp generate --output .cortex/mcp-server
+```
+
+The generated package contains local copies of each configured specification. It also includes custom Markdown pages and generated SDK guides.
 
 ### Preview documentation
 
@@ -44,14 +91,14 @@ This reads your config and generates SDKs, MCP server, and documentation for all
 cortex docs serve
 ```
 
-Opens a local server with interactive documentation for your project. Watches for spec and config changes and auto-regenerates SDKs.
+This command starts a local documentation server. The server watches the configuration and source files, then regenerates the SDKs after changes.
 
 ## How It Works
 
-1. **Parse** — Your API specs are parsed and validated (from file or URL)
-2. **Resolve** — Local component references are resolved where generation needs their values
-3. **Transform** — Operations are grouped into resources based on tags or `x-cortex-resource`
-4. **Generate** — Each language plugin produces native code with proper types and naming conventions
+1. **Parse** — Cortex parses and validates each API specification from a file or URL
+2. **Resolve** — Cortex resolves local component references when code generation needs their values
+3. **Transform** — Cortex groups operations into resources with tags or `x-cortex-resource`
+4. **Generate** — Cortex creates SDKs, documentation, and an MCP server from the project configuration
 
 ## Connection and Stream Behavior
 
@@ -68,20 +115,20 @@ The exact option names follow the conventions of each generated language. The SD
 
 ## CLI Usage
 
-| Command                                 | Description                                                         |
-| --------------------------------------- | ------------------------------------------------------------------- |
-| `cortex init <name>`                    | Scaffold a new project with config and starter files                |
-| `cortex generate`                       | Generate SDKs and MCP server from `cortex.config.yml`               |
-| `cortex generate --language typescript` | Generate a specific language only                                   |
-| `cortex generate --dry-run`             | Preview without writing files                                       |
-| `cortex generate --no-mcp`              | Skip MCP server generation                                          |
-| `cortex publish`                        | Publish generated SDKs to package registries                        |
-| `cortex publish --dry-run`              | Preview publish commands                                            |
-| `cortex validate`                       | Validate your spec and config                                       |
-| `cortex docs serve`                     | Preview docs locally (auto-regenerates SDKs on spec/config changes) |
-| `cortex docs build`                     | Build a production Node.js documentation server                     |
-| `cortex docs start`                     | Start a production documentation build                              |
-| `cortex mcp generate`                   | Generate an MCP server standalone                                   |
+| Command                                 | Description                                                 |
+| --------------------------------------- | ----------------------------------------------------------- |
+| `cortex init <name>`                    | Create a new project with a configuration and starter files |
+| `cortex generate`                       | Generate SDKs and an MCP server from `cortex.config.yml`    |
+| `cortex generate --language typescript` | Generate a specific language only                           |
+| `cortex generate --dry-run`             | Preview without writing files                               |
+| `cortex generate --no-mcp`              | Skip MCP server generation                                  |
+| `cortex publish`                        | Publish generated SDKs to package registries                |
+| `cortex publish --dry-run`              | Preview publish commands                                    |
+| `cortex validate`                       | Validate the configuration and each API specification       |
+| `cortex docs serve`                     | Preview docs and regenerate SDKs after source changes       |
+| `cortex docs build`                     | Build a production Node.js documentation server             |
+| `cortex docs start`                     | Start a production documentation build                      |
+| `cortex mcp generate`                   | Generate an MCP server standalone                           |
 
 ## Supported Languages
 
@@ -119,9 +166,9 @@ Cortex follows each language's idiomatic conventions:
 | C++        | PascalCase | snake_case | snake_case | snake_case |
 | C          | PascalCase | snake_case | snake_case | snake_case |
 
-## What's Next
+## Next Steps
 
-- [Configuration](/docs/configuration) — Full config reference
+- [Configuration](/docs/configuration) — Full configuration reference
 - [OpenAPI](/docs/sdk-generation) — HTTP timeouts and chunked responses
 - [WebSocket SDKs](/docs/websocket-sdks) — AsyncAPI and real-time clients
 - [GraphQL](/docs/graphql) — Generate GraphQL client SDKs
