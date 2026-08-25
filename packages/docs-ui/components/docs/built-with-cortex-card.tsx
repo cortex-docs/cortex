@@ -1,19 +1,27 @@
+'use client';
+
+import { useState } from 'react';
 import Image from 'next/image';
 
 import { cn } from '@/lib/utils';
 
-const BUILT_BY_CORTEX_LOGO_URL =
+const BUILT_WITH_CORTEX_LOGO_URL =
+  process.env.NEXT_PUBLIC_CORTEX_BUILT_WITH_LOGO_URL ??
   process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_LOGO_URL ??
   process.env.NEXT_PUBLIC_CORTEX_BUILT_BY_BADGE_URL ??
-  'https://static.cortexdocs.dev/images/built-by-cortex.svg';
+  'https://static.cortexdocs.dev/images/built-with-cortex.svg';
+const LOCAL_BUILT_WITH_CORTEX_LOGO_URL =
+  'http://localhost:4010/images/built-with-cortex.svg?spacing=3';
 
-export function BuiltByCortexCard({ className }: { className?: string }) {
+export function BuiltWithCortexCard({ className }: { className?: string }) {
+  const [logoUrl, setLogoUrl] = useState(BUILT_WITH_CORTEX_LOGO_URL);
+
   return (
     <a
       href="https://cortexdocs.dev"
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Built by Cortex"
+      aria-label="Built with Cortex"
       className={cn(
         'inline-flex items-center rounded-[10px] border border-black/10 bg-white px-2.5 py-2 shadow-sm',
         'transition-colors hover:border-black/15 hover:bg-zinc-50',
@@ -23,11 +31,20 @@ export function BuiltByCortexCard({ className }: { className?: string }) {
       )}
     >
       <Image
-        src={BUILT_BY_CORTEX_LOGO_URL}
-        alt="Built by Cortex"
+        src={logoUrl}
+        alt="Built with Cortex"
         width={128}
         height={20}
         className="h-5 w-32 transition-[filter] dark:invert"
+        onError={() => {
+          if (
+            typeof window !== 'undefined' &&
+            ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) &&
+            logoUrl !== LOCAL_BUILT_WITH_CORTEX_LOGO_URL
+          ) {
+            setLogoUrl(LOCAL_BUILT_WITH_CORTEX_LOGO_URL);
+          }
+        }}
         unoptimized
       />
     </a>

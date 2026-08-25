@@ -8,6 +8,7 @@ import {
   resolveDevRuntimeDirName,
   resolveDocsUiPath,
   resolveNextBin,
+  syncDocsUiRuntimeSources,
 } from './runtime';
 import { assertTemplateRoot } from '@cortex-docs/codegen';
 import {
@@ -164,6 +165,7 @@ export class DocsServeCommand extends CommandRunner {
     });
 
     let debounce: ReturnType<typeof setTimeout> | null = null;
+    let runtimeSyncDebounce: ReturnType<typeof setTimeout> | null = null;
     let generating = false;
     const IGNORE = /(^|[\\/])(generated|node_modules|\.next|\.cortex|assets)([\\/]|$)/;
 
@@ -190,10 +192,24 @@ export class DocsServeCommand extends CommandRunner {
     for (const templateDir of extraTemplateDirs) {
       watchers.push(fs.watch(templateDir, { recursive: true }, onChange));
     }
+
+    watchers.push(
+      fs.watch(docsUiPath, { recursive: true }, (_event, filename) => {
+        if (!filename) return;
+        const changedPath = filename.toString();
+        if (!/^(app|components|hooks|lib|public)[\\/]/.test(changedPath)) return;
+        if (runtimeSyncDebounce) clearTimeout(runtimeSyncDebounce);
+        runtimeSyncDebounce = setTimeout(() => {
+          syncDocsUiRuntimeSources(docsUiPath, runtimeDir);
+        }, 50);
+      }),
+    );
     this.logger.info('Watching for spec, configuration, and template changes');
 
     const cleanup = () => {
       for (const watcher of watchers) watcher.close();
+      if (debounce) clearTimeout(debounce);
+      if (runtimeSyncDebounce) clearTimeout(runtimeSyncDebounce);
       if (child.pid && !child.killed) {
         child.kill('SIGTERM');
       }

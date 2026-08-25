@@ -2,7 +2,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { prepareDocsUiRuntime, resolveDevRuntimeDirName } from '../src/commands/docs/runtime';
+import {
+  prepareDocsUiRuntime,
+  resolveDevRuntimeDirName,
+  syncDocsUiRuntimeSources,
+} from '../src/commands/docs/runtime';
 
 describe('docs runtime', () => {
   it('keeps the development dist directory inside the docs UI project', () => {
@@ -50,6 +54,38 @@ describe('docs runtime', () => {
     );
     expect(fs.readFileSync(path.join(docsUiPath, 'next-env.d.ts'), 'utf-8')).toBe('next-env.d.ts');
     expect(fs.readFileSync(path.join(runtimeDir, 'next-env.d.ts'), 'utf-8')).toBe('runtime-only');
+
+    fs.rmSync(workspace, { recursive: true });
+  });
+
+  it('adds renamed source files and removes their stale runtime links', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-docs-runtime-'));
+    const docsUiPath = path.join(workspace, 'docs-ui');
+    const runtimeDir = path.join(docsUiPath, '.cortex-dev-test');
+    for (const directory of ['app', 'components', 'hooks', 'lib', 'public']) {
+      fs.mkdirSync(path.join(docsUiPath, directory), { recursive: true });
+    }
+    const oldSource = path.join(docsUiPath, 'components', 'old-card.tsx');
+    const newSource = path.join(docsUiPath, 'components', 'new-card.tsx');
+    fs.writeFileSync(oldSource, 'export const Card = "old";');
+    for (const file of [
+      'next.config.js',
+      'package.json',
+      'postcss.config.mjs',
+      'tsconfig.json',
+      'next-env.d.ts',
+    ]) {
+      fs.writeFileSync(path.join(docsUiPath, file), file);
+    }
+
+    prepareDocsUiRuntime(docsUiPath, runtimeDir);
+    fs.renameSync(oldSource, newSource);
+    syncDocsUiRuntimeSources(docsUiPath, runtimeDir);
+
+    expect(fs.existsSync(path.join(runtimeDir, 'components', 'old-card.tsx'))).toBe(false);
+    expect(fs.realpathSync(path.join(runtimeDir, 'components', 'new-card.tsx'))).toBe(
+      fs.realpathSync(newSource),
+    );
 
     fs.rmSync(workspace, { recursive: true });
   });
