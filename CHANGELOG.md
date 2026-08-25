@@ -18,6 +18,21 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.10] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed `cortex docs serve` not picking up changes to docs UI source files (app, components, hooks, lib, public) during local preview, requiring a manual restart.
+
+### Improvements
+
+- Renamed the "Built by Cortex" footer badge to "Built with Cortex," with updated branding, sizing, and asset URLs (`/images/built-with-cortex.svg`), plus backward-compatible redirects from the old badge URLs.
+- Expanded the Getting Started guide with a features overview, a supported API sources table, a link to the live demo, guidance on adding custom Markdown docs, and instructions for generating the MCP server standalone.
+
 ## [0.1.9] - 2026-08-25
 
 ### New Features
