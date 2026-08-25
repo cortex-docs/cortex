@@ -18,6 +18,21 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.11] - 2026-08-25
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Clarified documentation to describe the generated MCP server (rather than MCP tools) for REST, GraphQL, OpenRPC, and WebSocket payload preparation.
+- Clarified that generated packages and the MCP server can be published to language registries and GitHub repositories.
+
 ## [0.1.10] - 2026-08-25
 
 ### New Features
