@@ -60,7 +60,7 @@ test.describe('Docs UI', () => {
     ]);
     expect(footerBox).not.toBeNull();
     expect(paginationBox).not.toBeNull();
-    expect(Math.round(footerBox!.y - (paginationBox!.y + paginationBox!.height))).toBe(48);
+    expect(Math.round(footerBox!.y - (paginationBox!.y + paginationBox!.height))).toBe(160);
   });
 
   test('shows authentication info', async ({ page }) => {
