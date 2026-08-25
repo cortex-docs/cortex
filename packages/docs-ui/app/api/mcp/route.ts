@@ -11,6 +11,8 @@ import {
   type McpToolInfo,
 } from '@cortex-docs/mcp-gen';
 
+export const dynamic = 'force-static';
+
 interface McpInfo {
   serverName: string;
   packageName: string;

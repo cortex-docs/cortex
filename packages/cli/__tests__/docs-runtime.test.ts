@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  prepareDocsUiBuildRuntime,
   prepareDocsUiRuntime,
   resolveDevRuntimeDirName,
   syncDocsUiRuntimeSources,
@@ -86,6 +87,35 @@ describe('docs runtime', () => {
     expect(fs.realpathSync(path.join(runtimeDir, 'components', 'new-card.tsx'))).toBe(
       fs.realpathSync(newSource),
     );
+
+    fs.rmSync(workspace, { recursive: true });
+  });
+
+  it('copies source files for production builds', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-docs-runtime-'));
+    const docsUiPath = path.join(workspace, 'docs-ui');
+    const runtimeDir = path.join(docsUiPath, '.cortex-build-test');
+    for (const directory of ['app', 'components', 'hooks', 'lib', 'public']) {
+      fs.mkdirSync(path.join(docsUiPath, directory), { recursive: true });
+    }
+    const sourcePage = path.join(docsUiPath, 'app', 'page.tsx');
+    fs.writeFileSync(sourcePage, 'export default function Page() {}');
+    for (const file of [
+      'next.config.js',
+      'package.json',
+      'postcss.config.mjs',
+      'tsconfig.json',
+      'next-env.d.ts',
+    ]) {
+      fs.writeFileSync(path.join(docsUiPath, file), file);
+    }
+
+    prepareDocsUiBuildRuntime(docsUiPath, runtimeDir);
+    const runtimePage = path.join(runtimeDir, 'app', 'page.tsx');
+    fs.writeFileSync(sourcePage, 'export default function UpdatedPage() {}');
+
+    expect(fs.lstatSync(runtimePage).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(runtimePage, 'utf-8')).toBe('export default function Page() {}');
 
     fs.rmSync(workspace, { recursive: true });
   });

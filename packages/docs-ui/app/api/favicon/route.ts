@@ -3,6 +3,8 @@ import * as path from 'node:path';
 import { NextResponse } from 'next/server';
 import { sanitizeSvg } from '@/lib/sanitize-svg';
 
+export const dynamic = 'force-static';
+
 const CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.png': 'image/png',

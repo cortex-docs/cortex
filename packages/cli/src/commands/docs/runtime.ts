@@ -20,12 +20,34 @@ export function resolveDevRuntimeDirName(projectDir: string): string {
 }
 
 export function prepareDocsUiRuntime(docsUiPath: string, runtimeDir: string): void {
+  prepareDocsUiRuntimeWithOptions(docsUiPath, runtimeDir);
+}
+
+export function prepareDocsUiBuildRuntime(docsUiPath: string, runtimeDir: string): void {
+  prepareDocsUiRuntimeWithOptions(docsUiPath, runtimeDir, { copySources: true });
+}
+
+function prepareDocsUiRuntimeWithOptions(
+  docsUiPath: string,
+  runtimeDir: string,
+  options: { copySources?: boolean } = {},
+): void {
   fs.mkdirSync(runtimeDir, { recursive: true });
 
-  syncDocsUiRuntimeSources(docsUiPath, runtimeDir);
+  if (options.copySources) copyDocsUiRuntimeSources(docsUiPath, runtimeDir);
+  else syncDocsUiRuntimeSources(docsUiPath, runtimeDir);
 
   for (const name of RUNTIME_FILES) {
     fs.copyFileSync(path.join(docsUiPath, name), path.join(runtimeDir, name));
+  }
+}
+
+function copyDocsUiRuntimeSources(docsUiPath: string, runtimeDir: string): void {
+  for (const name of RUNTIME_DIRECTORIES) {
+    const source = path.join(docsUiPath, name);
+    const target = path.join(runtimeDir, name);
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.cpSync(source, target, { recursive: true });
   }
 }
 

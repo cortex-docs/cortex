@@ -160,8 +160,6 @@ function readSiteConfig(): LoadedSiteConfig {
   }
 }
 
-export const dynamic = 'force-dynamic';
-
 export function generateMetadata(): Metadata {
   const siteConfig = readSiteConfig();
   const title = siteConfig.title || siteConfig.project || 'Cortex Docs';
@@ -190,7 +188,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${GeistSans.variable} ${GeistMono.variable}`}
       suppressHydrationWarning
     >
-      {customHeadHtml && <head dangerouslySetInnerHTML={{ __html: customHeadHtml }} />}
+      {customHeadHtml && (
+        <head suppressHydrationWarning dangerouslySetInnerHTML={{ __html: customHeadHtml }} />
+      )}
       <body suppressHydrationWarning>
         <script
           data-cortex-theme-init=""

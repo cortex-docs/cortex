@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { getLanguageNaming, renderSnippet } from '@cortex-docs/codegen';
 import { getDocsUiRoot, locationExists, resolveLocation } from '@/lib/load-location';
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-static';
 
 interface ParamInfo {
   name: string;
