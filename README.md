@@ -3,7 +3,7 @@
 [![CI](https://github.com/cortex-docs/cortex/actions/workflows/ci.yml/badge.svg)](https://github.com/cortex-docs/cortex/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Cortex Docs generates typed SDKs, interactive API documentation, and Model Context Protocol (MCP) servers from API specifications and custom markdown docs.
+Cortex turns API specifications and Markdown into typed SDKs, interactive documentation, and MCP servers for developers and AI agents.
 
 One project can combine OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC sources. Cortex Docs generates one package for each configured language.
 
@@ -101,6 +101,10 @@ mcp:
 Store local head resources in the project `assets` directory. Cortex serves these files from `/assets/*`.
 
 Cortex does not sanitize this value. Add only HTML that you trust.
+
+Add `?appearance=dark` or `?appearance=light` to any documentation URL to select its initial appearance. The parameter takes priority over the project theme and the visitor's stored preference.
+
+For example, `/docs/quickstart?appearance=dark` opens the quickstart in dark mode. The theme button can change the appearance after the page loads.
 
 Sources that use the same language and `package_name` are merged into one SDK. Cortex Docs rejects duplicate operation and type names that would make a merge ambiguous.
 
