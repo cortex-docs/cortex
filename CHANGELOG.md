@@ -18,6 +18,22 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.17] - 2026-08-26
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed the packaged CLI's `docs dev`/`serve` runtime sync so files and directories in the docs-ui runtime are properly copied and stale entries removed, instead of relying on broken symlinks.
+- Fixed the CLI's Next.js config so the `@cortex-docs/docs-ui` package transpilation and module alias are always applied, preventing build/runtime failures in the packaged CLI.
+- Fixed `docs serve` to run Next.js dev with the webpack bundler explicitly, avoiding dev-server errors in the packaged CLI.
+
+### Improvements
+
+- API reference sidebars (navigation and code snippets) now automatically show or collapse based on available screen width, instead of only reacting to fixed breakpoints, improving usability on narrower windows.
+
 ## [0.1.16] - 2026-08-25
 
 ### New Features
