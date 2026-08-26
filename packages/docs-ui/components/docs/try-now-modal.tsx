@@ -312,11 +312,15 @@ function MessageLog({ messages }: { messages: LogEntry[] }) {
   }
 
   return (
-    <div className="mt-1 rounded-lg border overflow-hidden max-h-72 overflow-y-auto">
+    <div
+      data-try-now-messages
+      className="mt-1 rounded-lg border overflow-hidden max-h-72 overflow-y-auto"
+    >
       <div className="divide-y divide-border/30">
         {messages.map((m) => (
           <div
             key={m.id}
+            data-try-now-message-direction={m.direction}
             className={cn(
               'px-3 py-1.5 text-xs font-mono',
               m.direction === 'system' && 'bg-muted/30 text-muted-foreground italic',
@@ -697,13 +701,23 @@ export function TryNowModal({
 
           if (race === 'timeout') {
             addLog('system', `${res.status} ${res.statusText}`);
-            for (const line of firstText.split('\n').filter(Boolean)) addLog('received', line);
+            let buffer = firstText;
+            const logCompleteLines = () => {
+              const lines = buffer.split('\n');
+              buffer = lines.pop() ?? '';
+              for (const line of lines) {
+                if (line.trim()) addLog('received', line);
+              }
+            };
+            logCompleteLines();
             let pending = await nextRead;
             while (!pending.done) {
-              const text = decoder.decode(pending.value, { stream: true });
-              for (const line of text.split('\n').filter(Boolean)) addLog('received', line);
+              buffer += decoder.decode(pending.value, { stream: true });
+              logCompleteLines();
               pending = await reader.read();
             }
+            buffer += decoder.decode();
+            if (buffer.trim()) addLog('received', buffer);
             addLog('system', 'Stream ended');
           } else {
             let fullText = firstText;
@@ -1159,6 +1173,7 @@ export function TryNowModal({
 
   return (
     <div
+      data-try-now-modal
       className="fixed inset-0 z-200 flex items-center justify-center"
       style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
     >
@@ -1598,7 +1613,7 @@ export function TryNowModal({
                   </div>
                 ) : (
                   response && (
-                    <div className="mt-1 rounded-lg border overflow-hidden">
+                    <div data-try-now-response className="mt-1 rounded-lg border overflow-hidden">
                       <div className="flex items-center justify-between border-b bg-muted/40 px-3 py-1.5">
                         <span
                           className={cn(

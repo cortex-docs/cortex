@@ -54,6 +54,51 @@ test.describe('Docs UI', () => {
     });
   });
 
+  test('keeps the REST pet stream open until it is stopped manually', async ({ page }) => {
+    await page.goto('/api-reference/rest-api-v1/streamPets');
+    await page.getByRole('button', { name: 'Try now' }).click();
+
+    const modal = page.locator('[data-try-now-modal]');
+    await expect(modal).toContainText('http://localhost:4010/pets/stream');
+    await modal.getByRole('button', { name: 'Send Request' }).click();
+    await expect(modal.getByRole('button', { name: 'Stop' })).toBeVisible();
+    await expect
+      .poll(() => modal.locator('[data-try-now-message-direction="received"]').count())
+      .toBeGreaterThanOrEqual(4);
+
+    await modal.getByRole('button', { name: 'Stop' }).click();
+    await expect(modal).toContainText('Request cancelled');
+    await expect(modal.getByRole('button', { name: 'Send Request' })).toBeVisible();
+  });
+
+  test('runs and manually stops a GraphQL subscription', async ({ page }) => {
+    await page.goto('/api-reference/graphql/petAdopted');
+    await page.getByRole('button', { name: 'Try now' }).click();
+
+    const modal = page.locator('[data-try-now-modal]');
+    await expect(modal).toContainText('ws://localhost:4010/graphql');
+    await modal.getByRole('button', { name: 'Subscribe' }).click();
+    await expect(modal.getByRole('button', { name: 'Unsubscribe' })).toBeVisible();
+    await expect
+      .poll(() => modal.locator('[data-try-now-message-direction="received"]').count())
+      .toBeGreaterThanOrEqual(2);
+
+    await modal.getByRole('button', { name: 'Unsubscribe' }).click();
+    await expect(modal.getByRole('button', { name: 'Subscribe' })).toBeVisible();
+  });
+
+  test('executes gRPC calls through the configured browser bridge', async ({ page }) => {
+    await page.goto('/api-reference/grpc/PetService.ListPets');
+    await page.getByRole('button', { name: 'Try now' }).click();
+
+    const modal = page.locator('[data-try-now-modal]');
+    await expect(modal).toContainText('http://localhost:4010/grpc/PetService/ListPets');
+    await modal.getByRole('button', { name: 'Execute' }).click();
+    const response = modal.locator('[data-try-now-response]');
+    await expect(response).toContainText('200 OK');
+    await expect(response).toContainText('pet-1');
+  });
+
   test('renders custom head HTML and serves project assets', async ({ page }) => {
     await page.goto('/');
 

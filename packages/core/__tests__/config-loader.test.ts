@@ -322,6 +322,7 @@ describe('ConfigLoader', () => {
             title: 'gRPC',
             type: 'grpc-spec',
             spec: './service.proto',
+            try_now_url: 'http://localhost:4010',
             languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
           },
         ],
@@ -329,6 +330,7 @@ describe('ConfigLoader', () => {
 
       expect(config.sources).toHaveLength(4);
       expect(config.sources[2].endpoint).toBe('http://localhost:4000/graphql');
+      expect(config.sources[3].try_now_url).toBe('http://localhost:4010');
     });
 
     it('rejects unknown fields and protocol-specific fields in the wrong source', () => {
@@ -354,6 +356,21 @@ describe('ConfigLoader', () => {
           ],
         }),
       ).toThrow('An endpoint is only valid for a graphql-spec source');
+
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          sources: [
+            {
+              title: 'REST',
+              type: 'openapi-spec',
+              spec: './openapi.yaml',
+              try_now_url: 'https://api.example.com',
+              languages: [{ language: 'typescript', package_name: '@acme/sdk' }],
+            },
+          ],
+        }),
+      ).toThrow('A Try now URL is only valid for a grpc-spec or openrpc-spec source');
 
       expect(() =>
         loader.validate({
