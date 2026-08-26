@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, watch, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, watch, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -296,35 +296,49 @@ function startDocsServe() {
 function watchPackageSources(onChange) {
   let sourceTimer = null;
   const packagesDir = join(WORKSPACE_ROOT, 'packages');
-  const watcher = watch(packagesDir, { recursive: true }, (_event, filename) => {
-    if (!filename) return;
-    if (
-      filename.includes('/dist/') ||
-      filename.includes('dist/') ||
-      filename.includes('/node_modules/') ||
-      filename.includes('node_modules/') ||
-      filename.includes('/coverage/') ||
-      filename.includes('coverage/') ||
-      filename.includes('/.wrangler/') ||
-      filename.includes('.wrangler/') ||
-      filename.includes('/.next/') ||
-      filename.includes('.next/') ||
-      filename.includes('/generated/')
-    )
-      return;
-    if (filename.startsWith('docs-ui/') || filename.startsWith('docs-site/')) return;
-    if (!/\.(ts|tsx|js|jsx|ejs|json)$/.test(filename)) return;
+  const excludedPackages = new Set(['docs-site', 'docs-ui']);
+  const packageNames = readdirSync(packagesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !excludedPackages.has(entry.name))
+    .map((entry) => entry.name);
+  const watchers = packageNames.map((packageName) => {
+    const watcher = watch(
+      join(packagesDir, packageName),
+      { recursive: true },
+      (_event, filename) => {
+        if (!filename) return;
+        if (
+          filename.includes('/dist/') ||
+          filename.startsWith('dist/') ||
+          filename.includes('/node_modules/') ||
+          filename.startsWith('node_modules/') ||
+          filename.includes('/coverage/') ||
+          filename.startsWith('coverage/') ||
+          filename.includes('/.wrangler/') ||
+          filename.startsWith('.wrangler/') ||
+          filename.includes('/.next/') ||
+          filename.startsWith('.next/') ||
+          filename.includes('/generated/') ||
+          filename.startsWith('generated/')
+        )
+          return;
+        if (!/\.(ts|tsx|js|jsx|ejs|json)$/.test(filename)) return;
 
-    clearTimeout(sourceTimer);
-    sourceTimer = setTimeout(() => {
-      log('watch', `Source changed: packages/${filename}`);
-      onChange();
-    }, 1000);
+        clearTimeout(sourceTimer);
+        sourceTimer = setTimeout(() => {
+          log('watch', `Source changed: packages/${packageName}/${filename}`);
+          onChange();
+        }, 1000);
+      },
+    );
+    watcher.on('error', (error) => {
+      logError('watch', `Could not watch packages/${packageName}: ${error.message}`);
+    });
+    return watcher;
   });
   log('watch', 'Watching packages/ source (excluding dist, docs-ui, docs-site)');
   return () => {
     clearTimeout(sourceTimer);
-    watcher.close();
+    for (const watcher of watchers) watcher.close();
   };
 }
 
