@@ -63,8 +63,8 @@ const DISPLAY_NAMES: Record<string, string> = {
 };
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const lang = searchParams.get('lang');
+  const lang =
+    process.env.CORTEX_STATIC_EXPORT === '1' ? null : new URL(request.url).searchParams.get('lang');
 
   if (lang && !LANGUAGES.includes(lang as (typeof LANGUAGES)[number])) {
     return NextResponse.json({ error: 'Unknown language' }, { status: 400 });

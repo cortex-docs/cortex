@@ -1,0 +1,5 @@
+/images/*
+  Cache-Control: public,max-age=86400,stale-while-revalidate=604800
+  Content-Security-Policy: default-src 'none'; script-src 'none'; style-src 'none'; sandbox
+  Cross-Origin-Resource-Policy: cross-origin
+  X-Content-Type-Options: nosniff

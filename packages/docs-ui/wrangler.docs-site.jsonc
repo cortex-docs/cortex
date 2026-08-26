@@ -1,18 +1,7 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "cortex-docs-site",
-  "main": ".open-next/worker.js",
-  "find_additional_modules": true,
-  "base_dir": ".open-next",
-  "rules": [
-    {
-      "type": "Text",
-      "globs": ["server-functions/default/packages/docs-ui/.cortex-docs-site/**/*"],
-      "fallthrough": true,
-    },
-  ],
   "compatibility_date": "2026-08-24",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": false,
   "routes": [
     {
@@ -21,18 +10,8 @@
     },
   ],
   "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS",
-  },
-  "observability": {
-    "enabled": true,
-  },
-  "vars": {
-    "NEXTJS_ENV": "production",
-    "CORTEX_CLOUDFLARE": "1",
-    "CORTEX_DOCS_UI_ROOT": "/bundle/server-functions/default/packages/docs-ui",
-    "CORTEX_CONFIG_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-docs-site/cortex.config.yml",
-    "CORTEX_LOGO_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-docs-site/assets/logo_light.svg",
-    "CORTEX_FAVICON_PATH": "/bundle/server-functions/default/packages/docs-ui/.cortex-docs-site/assets/favicon.svg",
+    "directory": ".next-cloudflare",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
   },
 }

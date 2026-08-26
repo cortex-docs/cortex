@@ -46,6 +46,16 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run build
+      - name: Build the assets-only Cloudflare demo
+        env:
+          CORTEX_DEMO_API_URL: https://api.demo.cortexdocs.dev
+        run: npm run --workspace=@cortex-docs/docs-ui demo:build
+      - name: Validate Cloudflare deployment configuration
+        run: |
+          node scripts/configure-cloudflare-security.mjs --dry-run
+          npx wrangler deploy --dry-run --config packages/docs-ui/wrangler.jsonc
+          npx wrangler deploy --dry-run --config packages/demo-api/wrangler.static.jsonc
+          npx wrangler deploy --dry-run --config packages/demo-api/wrangler.jsonc
       - run: npm run test:coverage
       - run: npm run pack:check
 
@@ -64,6 +74,7 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      - run: npm run test:e2e:static
       - if: failure()
         uses: actions/upload-artifact@v7
         with:

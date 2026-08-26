@@ -7,6 +7,7 @@
     "build": "tsc",
     "dev": "wrangler dev --port 4010",
     "deploy": "wrangler deploy",
+    "deploy:static": "wrangler deploy --config wrangler.static.jsonc",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf .wrangler dist coverage"
