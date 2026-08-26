@@ -20,7 +20,7 @@ export function resolveDevRuntimeDirName(projectDir: string): string {
 }
 
 export function prepareDocsUiRuntime(docsUiPath: string, runtimeDir: string): void {
-  prepareDocsUiRuntimeWithOptions(docsUiPath, runtimeDir);
+  prepareDocsUiRuntimeWithOptions(docsUiPath, runtimeDir, { copySources: true });
 }
 
 export function prepareDocsUiBuildRuntime(docsUiPath: string, runtimeDir: string): void {
@@ -55,31 +55,32 @@ export function syncDocsUiRuntimeSources(docsUiPath: string, runtimeDir: string)
   for (const name of RUNTIME_DIRECTORIES) {
     const source = path.join(docsUiPath, name);
     const target = path.join(runtimeDir, name);
-    if (fs.existsSync(target) && fs.lstatSync(target).isSymbolicLink()) {
-      fs.unlinkSync(target);
-    }
-    mirrorSourceDirectory(source, target);
+    syncSourceDirectory(source, target);
   }
 }
 
-function mirrorSourceDirectory(source: string, target: string): void {
+function syncSourceDirectory(source: string, target: string): void {
   fs.mkdirSync(target, { recursive: true });
 
   for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
     const sourceEntry = path.join(source, entry.name);
     const targetEntry = path.join(target, entry.name);
-    if (entry.isSymbolicLink() && !fs.existsSync(sourceEntry)) {
-      fs.unlinkSync(targetEntry);
-    }
+    if (!fs.existsSync(sourceEntry)) fs.rmSync(targetEntry, { recursive: true, force: true });
   }
 
   for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
     const sourceEntry = path.join(source, entry.name);
     const targetEntry = path.join(target, entry.name);
     if (entry.isDirectory()) {
-      mirrorSourceDirectory(sourceEntry, targetEntry);
-    } else if (!fs.existsSync(targetEntry)) {
-      fs.symlinkSync(sourceEntry, targetEntry, 'file');
+      if (fs.existsSync(targetEntry) && !fs.statSync(targetEntry).isDirectory()) {
+        fs.rmSync(targetEntry, { recursive: true, force: true });
+      }
+      syncSourceDirectory(sourceEntry, targetEntry);
+    } else {
+      if (fs.existsSync(targetEntry) && fs.statSync(targetEntry).isDirectory()) {
+        fs.rmSync(targetEntry, { recursive: true, force: true });
+      }
+      fs.copyFileSync(sourceEntry, targetEntry);
     }
   }
 }

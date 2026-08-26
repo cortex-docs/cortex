@@ -17,6 +17,27 @@ test.describe('Docs UI', () => {
     await expect(page.locator('text=Create a pet').first()).toBeVisible();
   });
 
+  test('moves only the right sidebar below when the projected center reaches 280px', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 932, height: 900 });
+    await page.goto('/api-reference');
+    await expect(page.locator('text=List all pets').first()).toBeVisible({ timeout: 15000 });
+
+    const leftSidebar = page.locator('[data-api-reference-left-sidebar]');
+    const rightSidebar = page.locator('[data-api-reference-right-sidebar]');
+    const bottomCodePanel = page.locator('[data-api-reference-bottom-code-panel]');
+
+    await expect(leftSidebar).toHaveAttribute('data-layout-mode', 'inline');
+    await expect(rightSidebar).toHaveCount(0);
+    await expect(bottomCodePanel).toBeVisible();
+
+    await page.setViewportSize({ width: 933, height: 900 });
+    await expect(leftSidebar).toHaveAttribute('data-layout-mode', 'inline');
+    await expect(rightSidebar).toBeVisible();
+    await expect(bottomCodePanel).toHaveCount(0);
+  });
+
   test('displays server URL', async ({ page }) => {
     await page.goto('/api-reference');
     await expect(page.locator('text=http://localhost:4010').first()).toBeVisible({
