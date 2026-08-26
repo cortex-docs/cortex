@@ -1,6 +1,6 @@
 {
   "name": "@cortex-docs/cli",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Cortex Docs CLI for SDKs, API documentation, and MCP servers",
   "license": "MIT",
   "repository": {

@@ -18,6 +18,21 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.18] - 2026-08-26
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed the demo API worker preview so it serves the branding logo asset locally instead of returning a missing-file error.
+- Fixed the local dev watcher so changes inside the docs UI and docs site no longer trigger unnecessary rebuilds of unrelated packages.
+
+### Improvements
+
+- The docs site and demo site are now deployed as static Cloudflare assets instead of Workers, so pages load without invoking a Worker script and no longer count against the Workers daily request allowance.
+
 ## [0.1.17] - 2026-08-26
 
 ### New Features
