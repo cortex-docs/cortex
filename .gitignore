@@ -2,6 +2,7 @@ node_modules/
 dist/
 .next/
 .next-build/
+.next-cloudflare/
 .open-next/
 .wrangler/
 .cortex-demo/

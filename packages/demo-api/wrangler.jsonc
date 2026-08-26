@@ -13,11 +13,12 @@
       "pattern": "api.demo.cortexdocs.dev",
       "custom_domain": true,
     },
-    {
-      "pattern": "static.cortexdocs.dev",
-      "custom_domain": true,
-    },
   ],
+  "assets": {
+    "directory": "static",
+    "html_handling": "none",
+    "not_found_handling": "none",
+  },
   "observability": {
     "enabled": true,
   },

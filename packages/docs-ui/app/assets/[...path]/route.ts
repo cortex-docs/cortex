@@ -1,6 +1,14 @@
 import * as fs from 'node:fs';
 import * as nodePath from 'node:path';
 import { NextResponse } from 'next/server';
+import { projectAssetStaticParams } from '@/lib/static-route-params';
+
+export const dynamic = 'force-static';
+export const dynamicParams = false;
+
+export function generateStaticParams(): Array<{ path: string[] }> {
+  return projectAssetStaticParams();
+}
 
 const CONTENT_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',

@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.cloudflare.d.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "hooks/**/*.ts",
+    "hooks/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "scripts/**/*.ts",
+    ".next-cloudflare/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", "next-env.d.ts", ".next/**", ".next-build/**", ".next-static-test/**"]
+}

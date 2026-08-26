@@ -27,8 +27,10 @@
     "scripts",
     "next.config.js",
     "next-env.d.ts",
+    "next-env.build.d.ts",
     "postcss.config.mjs",
     "tsconfig.json",
+    "tsconfig.build.json",
     "README.md",
     "LICENSE"
   ],
@@ -52,7 +54,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "start": "next start",
-    "clean": "rm -rf .next .next-build .open-next .cortex-demo .cortex-docs-site"
+    "clean": "rm -rf .next .next-build .next-cloudflare .open-next .cortex-demo .cortex-docs-site"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

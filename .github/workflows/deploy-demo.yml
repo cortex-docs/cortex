@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: deploy demo Workers
+    name: deploy demo static site and API
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -47,7 +47,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npm run --workspace=@cortex-docs/demo-api deploy
-      - name: Deploy the docs UI Worker
+      - name: Deploy static.cortexdocs.dev as assets only
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run --workspace=@cortex-docs/demo-api deploy:static
+      - name: Deploy demo.cortexdocs.dev as assets only
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -55,3 +60,8 @@ jobs:
         run: npm run --workspace=@cortex-docs/docs-ui demo:deploy
       - name: Verify the deployed demo under concurrent load
         run: node scripts/check-demo.mjs https://demo.cortexdocs.dev
+      - name: Configure demo API security rules
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: node scripts/configure-cloudflare-security.mjs
