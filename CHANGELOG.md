@@ -18,6 +18,22 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.20] - 2026-08-26
+
+### New Features
+
+- Added a `try_now_url` source option for gRPC and OpenRPC specs, enabling the "Try now" panel to stream live, real-time responses (e.g. server-streaming/watch operations) through a browser-compatible HTTP bridge.
+
+### Bug Fixes
+
+- Fixed search results navigating to the wrong page; selecting a REST, GraphQL, WebSocket, or OpenRPC result (including from recent searches) now opens its canonical API reference route.
+- Fixed streaming responses in the "Try now" panel being logged as garbled or incomplete lines when chunks split mid-line; output is now buffered and displayed as complete lines.
+- Fixed WebSocket connections dropping the `graphql-transport-ws` subprotocol negotiation, which could break interactive GraphQL subscription testing.
+
+### Improvements
+
+- None.
+
 ## [0.1.19] - 2026-08-26
 
 ### New Features
