@@ -111,9 +111,7 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
 
     if (sdkData.graphql) {
       const graphqlSourceSlug = slugify(
-        sdkData.graphqlSources?.[0]?.title ??
-          sdkData.sourceTitles?.graphql?.[0] ??
-          'graphql',
+        sdkData.graphqlSources?.[0]?.title ?? sdkData.sourceTitles?.graphql?.[0] ?? 'graphql',
       );
       for (const q of sdkData.graphql.queries ?? []) {
         const name = typeof q === 'string' ? q : q.name;
@@ -169,9 +167,7 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
 
     if (sdkData.websocket) {
       const websocketSourceSlug = slugify(
-        sdkData.websocketSources?.[0]?.title ??
-          sdkData.sourceTitles?.websocket?.[0] ??
-          'websocket',
+        sdkData.websocketSources?.[0]?.title ?? sdkData.sourceTitles?.websocket?.[0] ?? 'websocket',
       );
       for (const ch of sdkData.websocket.channels ?? []) {
         docs.push({
@@ -190,9 +186,7 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
 
     if (sdkData.openrpc) {
       const openrpcSourceSlug = slugify(
-        sdkData.openrpcSources?.[0]?.title ??
-          sdkData.sourceTitles?.openrpc?.[0] ??
-          'openrpc',
+        sdkData.openrpcSources?.[0]?.title ?? sdkData.sourceTitles?.openrpc?.[0] ?? 'openrpc',
       );
       for (const m of sdkData.openrpc.methods ?? []) {
         const tag = m.tags?.[0] ?? 'OpenRPC';
