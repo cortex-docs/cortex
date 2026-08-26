@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, watch, writeFileSync 
 import { connect } from 'node:net';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOCS_UI_DIR = resolve(__dirname, '..');
@@ -91,27 +92,52 @@ function initTestProject() {
     writeFileSync(openRpcPath, `${JSON.stringify(document, null, 2)}\n`, 'utf-8');
   }
 
-  let configContent = readFileSync(configPath, 'utf-8').replace(
-    /endpoint:\s*https?:\/\/[^\n]+\/graphql/,
-    `endpoint: ${apiUrl}/graphql`,
+  const grpcSpecPath = join(TEST_PROJECT_DIR, 'specs', 'petstore.proto');
+  mkdirSync(dirname(grpcSpecPath), { recursive: true });
+  writeFileSync(
+    grpcSpecPath,
+    readFileSync(
+      join(WORKSPACE_ROOT, 'packages', 'core', '__fixtures__', 'petstore.proto'),
+      'utf-8',
+    ),
+    'utf-8',
   );
-  configContent = configContent.replace(
-    /( {2}- title: gRPC\n {4}type: grpc-spec\n {4}spec: [^\n]+\n)(?: {4}try_now_url: [^\n]+\n)?/,
-    `$1    try_now_url: ${apiUrl}\n`,
-  );
-  if (!configContent.includes('\ncustom_head_html:')) {
-    configContent = configContent.replace(
-      /^home:/m,
-      [
-        'custom_head_html: |-',
-        '  <meta name="theme-color" content="#ffffff">',
-        '  <link rel="stylesheet" href="/assets/custom.css">',
-        "  <script>document.documentElement.dataset.cortexCustomHead = 'loaded';</script>",
-        'home:',
-      ].join('\n'),
-    );
+
+  const config = yaml.load(readFileSync(configPath, 'utf-8'));
+  if (!config || typeof config !== 'object' || !Array.isArray(config.sources)) {
+    throw new Error('The test project configuration does not contain a sources array.');
   }
-  writeFileSync(configPath, configContent, 'utf-8');
+  const graphqlSource = config.sources.find((source) => source.type === 'graphql-spec');
+  if (graphqlSource) graphqlSource.endpoint = `${apiUrl}/graphql`;
+
+  let grpcSource = config.sources.find((source) => source.type === 'grpc-spec');
+  if (!grpcSource) {
+    const restSource = config.sources.find((source) => source.type === 'openapi-spec');
+    const typescriptLanguage = restSource?.languages?.find(
+      (language) => language.language === 'typescript',
+    );
+    grpcSource = {
+      title: 'gRPC',
+      type: 'grpc-spec',
+      spec: './specs/petstore.proto',
+      languages: [
+        typescriptLanguage ?? {
+          language: 'typescript',
+          package_name: '@petstore/typescript-client-sdk',
+          github_repository: 'github.com/petstore/typescript-client-sdk',
+        },
+      ],
+    };
+    config.sources.push(grpcSource);
+  }
+  grpcSource.try_now_url = apiUrl;
+
+  config.custom_head_html ??= [
+    '<meta name="theme-color" content="#ffffff">',
+    '<link rel="stylesheet" href="/assets/custom.css">',
+    "<script>document.documentElement.dataset.cortexCustomHead = 'loaded';</script>",
+  ].join('\n');
+  writeFileSync(configPath, yaml.dump(config, { lineWidth: 120, noRefs: true }), 'utf-8');
   mkdirSync(join(TEST_PROJECT_DIR, 'assets'), { recursive: true });
   writeFileSync(
     join(TEST_PROJECT_DIR, 'assets', 'custom.css'),

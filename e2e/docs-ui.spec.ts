@@ -275,7 +275,11 @@ test.describe('Docs UI', () => {
       const input = page.locator('[cmdk-input]');
       await input.fill('list');
       await expect(page.locator('[cmdk-item]').first()).toBeVisible({ timeout: 500 });
+      const initialUrl = page.url();
+      const navigation = page.waitForURL((url) => url.href !== initialUrl);
       await page.locator('[cmdk-item]').first().click();
+      await navigation;
+      await page.waitForLoadState('domcontentloaded');
       await expect(page.locator('[cmdk-input]')).not.toBeVisible();
 
       await page.keyboard.press('Meta+k');
