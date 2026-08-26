@@ -96,7 +96,7 @@ function initTestProject() {
     `endpoint: ${apiUrl}/graphql`,
   );
   configContent = configContent.replace(
-    /(  - title: gRPC\n    type: grpc-spec\n    spec: [^\n]+\n)(?:    try_now_url: [^\n]+\n)?/,
+    /( {2}- title: gRPC\n {4}type: grpc-spec\n {4}spec: [^\n]+\n)(?: {4}try_now_url: [^\n]+\n)?/,
     `$1    try_now_url: ${apiUrl}\n`,
   );
   if (!configContent.includes('\ncustom_head_html:')) {
