@@ -1,15 +1,5 @@
 const path = require('node:path');
 const docsUiRoot = process.env.CORTEX_DOCS_UI_ROOT || __dirname;
-const standaloneWebpackConfig =
-  process.env.CORTEX_STANDALONE_BUILD === '1'
-    ? {
-        transpilePackages: ['@cortex-docs/docs-ui'],
-        webpack(config) {
-          config.resolve.alias['@'] = __dirname;
-          return config;
-        },
-      }
-    : {};
 
 if (process.env.CORTEX_CLOUDFLARE === '1') {
   const { initOpenNextCloudflareForDev } = require('@opennextjs/cloudflare');
@@ -18,8 +8,12 @@ if (process.env.CORTEX_CLOUDFLARE === '1') {
 
 /** @type {import('next').NextConfig} */
 module.exports = {
-  ...standaloneWebpackConfig,
   reactStrictMode: true,
+  transpilePackages: ['@cortex-docs/docs-ui'],
+  webpack(config) {
+    config.resolve.alias['@'] = __dirname;
+    return config;
+  },
   images: {
     remotePatterns: [
       {
