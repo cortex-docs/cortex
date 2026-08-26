@@ -13,10 +13,14 @@ function findProjectDir(): string | null {
 
 const IGNORE = /[\\/](generated|node_modules|\.next)[\\/]/;
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-static';
 
 export async function GET() {
-  if (process.env.CORTEX_CLOUDFLARE === '1') {
+  if (
+    process.env.NODE_ENV === 'production' ||
+    process.env.CORTEX_STATIC_EXPORT === '1' ||
+    process.env.CORTEX_STANDALONE_BUILD === '1'
+  ) {
     return new Response(null, { status: 204 });
   }
 

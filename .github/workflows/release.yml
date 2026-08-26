@@ -111,8 +111,12 @@ jobs:
             --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}" \
             | jq --exit-status '.success == true and .result.status == "active"'
-      - name: Deploy the product docs Worker
+      - name: Deploy docs.cortexdocs.dev as assets only
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npm run --workspace=@cortex-docs/docs-ui docs:deploy
+      - name: Verify the product docs static deployment
+        run: >-
+          node scripts/check-static-site.mjs https://docs.cortexdocs.dev
+          / /docs/quickstart /api/config /api/docs /api/mcp

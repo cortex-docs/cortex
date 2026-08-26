@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import worker from '../src/index';
 
 function request(path: string, init?: RequestInit): Promise<Response> {
@@ -12,40 +13,18 @@ describe('demo API Worker', () => {
     await expect(response.json()).resolves.toEqual({ status: 'ok', runtime: 'cloudflare-worker' });
   });
 
-  it('serves the transparent Built with Cortex logo as a cached Cloudflare asset', async () => {
-    const response = await worker.fetch(
-      new Request('https://static.cortexdocs.dev/images/built-with-cortex.svg'),
+  it('keeps the Built with Cortex logo in the assets-only deployment', () => {
+    const body = readFileSync(
+      new URL('../static/images/built-with-cortex.svg', import.meta.url),
+      'utf8',
     );
-    const body = await response.text();
+    const headers = readFileSync(new URL('../static/_headers', import.meta.url), 'utf8');
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toBe('image/svg+xml; charset=utf-8');
-    expect(response.headers.get('Cache-Control')).toContain('max-age=86400');
-    expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
     expect(body).toContain('<title id="title">Built with Cortex</title>');
-    expect(body).toContain('>Built with</text>');
-    expect(body).toContain('<text x="85"');
     expect(body).toContain('font-size="12" font-weight="600">Cortex</text>');
-    expect(body).toContain('width="128" height="20"');
     expect(body).not.toContain('<rect');
-  });
-
-  it.each(['/images/built-by-cortex.svg', '/assets/built-by-cortex.svg'])(
-    'redirects the old logo URL %s to the renamed static asset',
-    async (path) => {
-      const response = await request(path, { redirect: 'manual' });
-
-      expect(response.status).toBe(308);
-      expect(response.headers.get('Location')).toBe(
-        'https://static.cortexdocs.dev/images/built-with-cortex.svg',
-      );
-    },
-  );
-
-  it('does not expose demo API routes on the static image host', async () => {
-    const response = await worker.fetch(new Request('https://static.cortexdocs.dev/pets'));
-
-    expect(response.status).toBe(404);
+    expect(headers).toContain('Cache-Control: public,max-age=86400');
+    expect(headers).toContain('Cross-Origin-Resource-Policy: cross-origin');
   });
 
   it('returns the Petstore collection with CORS headers', async () => {

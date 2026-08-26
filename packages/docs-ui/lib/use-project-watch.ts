@@ -8,7 +8,7 @@ let refCount = 0;
 
 function connect() {
   if (eventSource) return;
-  eventSource = new EventSource('/api/docs/watch');
+  eventSource = new EventSource('/api/docs-watch');
   eventSource.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);

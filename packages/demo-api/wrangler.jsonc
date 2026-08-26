@@ -13,10 +13,6 @@
       "pattern": "api.demo.cortexdocs.dev",
       "custom_domain": true,
     },
-    {
-      "pattern": "static.cortexdocs.dev",
-      "custom_domain": true,
-    },
   ],
   "observability": {
     "enabled": true,

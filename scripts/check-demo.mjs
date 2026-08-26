@@ -23,11 +23,23 @@ async function check(path, round) {
     throw new Error(`Round ${round}: ${path} returned ${response.status}: ${body}`);
   }
 
+  if (response.headers.get('x-cortex-hosting') !== 'cloudflare-static-assets') {
+    throw new Error(`Round ${round}: ${path} was not served by Cloudflare Static Assets.`);
+  }
+
   await response.arrayBuffer();
 }
 
 for (let round = 1; round <= rounds; round += 1) {
   await Promise.all(paths.map((path) => check(path, round)));
+}
+
+const logoResponse = await fetch(
+  `https://static.cortexdocs.dev/images/built-with-cortex.svg?check=${Date.now()}`,
+  { signal: AbortSignal.timeout(30_000) },
+);
+if (!logoResponse.ok || !logoResponse.headers.get('cache-control')?.includes('max-age=86400')) {
+  throw new Error(`The static Built with Cortex logo returned ${logoResponse.status}.`);
 }
 
 console.log(`Demo health check passed: ${paths.length * rounds} concurrent requests.`);

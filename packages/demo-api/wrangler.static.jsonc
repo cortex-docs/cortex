@@ -1,17 +1,17 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "cortex-docs-demo",
+  "name": "cortex-static-assets",
   "compatibility_date": "2026-08-24",
   "workers_dev": false,
   "routes": [
     {
-      "pattern": "demo.cortexdocs.dev",
+      "pattern": "static.cortexdocs.dev",
       "custom_domain": true,
     },
   ],
   "assets": {
-    "directory": ".next-cloudflare",
-    "html_handling": "auto-trailing-slash",
-    "not_found_handling": "404-page",
+    "directory": "static",
+    "html_handling": "none",
+    "not_found_handling": "none",
   },
 }

@@ -19,7 +19,7 @@ The `branch-flow` check rejects other pull requests to `main`.
 Each pull request to `pre-release` or `main` runs these checks:
 
 - `quality` runs the audit, format check, lint check, build, unit tests, coverage, and package checks.
-- `browser` runs the Playwright tests against the local Worker demo.
+- `browser` runs Playwright tests against the local demo and the static Cloudflare export.
 
 A promotion pull request to `main` also runs the `integration` check. This check runs all SDK and publishing integration tests in Docker.
 
@@ -31,9 +31,15 @@ The demo deployment workflow performs these actions:
 
 1. Build all packages.
 2. Make sure that the configured Cloudflare zone is active.
-3. Deploy the demo API to `api.demo.cortexdocs.dev`.
-4. Build the docs UI with OpenNext.
-5. Deploy the docs UI to `demo.cortexdocs.dev`.
+3. Deploy the demo API Worker to `api.demo.cortexdocs.dev`.
+4. Deploy the logo to `static.cortexdocs.dev` with Cloudflare Static Assets.
+5. Build the complete docs UI as static files.
+6. Deploy the static files to `demo.cortexdocs.dev`.
+7. Make sure that Cloudflare Static Assets serves each demo page.
+8. Block unknown paths before they invoke the demo API Worker.
+9. Limit valid demo API requests to 30 requests for each IP address during 10 seconds.
+
+Requests to the two static hosts do not use the daily Workers request allowance. Only `Try now` requests invoke the demo API Worker.
 
 The release workflow performs these actions:
 
@@ -47,8 +53,9 @@ The release workflow performs these actions:
 8. Publish only `@cortex-docs/cli` from the workspaces.
 9. Generate `@cortex-docs/mcp` from the product documentation.
 10. Publish `@cortex-docs/mcp` with the same release version.
-11. Build the product documentation with OpenNext.
-12. Deploy the release to `docs.cortexdocs.dev`.
+11. Build the complete product documentation as static files.
+12. Deploy the static files to `docs.cortexdocs.dev`.
+13. Make sure that Cloudflare Static Assets serves the product documentation.
 
 The release stops before the product docs deployment if an npm publication fails. A rerun skips package versions that already exist.
 
@@ -69,6 +76,8 @@ Add these GitHub Actions repository secrets:
 - `CLOUDFLARE_ZONE_ID`
 - `NPM_TOKEN`
 - `PERSONAL_ACCESS_TOKEN`
+
+Give `CLOUDFLARE_API_TOKEN` permission to edit Workers and zone WAF rules. Give the token permission to read the zone.
 
 Create a protected GitHub environment named `npm`. Permit the release workflow to use this environment.
 
