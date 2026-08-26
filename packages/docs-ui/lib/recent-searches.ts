@@ -5,6 +5,7 @@ const MAX_RECENT = 10;
 
 export interface RecentSearch {
   id: string;
+  href?: string;
   title: string;
   breadcrumb: string;
   resultType: string;
@@ -17,6 +18,7 @@ export interface RecentSearch {
 function toRecentSearch(doc: SearchDocument): RecentSearch {
   return {
     id: doc.id,
+    href: doc.href,
     title: doc.title,
     breadcrumb: doc.breadcrumb,
     resultType: doc.resultType,

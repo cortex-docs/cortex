@@ -124,6 +124,46 @@ function withCors(response: Response): Response {
   return new Response(response.body, { status: response.status, headers });
 }
 
+function petStreamResponse(speciesFilter?: string): Response {
+  const encoder = new TextEncoder();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let active = true;
+  const normalizedFilter = speciesFilter
+    ?.replace(/^SPECIES_/, '')
+    .replace(/^UNSPECIFIED$/, '')
+    .toUpperCase();
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const emitPets = () => {
+        if (!active) return;
+        const matchingPets = normalizedFilter
+          ? pets.filter((pet) => pet.species === normalizedFilter)
+          : pets;
+        for (const pet of matchingPets) {
+          controller.enqueue(encoder.encode(`${JSON.stringify(pet)}\n`));
+        }
+      };
+
+      emitPets();
+      timer = setInterval(emitPets, 1000);
+    },
+    cancel() {
+      active = false;
+      if (timer !== undefined) clearInterval(timer);
+    },
+  });
+
+  return withCors(
+    new Response(stream, {
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-store',
+      },
+    }),
+  );
+}
+
 async function readJson(request: Request): Promise<Record<string, any>> {
   const text = await request.text();
   return text ? (JSON.parse(text) as Record<string, any>) : {};
@@ -316,7 +356,17 @@ function websocketResponse(request: Request, graphqlSocket: boolean): Response {
   server.addEventListener('close', clearTimers);
   server.addEventListener('error', clearTimers);
 
-  return new Response(null, { status: 101, webSocket: client });
+  const headers = new Headers();
+  const requestedProtocols =
+    request.headers
+      .get('Sec-WebSocket-Protocol')
+      ?.split(',')
+      .map((protocol) => protocol.trim()) ?? [];
+  if (graphqlSocket && requestedProtocols.includes('graphql-transport-ws')) {
+    headers.set('Sec-WebSocket-Protocol', 'graphql-transport-ws');
+  }
+
+  return new Response(null, { status: 101, webSocket: client, headers });
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -362,14 +412,7 @@ async function handleRequest(request: Request): Promise<Response> {
     return json(pet, 201);
   }
   if (path === '/pets/stream' && method === 'GET') {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        for (const pet of pets) controller.enqueue(encoder.encode(`${JSON.stringify(pet)}\n`));
-        controller.close();
-      },
-    });
-    return withCors(new Response(stream, { headers: { 'Content-Type': 'application/x-ndjson' } }));
+    return petStreamResponse();
   }
   if (path === '/uploads/raw' && method === 'POST') {
     const body = await request.arrayBuffer();
@@ -421,7 +464,8 @@ async function handleRequest(request: Request): Promise<Response> {
       return json(newPet(body, 'pet-grpc'));
     if (service === 'PetService' && operation === 'UpdatePet') return json({ ...pets[0], ...body });
     if (service === 'PetService' && operation === 'DeletePet') return json({});
-    if (service === 'PetService' && operation === 'WatchPets') return json({ data: pets });
+    if (service === 'PetService' && operation === 'WatchPets')
+      return petStreamResponse(body.species_filter);
     if (service === 'OwnerService' && operation === 'ListOwners') return json({ data: owners });
     if (service === 'OwnerService' && operation === 'GetOwner')
       return json(owners.find((owner) => owner.id === body.id) ?? owners[0]);
