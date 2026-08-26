@@ -19,12 +19,14 @@ describe('demo API Worker', () => {
       'utf8',
     );
     const headers = readFileSync(new URL('../static/_headers', import.meta.url), 'utf8');
+    const workerConfig = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
 
     expect(body).toContain('<title id="title">Built with Cortex</title>');
     expect(body).toContain('font-size="12" font-weight="600">Cortex</text>');
     expect(body).not.toContain('<rect');
     expect(headers).toContain('Cache-Control: public,max-age=86400');
     expect(headers).toContain('Cross-Origin-Resource-Policy: cross-origin');
+    expect(workerConfig).toContain('"directory": "static"');
   });
 
   it('returns the Petstore collection with CORS headers', async () => {
