@@ -240,9 +240,18 @@ export function DocsHeader() {
 
   const handleSelect = useCallback(
     (id: string) => {
-      const selectedDoc = displayItems.find((d) => d.id === id);
+      // Prefer the current index entry so older recent-search records, saved before
+      // canonical hrefs were stored, still navigate to the correct destination.
+      const selectedDoc =
+        allDocuments.find((document) => document.id === id) ??
+        displayItems.find((document) => document.id === id);
       if (selectedDoc) addRecentSearch(selectedDoc);
       setSearchOpen(false);
+
+      if (selectedDoc?.href) {
+        router.push(selectedDoc.href);
+        return;
+      }
 
       if (id.startsWith('docs-')) {
         const slug = id.replace('docs-', '');

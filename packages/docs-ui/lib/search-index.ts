@@ -2,6 +2,7 @@ import MiniSearch from 'minisearch';
 
 export interface SearchDocument {
   id: string;
+  href?: string;
   title: string;
   description: string;
   keywords: string;
@@ -15,6 +16,7 @@ export interface SearchDocument {
 
 const STORED_FIELDS = [
   'id',
+  'href',
   'title',
   'description',
   'group',
@@ -24,6 +26,13 @@ const STORED_FIELDS = [
   'method',
   'source',
 ] as const;
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
 
 export function createSearchIndex(documents: SearchDocument[]): MiniSearch {
   const index = new MiniSearch({
@@ -68,10 +77,14 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
   const docs: SearchDocument[] = [];
 
   if (sdkData) {
+    const restSourceSlug = slugify(
+      sdkData.restSources?.[0]?.title ?? sdkData.sourceTitles?.rest?.[0] ?? 'rest',
+    );
     for (const res of sdkData.resources ?? []) {
       for (const op of res.operations ?? []) {
         docs.push({
           id: `rest-${op.operationId}`,
+          href: `/api-reference/${restSourceSlug}/${op.operationId}`,
           title: op.summary || `${op.method} ${op.path}`,
           description: op.summary ?? '',
           keywords: [
@@ -97,12 +110,18 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
     }
 
     if (sdkData.graphql) {
+      const graphqlSourceSlug = slugify(
+        sdkData.graphqlSources?.[0]?.title ??
+          sdkData.sourceTitles?.graphql?.[0] ??
+          'graphql',
+      );
       for (const q of sdkData.graphql.queries ?? []) {
         const name = typeof q === 'string' ? q : q.name;
         const desc = typeof q === 'string' ? '' : (q.description ?? '');
         const args = typeof q === 'string' ? '' : (q.args?.map((a: any) => a.name).join(' ') ?? '');
         docs.push({
           id: `gql-q-${name}`,
+          href: `/api-reference/${graphqlSourceSlug}/${name}`,
           title: name,
           description: desc,
           keywords: args,
@@ -119,6 +138,7 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
         const args = typeof m === 'string' ? '' : (m.args?.map((a: any) => a.name).join(' ') ?? '');
         docs.push({
           id: `gql-m-${name}`,
+          href: `/api-reference/${graphqlSourceSlug}/${name}`,
           title: name,
           description: desc,
           keywords: args,
@@ -134,6 +154,7 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
         const desc = typeof s === 'string' ? '' : (s.description ?? '');
         docs.push({
           id: `gql-s-${name}`,
+          href: `/api-reference/${graphqlSourceSlug}/${name}`,
           title: name,
           description: desc,
           keywords: '',
@@ -147,9 +168,15 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
     }
 
     if (sdkData.websocket) {
+      const websocketSourceSlug = slugify(
+        sdkData.websocketSources?.[0]?.title ??
+          sdkData.sourceTitles?.websocket?.[0] ??
+          'websocket',
+      );
       for (const ch of sdkData.websocket.channels ?? []) {
         docs.push({
           id: `ws-${ch.name}`,
+          href: `/api-reference/${websocketSourceSlug}/${ch.name}`,
           title: ch.name,
           description: ch.description ?? '',
           keywords: [ch.subscribeMessageName, ch.publishMessageName].filter(Boolean).join(' '),
@@ -162,10 +189,16 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
     }
 
     if (sdkData.openrpc) {
+      const openrpcSourceSlug = slugify(
+        sdkData.openrpcSources?.[0]?.title ??
+          sdkData.sourceTitles?.openrpc?.[0] ??
+          'openrpc',
+      );
       for (const m of sdkData.openrpc.methods ?? []) {
         const tag = m.tags?.[0] ?? 'OpenRPC';
         docs.push({
           id: `openrpc-${m.name}`,
+          href: `/api-reference/${openrpcSourceSlug}/${m.name}`,
           title: m.name,
           description: m.summary ?? m.description ?? '',
           keywords: [...(m.params?.map((p: any) => p.name) ?? []), m.resultType, ...m.tags]
@@ -185,6 +218,7 @@ export function buildSearchDocuments(sdkData: any, mcpData: any, docsData: any):
       for (const doc of section.documents ?? []) {
         docs.push({
           id: `docs-${doc.slug}`,
+          href: `/docs/${doc.slug}`,
           title: doc.title,
           description: doc.content ? stripHtml(doc.content).slice(0, 500) : '',
           keywords: section.section,
