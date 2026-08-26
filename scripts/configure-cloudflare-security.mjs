@@ -86,7 +86,7 @@ async function ensureRule({ phase, rulesetName, desiredRule, maximumRules }) {
   const existingRule = ruleset.rules?.find((rule) => rule.ref === desiredRule.ref);
   if (existingRule) {
     await cloudflare(`/zones/${zoneId}/rulesets/${ruleset.id}/rules/${existingRule.id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(desiredRule),
     });
     console.log(`Updated ${desiredRule.ref}.`);
