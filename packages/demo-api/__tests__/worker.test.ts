@@ -36,6 +36,29 @@ describe('demo API Worker', () => {
     expect(body.data.map((pet) => pet.name)).toContain('Rex');
   });
 
+  it('streams pets continuously until the client cancels', async () => {
+    const response = await request('/pets/stream');
+    const reader = response.body?.getReader();
+    expect(response.headers.get('Content-Type')).toBe('application/x-ndjson');
+    expect(reader).toBeDefined();
+
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const result = await Promise.race([
+        reader!.read(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('The pet stream stopped producing data.')), 1500),
+        ),
+      ]);
+      expect(result.done).toBe(false);
+      chunks.push(decoder.decode(result.value));
+    }
+
+    expect(chunks.map((chunk) => JSON.parse(chunk).id)).toEqual(['pet-1', 'pet-2', 'pet-1']);
+    await reader!.cancel();
+  });
+
   it('executes GraphQL queries', async () => {
     const response = await request('/graphql', {
       method: 'POST',
@@ -45,6 +68,29 @@ describe('demo API Worker', () => {
     const body = (await response.json()) as { data: { pets: { data: Array<{ id: string }> } } };
     expect(response.status).toBe(200);
     expect(body.data.pets.data[0].id).toBe('pet-1');
+  });
+
+  it('serves gRPC browser bridge calls and server streams', async () => {
+    const unaryResponse = await request('/grpc/PetService/ListPets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const unaryBody = (await unaryResponse.json()) as { data: Array<{ id: string }> };
+    expect(unaryResponse.status).toBe(200);
+    expect(unaryBody.data[0].id).toBe('pet-1');
+
+    const streamResponse = await request('/grpc/PetService/WatchPets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const reader = streamResponse.body?.getReader();
+    expect(streamResponse.headers.get('Content-Type')).toBe('application/x-ndjson');
+    const first = await reader!.read();
+    expect(first.done).toBe(false);
+    expect(JSON.parse(new TextDecoder().decode(first.value)).id).toBe('pet-1');
+    await reader!.cancel();
   });
 
   it('executes JSON-RPC methods', async () => {

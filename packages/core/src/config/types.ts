@@ -105,6 +105,8 @@ export interface SourceConfig {
   spec: string;
   /** Runtime URL for a GraphQL schema source. */
   endpoint?: string;
+  /** Browser-compatible HTTP bridge used by gRPC and OpenRPC Try now requests. */
+  try_now_url?: string;
   intro?: string;
   languages: SourceLanguageConfig[];
   /** AsyncAPI-specific generated client behavior. */

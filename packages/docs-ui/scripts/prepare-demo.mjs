@@ -154,6 +154,7 @@ export function prepareDemo(apiUrl = process.env.CORTEX_DEMO_API_URL || 'http://
         title: 'gRPC',
         type: 'grpc-spec',
         spec: './specs/petstore.proto',
+        try_now_url: apiUrl,
         languages: [languages[0]],
       },
       {

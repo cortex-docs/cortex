@@ -147,6 +147,7 @@ const sourceConfigSchema = z
     type: z.enum(sourceTypes),
     spec: z.string().min(1),
     endpoint: z.string().url().optional(),
+    try_now_url: z.string().url().optional(),
     intro: z.string().min(1).optional(),
     languages: z.array(sourceLanguageConfigSchema).min(1),
     websocket: websocketSourceConfigSchema.optional(),
@@ -165,6 +166,13 @@ const sourceConfigSchema = z
         code: z.ZodIssueCode.custom,
         path: ['endpoint'],
         message: 'An endpoint is only valid for a graphql-spec source',
+      });
+    }
+    if (source.try_now_url && source.type !== 'grpc-spec' && source.type !== 'openrpc-spec') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['try_now_url'],
+        message: 'A Try now URL is only valid for a grpc-spec or openrpc-spec source',
       });
     }
   });
