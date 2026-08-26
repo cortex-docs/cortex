@@ -16,6 +16,7 @@ import hljsCpp from 'highlight.js/lib/languages/cpp';
 import hljsC from 'highlight.js/lib/languages/c';
 import hljsJson from 'highlight.js/lib/languages/json';
 import { cn } from '@/lib/utils';
+import { getApiReferencePanelVisibility } from '@/lib/api-reference-layout';
 import { TryNowModal, type TryNowConfig } from './try-now-modal';
 import { DocsBreadcrumb } from './docs-breadcrumb';
 
@@ -664,7 +665,7 @@ function ResizeHandle({
   return (
     <div
       onMouseDown={handleMouseDown}
-      className="hidden lg:flex w-3 -mx-1 shrink-0 cursor-col-resize items-center justify-center group/handle z-10"
+      className="flex w-3 -mx-1 shrink-0 cursor-col-resize items-center justify-center group/handle z-10"
     >
       <div className="h-full w-px transition-colors group-hover/handle:bg-border group-active/handle:bg-primary/40" />
     </div>
@@ -684,6 +685,11 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
   const [tryNowOpen, setTryNowOpen] = useState(false);
   const [leftWidth, setLeftWidth] = useState(224);
   const [rightWidth, setRightWidth] = useState(420);
+  const [panelVisibility, setPanelVisibility] = useState({
+    showLeftSidebarInline: true,
+    showRightSidebar: true,
+  });
+  const { showLeftSidebarInline, showRightSidebar } = panelVisibility;
 
   const onResizeLeft = useCallback((delta: number) => {
     setLeftWidth((w) => Math.max(160, Math.min(400, w + delta)));
@@ -692,9 +698,38 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
     setRightWidth((w) => Math.max(280, Math.min(600, w + delta)));
   }, []);
 
+  const layoutRef = useRef<HTMLDivElement>(null);
   const centerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const isScrollingRef = useRef(false);
+
+  useEffect(() => {
+    if (!data) return;
+
+    const layout = layoutRef.current;
+    if (!layout) return;
+
+    const updateRightSidebarVisibility = () => {
+      const visibility = getApiReferencePanelVisibility({
+        layoutWidth: layout.getBoundingClientRect().width,
+        leftSidebarWidth: leftWidth,
+        rightSidebarWidth: rightWidth,
+      });
+
+      setPanelVisibility({
+        showLeftSidebarInline: visibility.showLeftSidebarInline,
+        showRightSidebar: visibility.showRightSidebar,
+      });
+    };
+
+    const resizeObserver = new ResizeObserver(updateRightSidebarVisibility);
+    resizeObserver.observe(layout);
+    updateRightSidebarVisibility();
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [data, leftWidth, rightWidth]);
 
   /* -- Fetch data -------------------------------------------------- */
 
@@ -1236,43 +1271,49 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
             : 'rest';
 
   return (
-    <div className="relative flex h-[calc(100vh-5.5rem)]">
+    <div ref={layoutRef} className="relative flex h-[calc(100vh-5.5rem)]" data-api-reference-layout>
       {/* Mobile sidebar toggle */}
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed bottom-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg lg:hidden"
-        aria-label="Toggle navigation"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {!showLeftSidebarInline && (
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="fixed bottom-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg"
+          aria-label="Toggle navigation"
         >
-          {sidebarOpen ? (
-            <path d="M18 6 6 18M6 6l12 12" />
-          ) : (
-            <>
-              <path d="M4 6h16" />
-              <path d="M4 12h16" />
-              <path d="M4 18h16" />
-            </>
-          )}
-        </svg>
-      </button>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {sidebarOpen ? (
+              <path d="M18 6 6 18M6 6l12 12" />
+            ) : (
+              <>
+                <path d="M4 6h16" />
+                <path d="M4 12h16" />
+                <path d="M4 18h16" />
+              </>
+            )}
+          </svg>
+        </button>
+      )}
 
       {/* ---- Left sidebar ---- */}
       <aside
         className={cn(
-          'fixed inset-y-22 left-0 z-40 shrink-0 overflow-y-auto border-r border-border/50 bg-muted/20 px-3 py-4 transition-transform lg:relative lg:inset-y-auto lg:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          'left-0 z-40 shrink-0 overflow-y-auto border-r border-border/50 bg-muted/20 px-3 py-4 transition-transform',
+          showLeftSidebarInline
+            ? 'relative inset-y-auto translate-x-0'
+            : cn('fixed inset-y-22', sidebarOpen ? 'translate-x-0' : '-translate-x-full'),
         )}
         style={{ width: leftWidth }}
+        data-api-reference-left-sidebar
+        data-layout-mode={showLeftSidebarInline ? 'inline' : 'overlay'}
       >
         {/* REST resources — one NavSection per source */}
         {restSourcesList.map((restSrc, si) => (
@@ -1449,10 +1490,14 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
           </NavSection>
         ))}
       </aside>
-      <ResizeHandle side="left" onResize={onResizeLeft} />
+      {showLeftSidebarInline && <ResizeHandle side="left" onResize={onResizeLeft} />}
 
       {/* ---- Center panel ---- */}
-      <main ref={centerRef} className="flex-1 min-w-0 overflow-y-auto bg-muted/10">
+      <main
+        ref={centerRef}
+        className="flex-1 min-w-0 overflow-y-auto bg-muted/10"
+        data-api-reference-center
+      >
         <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/30">
           <DocsBreadcrumb
             segments={[
@@ -2004,103 +2049,108 @@ export function SdkReference({ scrollTarget }: { scrollTarget?: string[] }) {
       </main>
 
       {/* ---- Right sidebar (code snippets) ---- */}
-      <ResizeHandle side="right" onResize={onResizeRight} />
-      <aside
-        className="hidden shrink-0 border-l border-border/50 bg-muted/10 xl:block"
-        style={{ width: rightWidth }}
-      >
-        <div className="sticky top-22 flex max-h-[calc(100vh-5.5rem)] flex-col overflow-y-auto p-3 gap-3">
-          {/* Request card */}
-          <div className="group/code glass-card rounded-xl">
-            {/* Language selector */}
-            <div className="border-b border-border/40 bg-muted/15 px-3 py-2">
-              <Select value={language} onValueChange={selectLanguage}>
-                <SelectTrigger className="h-8 w-full cursor-pointer">
-                  <SelectValue>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold',
-                          LANG_COLORS[language],
-                        )}
-                      >
-                        {LANG_ICONS[language] ?? language}
-                      </span>
-                      <span className="text-sm">
-                        {LANGUAGE_DISPLAY_NAMES[language] ?? language}
-                      </span>
-                    </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {(data?.languages ?? SUPPORTED_LANGUAGES).map((lang) => (
-                    <SelectItem key={lang} value={lang} className="cursor-pointer">
+      {showRightSidebar && <ResizeHandle side="right" onResize={onResizeRight} />}
+      {showRightSidebar && (
+        <aside
+          className="shrink-0 border-l border-border/50 bg-muted/10"
+          style={{ width: rightWidth }}
+          data-api-reference-right-sidebar
+        >
+          <div className="sticky top-22 flex max-h-[calc(100vh-5.5rem)] flex-col overflow-y-auto p-3 gap-3">
+            {/* Request card */}
+            <div className="group/code glass-card rounded-xl">
+              {/* Language selector */}
+              <div className="border-b border-border/40 bg-muted/15 px-3 py-2">
+                <Select value={language} onValueChange={selectLanguage}>
+                  <SelectTrigger className="h-8 w-full cursor-pointer">
+                    <SelectValue>
                       <span className="flex items-center gap-2">
                         <span
                           className={cn(
                             'inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold',
-                            LANG_COLORS[lang],
+                            LANG_COLORS[language],
                           )}
                         >
-                          {LANG_ICONS[lang] ?? lang}
+                          {LANG_ICONS[language] ?? language}
                         </span>
-                        {LANGUAGE_DISPLAY_NAMES[lang] ?? lang}
+                        <span className="text-sm">
+                          {LANGUAGE_DISPLAY_NAMES[language] ?? language}
+                        </span>
                       </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(data?.languages ?? SUPPORTED_LANGUAGES).map((lang) => (
+                      <SelectItem key={lang} value={lang} className="cursor-pointer">
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              'inline-flex h-5 w-7 items-center justify-center rounded bg-muted text-[10px] font-bold',
+                              LANG_COLORS[lang],
+                            )}
+                          >
+                            {LANG_ICONS[lang] ?? lang}
+                          </span>
+                          {LANGUAGE_DISPLAY_NAMES[lang] ?? lang}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {/* Snippet header */}
-            <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
-              <span className="truncate text-xs text-muted-foreground">
-                {activeItem?.displayName ?? 'SDK Snippet'}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <div className="opacity-0 group-hover/code:opacity-100 transition-opacity">
-                  <CopyButton text={snippet} />
+              {/* Snippet header */}
+              <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
+                <span className="truncate text-xs text-muted-foreground">
+                  {activeItem?.displayName ?? 'SDK Snippet'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <div className="opacity-0 group-hover/code:opacity-100 transition-opacity">
+                    <CopyButton text={snippet} />
+                  </div>
+                  {activeItem && getTryNowConfig() && (
+                    <button
+                      onClick={() => setTryNowOpen(true)}
+                      className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow transition-all"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      Try now
+                    </button>
+                  )}
                 </div>
-                {activeItem && getTryNowConfig() && (
-                  <button
-                    onClick={() => setTryNowOpen(true)}
-                    className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow transition-all"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                    Try now
-                  </button>
-                )}
+              </div>
+
+              {/* Code */}
+              <div className="bg-muted/30">
+                <CodeBlock code={snippet} language={language} />
               </div>
             </div>
 
-            {/* Code */}
-            <div className="bg-muted/30">
-              <CodeBlock code={snippet} language={language} />
-            </div>
+            {/* Response card */}
+            {(() => {
+              const op = getActiveOperation();
+              return op?.responses && op.responses.length > 0 ? (
+                <ResponsePanel responses={op.responses} />
+              ) : null;
+            })()}
           </div>
-
-          {/* Response card */}
-          {(() => {
-            const op = getActiveOperation();
-            return op?.responses && op.responses.length > 0 ? (
-              <ResponsePanel responses={op.responses} />
-            ) : null;
-          })()}
-        </div>
-      </aside>
+        </aside>
+      )}
 
       {/* Mobile code panel (collapsible at bottom) */}
-      <MobileCodePanel
-        snippet={snippet}
-        language={language}
-        activeLabel={activeItem?.displayName}
-        languages={[...(data?.languages ?? SUPPORTED_LANGUAGES)]}
-        onSelectLanguage={selectLanguage}
-        selectedLanguage={language}
-        onTryNow={activeItem && getTryNowConfig() ? () => setTryNowOpen(true) : undefined}
-      />
+      {!showRightSidebar && (
+        <MobileCodePanel
+          snippet={snippet}
+          language={language}
+          activeLabel={activeItem?.displayName}
+          languages={[...(data?.languages ?? SUPPORTED_LANGUAGES)]}
+          onSelectLanguage={selectLanguage}
+          selectedLanguage={language}
+          onTryNow={activeItem && getTryNowConfig() ? () => setTryNowOpen(true) : undefined}
+        />
+      )}
 
       {/* Try Now modal — rendered at root level for full-viewport blur */}
       <TryNowModal
@@ -2219,7 +2269,10 @@ function MobileCodePanel({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={cn('fixed inset-x-0 bottom-0 z-30 xl:hidden', expanded ? 'top-1/3' : '')}>
+    <div
+      className={cn('fixed inset-x-0 bottom-0 z-30', expanded ? 'top-1/3' : '')}
+      data-api-reference-bottom-code-panel
+    >
       <div className="flex w-full items-center border-t bg-muted/40 text-muted-foreground">
         <button
           onClick={() => setExpanded(!expanded)}

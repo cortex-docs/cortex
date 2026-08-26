@@ -27,7 +27,7 @@ describe('docs runtime', () => {
     );
   });
 
-  it('isolates writable Next.js metadata from the packaged docs UI', () => {
+  it('copies development sources into the writable Next.js runtime', () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-docs-runtime-'));
     const docsUiPath = path.join(workspace, 'docs-ui');
     const runtimeDir = path.join(docsUiPath, '.cortex-dev-test');
@@ -50,16 +50,14 @@ describe('docs runtime', () => {
     fs.writeFileSync(path.join(runtimeDir, 'next-env.d.ts'), 'runtime-only');
 
     expect(fs.statSync(path.join(runtimeDir, 'app')).isDirectory()).toBe(true);
-    expect(fs.realpathSync(path.join(runtimeDir, 'app', 'page.tsx'))).toBe(
-      fs.realpathSync(path.join(docsUiPath, 'app', 'page.tsx')),
-    );
+    expect(fs.lstatSync(path.join(runtimeDir, 'app', 'page.tsx')).isSymbolicLink()).toBe(false);
     expect(fs.readFileSync(path.join(docsUiPath, 'next-env.d.ts'), 'utf-8')).toBe('next-env.d.ts');
     expect(fs.readFileSync(path.join(runtimeDir, 'next-env.d.ts'), 'utf-8')).toBe('runtime-only');
 
     fs.rmSync(workspace, { recursive: true });
   });
 
-  it('adds renamed source files and removes their stale runtime links', () => {
+  it('updates changed source files and removes stale runtime files', () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-docs-runtime-'));
     const docsUiPath = path.join(workspace, 'docs-ui');
     const runtimeDir = path.join(docsUiPath, '.cortex-dev-test');
@@ -81,11 +79,12 @@ describe('docs runtime', () => {
 
     prepareDocsUiRuntime(docsUiPath, runtimeDir);
     fs.renameSync(oldSource, newSource);
+    fs.writeFileSync(newSource, 'export const Card = "new";');
     syncDocsUiRuntimeSources(docsUiPath, runtimeDir);
 
     expect(fs.existsSync(path.join(runtimeDir, 'components', 'old-card.tsx'))).toBe(false);
-    expect(fs.realpathSync(path.join(runtimeDir, 'components', 'new-card.tsx'))).toBe(
-      fs.realpathSync(newSource),
+    expect(fs.readFileSync(path.join(runtimeDir, 'components', 'new-card.tsx'), 'utf-8')).toBe(
+      'export const Card = "new";',
     );
 
     fs.rmSync(workspace, { recursive: true });

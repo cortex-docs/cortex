@@ -158,11 +158,15 @@ export class DocsServeCommand extends CommandRunner {
 
     const nextBinResolved = resolveNextBin(docsUiPath);
 
-    const child = spawn(process.execPath, [nextBinResolved, 'dev', '--port', String(port)], {
-      cwd: runtimeDir,
-      env,
-      stdio: 'inherit',
-    });
+    const child = spawn(
+      process.execPath,
+      [nextBinResolved, 'dev', '--webpack', '--port', String(port)],
+      {
+        cwd: runtimeDir,
+        env,
+        stdio: 'inherit',
+      },
+    );
 
     let debounce: ReturnType<typeof setTimeout> | null = null;
     let runtimeSyncDebounce: ReturnType<typeof setTimeout> | null = null;
