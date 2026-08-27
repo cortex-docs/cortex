@@ -7,10 +7,10 @@
     "build": "tsc",
     "dev": "wrangler dev --port 4010",
     "deploy": "wrangler deploy",
-    "deploy:static": "wrangler deploy --config wrangler.static.jsonc",
+    "deploy:static": "node scripts/deploy-static.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "clean": "rm -rf .wrangler dist coverage"
+    "clean": "rm -rf .wrangler dist coverage wrangler.static.production.jsonc"
   },
   "dependencies": {
     "graphql": "^16.14.0"
