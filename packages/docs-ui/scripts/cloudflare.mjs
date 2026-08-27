@@ -22,6 +22,8 @@ if (!['demo', 'docs'].includes(target)) {
 const require = createRequire(import.meta.url);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const docsUiDir = resolve(scriptDir, '..');
+const workspaceRoot = resolve(docsUiDir, '..', '..');
+const cliMain = join(workspaceRoot, 'packages', 'cli', 'dist', 'main.js');
 const outputDir = join(docsUiDir, '.next-cloudflare');
 const nextCli = require.resolve('next/dist/bin/next');
 const wranglerPackagePath = require.resolve('wrangler/package.json');
@@ -61,10 +63,10 @@ const env = {
     : {}),
 };
 
-function run(executable, args) {
+function run(executable, args, cwd = docsUiDir) {
   return new Promise((resolveCommand, rejectCommand) => {
     const child = spawn(executable, args, {
-      cwd: docsUiDir,
+      cwd,
       env,
       stdio: 'inherit',
     });
@@ -102,6 +104,13 @@ function validateStaticOutput() {
 
 try {
   rmSync(outputDir, { recursive: true, force: true });
+  if (target === 'demo') {
+    if (!existsSync(cliMain)) {
+      const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      await run(npm, ['run', 'build:cli'], workspaceRoot);
+    }
+    await run(process.execPath, [cliMain, 'generate'], prepared.demoDir);
+  }
   await run(process.execPath, [nextCli, 'build', '--webpack']);
   validateStaticOutput();
 

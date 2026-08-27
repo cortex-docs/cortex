@@ -34,6 +34,15 @@ async function check(path, round, cacheBust = false) {
   await response.arrayBuffer();
 }
 
+async function readJson(path) {
+  const response = await fetch(`${baseUrl}${path}?check=${Date.now()}`, {
+    headers: { 'user-agent': 'cortex-demo-health-check/1.0' },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`${path} returned ${response.status}.`);
+  return response.json();
+}
+
 let propagationFailures = [];
 for (let attempt = 1; attempt <= maximumPropagationAttempts; attempt += 1) {
   const results = await Promise.allSettled(
@@ -51,6 +60,28 @@ for (let attempt = 1; attempt <= maximumPropagationAttempts; attempt += 1) {
 
 if (propagationFailures.length > 0) {
   throw propagationFailures[0].reason;
+}
+
+const [config, docs, mcp] = await Promise.all([
+  readJson('/api/config'),
+  readJson('/api/docs'),
+  readJson('/api/mcp'),
+]);
+if (config.project !== 'Petstore' || config.title !== 'Petstore Docs') {
+  throw new Error('The deployed demo does not use the local Petstore project configuration.');
+}
+const documents = docs.sections?.flatMap((section) => section.documents ?? []) ?? [];
+if (documents.length !== 1 || documents[0]?.title !== 'Quickstart') {
+  throw new Error('The deployed demo must contain only the Quickstart documentation page.');
+}
+const toolNames = mcp.tools?.map((tool) => tool.name) ?? [];
+const sdkTools = toolNames.filter((name) => name.startsWith('sdk_'));
+const docsTools = toolNames.filter((name) => name.startsWith('docs_'));
+if (sdkTools.length !== 11 || !sdkTools.includes('sdk_typescript_petstore_typescript_client_sdk')) {
+  throw new Error(`The deployed demo exposed ${sdkTools.length} sdk_* MCP tools instead of 11.`);
+}
+if (docsTools.length !== 1 || docsTools[0] !== 'docs_quickstart') {
+  throw new Error(`The deployed demo exposed unexpected documentation MCP tools: ${docsTools}.`);
 }
 
 for (let round = 1; round <= rounds; round += 1) {
