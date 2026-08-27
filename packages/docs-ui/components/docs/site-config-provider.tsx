@@ -18,6 +18,12 @@ export interface HomeConfig {
   sections?: HomeSection[];
 }
 
+export interface AnalyticsConfig {
+  googleAnalyticsId: string;
+  enabledHosts: string[];
+  privacyUrl: string;
+}
+
 export interface SiteConfig {
   title: string;
   project: string;
@@ -34,6 +40,7 @@ export interface SiteConfig {
   hasSources?: boolean;
   hasDocs?: boolean;
   hasMcp?: boolean;
+  analytics?: AnalyticsConfig;
 }
 
 const SiteConfigContext = createContext<SiteConfig>({

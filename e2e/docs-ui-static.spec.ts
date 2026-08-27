@@ -22,6 +22,14 @@ test.describe('Cloudflare Static Assets export', () => {
     await expect(page.getByText('List all pets').first()).toBeVisible();
   });
 
+  test('embeds analytics settings without tracking the local preview', async ({ page }) => {
+    await page.goto('/');
+
+    expect(await page.content()).toContain('G-KQW4ERPLHB');
+    await expect(page.locator('#cortex-google-analytics')).toHaveCount(0);
+    await expect(page.locator('.cortex-cookie-settings-button')).toHaveCount(0);
+  });
+
   test('supports client navigation between generated documentation pages', async ({ page }) => {
     await page.goto('/docs/quickstart');
     await expect(page).toHaveTitle('Petstore Docs');

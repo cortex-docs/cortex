@@ -238,6 +238,15 @@ const mcpConfigSchema = z
   .strict()
   .optional();
 
+const analyticsConfigSchema = z
+  .object({
+    google_analytics_id: z.string().regex(/^G-[A-Z0-9]+$/),
+    enabled_hosts: z.array(z.string().min(1)).optional(),
+    privacy_url: z.string().url().optional(),
+  })
+  .strict()
+  .optional();
+
 const publishConfigSchema = z
   .object({
     registries: z
@@ -275,6 +284,7 @@ export const cortexConfigSchema = z
     generators: generatorConfigSchema.optional(),
     docs: z.array(docsSectionSchema).optional(),
     mcp: mcpConfigSchema,
+    analytics: analyticsConfigSchema,
     publish: publishConfigSchema,
   })
   .strict();

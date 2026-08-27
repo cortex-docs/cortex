@@ -11,6 +11,7 @@ import {
   type SiteConfig,
 } from '@/components/docs/site-config-provider';
 import { SearchProvider } from '@/components/docs/search-provider';
+import { GoogleAnalytics } from '@/components/docs/google-analytics';
 import { sanitizeSvg } from '@/lib/sanitize-svg';
 
 interface LoadedSiteConfig extends SiteConfig {
@@ -125,6 +126,23 @@ function readSiteConfig(): LoadedSiteConfig {
     const sources = raw?.sources as Array<unknown> | undefined;
     const docs = raw?.docs as Array<unknown> | undefined;
     const mcp = raw?.mcp as Record<string, unknown> | undefined;
+    const analyticsValue = raw?.analytics as Record<string, unknown> | undefined;
+    const googleAnalyticsId = analyticsValue?.google_analytics_id;
+    const enabledHostsValue = analyticsValue?.enabled_hosts;
+    const privacyUrlValue = analyticsValue?.privacy_url;
+    const analytics =
+      typeof googleAnalyticsId === 'string'
+        ? {
+            googleAnalyticsId,
+            enabledHosts: Array.isArray(enabledHostsValue)
+              ? enabledHostsValue.filter((host): host is string => typeof host === 'string')
+              : [],
+            privacyUrl:
+              typeof privacyUrlValue === 'string'
+                ? privacyUrlValue
+                : 'https://cortexdocs.dev/privacy#cookies-and-analytics',
+          }
+        : undefined;
     const customHeadHtmlValue = raw?.custom_head_html;
     const customHeadHtml =
       typeof customHeadHtmlValue === 'string' && customHeadHtmlValue.trim()
@@ -146,6 +164,7 @@ function readSiteConfig(): LoadedSiteConfig {
       hasSources: Array.isArray(sources) && sources.length > 0,
       hasDocs: Array.isArray(docs) && docs.length > 0,
       hasMcp: !!mcp || (Array.isArray(sources) && sources.length > 0),
+      analytics,
       home: home
         ? {
             title: home.title as string | undefined,
@@ -200,6 +219,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteConfigProvider config={siteConfig}>
           <ThemeProvider defaultTheme={defaultTheme} disableTransitionOnChange>
             <SearchProvider>{children}</SearchProvider>
+            <GoogleAnalytics config={siteConfig.analytics} />
           </ThemeProvider>
         </SiteConfigProvider>
       </body>
