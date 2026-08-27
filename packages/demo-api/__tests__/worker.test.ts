@@ -13,13 +13,17 @@ describe('demo API Worker', () => {
     await expect(response.json()).resolves.toEqual({ status: 'ok', runtime: 'cloudflare-worker' });
   });
 
-  it('keeps the Built with Cortex logo in the assets-only deployment', () => {
+  it('keeps the Built with Cortex logo in the static deployment', () => {
     const body = readFileSync(
       new URL('../static/images/built-with-cortex.svg', import.meta.url),
       'utf8',
     );
     const headers = readFileSync(new URL('../static/_headers', import.meta.url), 'utf8');
     const workerConfig = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+    const staticWorkerConfig = readFileSync(
+      new URL('../wrangler.static.jsonc', import.meta.url),
+      'utf8',
+    );
 
     expect(body).toContain('<title id="title">Built with Cortex</title>');
     expect(body).toContain('font-size="12" font-weight="600">Cortex</text>');
@@ -27,6 +31,8 @@ describe('demo API Worker', () => {
     expect(headers).toContain('Cache-Control: public,max-age=86400');
     expect(headers).toContain('Cross-Origin-Resource-Policy: cross-origin');
     expect(workerConfig).toContain('"directory": "static"');
+    expect(staticWorkerConfig).toContain('"run_worker_first": ["/images/built-with-cortex.svg"]');
+    expect(staticWorkerConfig).toContain('"binding": "BADGE_REFERRERS"');
   });
 
   it('returns the Petstore collection with CORS headers', async () => {
