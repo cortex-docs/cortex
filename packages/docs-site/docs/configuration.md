@@ -132,6 +132,7 @@ mcp:
 | `home`                 | object  | No       | Landing-page content and navigation cards                                                                                                                                                                                                                                                    |
 | `docs`                 | array   | No       | Markdown navigation sections                                                                                                                                                                                                                                                                 |
 | `mcp`                  | object  | No       | Generated MCP package settings                                                                                                                                                                                                                                                               |
+| `analytics`            | object  | No       | Consent-aware Google Analytics settings                                                                                                                                                                                                                                                      |
 | `publish`              | object  | No       | Package registry and GitHub publication settings                                                                                                                                                                                                                                             |
 
 See [Custom Generators](/docs/custom-generators) for export commands, template data, and override rules.
@@ -159,20 +160,27 @@ Files in the project `assets` directory are available under `/assets/*`.
 custom_head_html: |-
   <meta name="theme-color" content="#ffffff">
   <link rel="stylesheet" href="/assets/custom.css">
-
-  <!-- Google Analytics -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-XXXXXXXXXX');
-  </script>
 ```
 
-Replace `G-XXXXXXXXXX` with your Google Analytics measurement ID.
+For Google Analytics, use the `analytics` configuration. This configuration adds the consent controls.
 
 CAUTION: Add only HTML that you trust. Scripts in this field can execute in every visitor's browser.
+
+## Google Analytics
+
+Use `analytics` to add consent-aware Google Analytics 4 tracking. Cortex disables advertising signals for this integration.
+
+```yaml
+analytics:
+  google_analytics_id: G-XXXXXXXXXX
+  enabled_hosts:
+    - docs.example.com
+  privacy_url: https://example.com/privacy#cookies-and-analytics
+```
+
+`google_analytics_id` is the Google Analytics measurement ID. `enabled_hosts` prevents tracking on local and preview sites.
+
+`privacy_url` opens from the cookie banner. Cortex asks for consent where required and stores the choice in local browser storage.
 
 ## Sources
 

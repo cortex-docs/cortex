@@ -148,6 +148,11 @@ API requests are rate-limited to **1000 requests per minute** per API key. When 
     ].join('\n'),
     theme: 'system',
     primaryColor: '#ffffff',
+    analytics: {
+      google_analytics_id: 'G-KQW4ERPLHB',
+      enabled_hosts: ['demo.cortexdocs.dev'],
+      privacy_url: 'https://cortexdocs.dev/privacy#cookies-and-analytics',
+    },
     home: {
       title: 'Petstore Docs',
       description:
