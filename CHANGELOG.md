@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.25] - 2026-08-27
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Added a link to the official Cortex Docs website in the README.
+
 ## [0.1.24] - 2026-08-27
 
 ### New Features
