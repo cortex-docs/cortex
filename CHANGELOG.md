@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.23] - 2026-08-27
+
+### New Features
+
+- The "Built with Cortex" badge now records each unique website hostname that loads it, so you can see which sites are displaying your badge.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
 ## [0.1.22] - 2026-08-27
 
 ### New Features
