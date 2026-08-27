@@ -32,14 +32,17 @@ The demo deployment workflow performs these actions:
 1. Build all packages.
 2. Make sure that the configured Cloudflare zone is active.
 3. Deploy the demo API Worker to `api.demo.cortexdocs.dev`.
-4. Deploy the logo to `static.cortexdocs.dev` with Cloudflare Static Assets.
+4. Deploy the logo to `static.cortexdocs.dev` with Cloudflare Static Assets and record each
+   distinct referrer hostname in D1.
 5. Build the complete docs UI as static files.
 6. Deploy the static files to `demo.cortexdocs.dev`.
 7. Make sure that Cloudflare Static Assets serves each demo page.
 8. Block unknown paths before they invoke the demo API Worker.
 9. Limit valid demo API requests to 30 requests for each IP address during 10 seconds.
 
-Requests to the two static hosts do not use the daily Workers request allowance. Only `Try now` requests invoke the demo API Worker.
+Requests to the demo site do not use the daily Workers request allowance. Badge image requests
+invoke a small Worker so it can store new referrer hostnames. `Try now` requests invoke the demo
+API Worker.
 
 The release workflow performs these actions:
 
@@ -136,4 +139,11 @@ Run this command to preview the product docs build:
 
 ```bash
 npm run --workspace=@cortex-docs/docs-ui docs:preview
+```
+
+Run this command to list the hostnames that have loaded the Built with Cortex badge:
+
+```bash
+npx wrangler d1 execute cortex-badge-referrers --remote \
+  --command="SELECT hostname, first_seen_at FROM badge_referrer_hosts ORDER BY first_seen_at DESC"
 ```
