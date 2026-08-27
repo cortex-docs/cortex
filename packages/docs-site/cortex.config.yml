@@ -9,6 +9,11 @@ showLogoDocsLabel: true
 favicon: ./assets/favicon.svg
 theme: system
 primaryColor: '#ffffff'
+analytics:
+  google_analytics_id: G-KQW4ERPLHB
+  enabled_hosts:
+    - docs.cortexdocs.dev
+  privacy_url: https://cortexdocs.dev/privacy#cookies-and-analytics
 home:
   title: Cortex Docs
   description: Generate typed SDKs, documentation, and MCP servers from OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC sources.

@@ -170,6 +170,12 @@ export interface McpConfig {
   github_repository?: string;
 }
 
+export interface AnalyticsConfig {
+  google_analytics_id: string;
+  enabled_hosts?: string[];
+  privacy_url?: string;
+}
+
 export interface CortexConfig {
   project: string;
   title?: string;
@@ -189,5 +195,6 @@ export interface CortexConfig {
   languages: LanguageConfig[];
   docs?: DocsSection[];
   mcp?: McpConfig;
+  analytics?: AnalyticsConfig;
   publish?: PublishConfig;
 }

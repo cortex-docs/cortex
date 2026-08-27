@@ -501,6 +501,11 @@ describe('ConfigLoader', () => {
         title: 'Acme API',
         logo: './logo.png',
         custom_head_html: '<meta name="theme-color" content="#ffffff">',
+        analytics: {
+          google_analytics_id: 'G-KQW4ERPLHB',
+          enabled_hosts: ['docs.example.com'],
+          privacy_url: 'https://example.com/privacy',
+        },
         theme: 'light',
         sources: [
           {
@@ -515,7 +520,22 @@ describe('ConfigLoader', () => {
       expect(config.title).toBe('Acme API');
       expect(config.logo).toBe('./logo.png');
       expect(config.custom_head_html).toBe('<meta name="theme-color" content="#ffffff">');
+      expect(config.analytics).toEqual({
+        google_analytics_id: 'G-KQW4ERPLHB',
+        enabled_hosts: ['docs.example.com'],
+        privacy_url: 'https://example.com/privacy',
+      });
       expect(config.theme).toBe('light');
+    });
+
+    it('rejects an invalid Google Analytics measurement ID', () => {
+      expect(() =>
+        loader.validate({
+          project: 'acme',
+          analytics: { google_analytics_id: 'UA-123456' },
+          sources: [],
+        }),
+      ).toThrow();
     });
   });
 
