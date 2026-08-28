@@ -18,6 +18,62 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.25] - 2026-08-27
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Added a link to the official Cortex Docs website in the README.
+
+## [0.1.24] - 2026-08-27
+
+### New Features
+
+- Added consent-aware Google Analytics 4 integration, configurable via a new `analytics` site config option (`google_analytics_id`, `enabled_hosts`, `privacy_url`), including a cookie consent banner with a link to your privacy policy and no advertising signals collected.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Documentation updated to explain how to configure Google Analytics through the new `analytics` config instead of manually embedding tracking scripts via `custom_head_html`.
+
+## [0.1.23] - 2026-08-27
+
+### New Features
+
+- The "Built with Cortex" badge now records each unique website hostname that loads it, so you can see which sites are displaying your badge.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
+## [0.1.22] - 2026-08-27
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
 ## [0.1.21] - 2026-08-27
 
 ### New Features
