@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-<h3 align="center">Every developer. Every agent.</h3>
+<h2 align="center">Every developer. Every agent.</h2>
 
 <p align="center">
   Cortex turns API specifications and Markdown into typed SDKs, interactive documentation, and an MCP server from one project configuration.
@@ -23,11 +23,13 @@
   <a href="https://github.com/cortex-docs/cortex/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/cortex-docs/cortex?style=flat&logo=github"></a>
 </p>
 
-<p align="center">
+<h3 align="center">
   <a href="https://docs.cortexdocs.dev"><strong>Documentation</strong></a> ·
   <a href="https://demo.cortexdocs.dev"><strong>Live demo</strong></a> ·
   <a href="https://cortexdocs.dev"><strong>Website</strong></a>
-</p>
+</h3>
+
+</br>
 
 ![Cortex turns API sources into interactive documentation, typed SDKs, and an MCP server for developers, applications, and AI agents.](assets/cortex-overview.svg)
 
