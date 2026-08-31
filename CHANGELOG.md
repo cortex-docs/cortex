@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.29] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Improved the README heading hierarchy for better structure and readability.
+
 ## [0.1.28] - 2026-08-31
 
 ### New Features
