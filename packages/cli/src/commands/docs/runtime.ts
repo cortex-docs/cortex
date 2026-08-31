@@ -93,6 +93,7 @@ export function resolveDocsUiPath(): string {
       `Cannot find the Cortex Docs UI runtime. Reinstall @cortex-docs/cli. ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
 }
@@ -105,6 +106,7 @@ export function resolveNextBin(docsUiPath: string): string {
       `Cannot find the Next.js runtime for Cortex Docs. Reinstall @cortex-docs/cli. ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
 }

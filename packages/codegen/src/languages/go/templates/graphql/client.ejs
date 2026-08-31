@@ -290,8 +290,9 @@ func (c *<%= it.clientClass %>) readWsMessages(conn *websocket.Conn) {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			c.mu.Lock()
-			if c.wsConn == conn { c.wsConn = nil }
-			shouldReconnect := c.reconnect && !c.disposed && len(c.subs) > 0
+			wasCurrent := c.wsConn == conn
+			if wasCurrent { c.wsConn = nil }
+			shouldReconnect := wasCurrent && c.reconnect && !c.disposed && len(c.subs) > 0
 			c.mu.Unlock()
 			if shouldReconnect { go c.reconnectSubscriptions() }
 			return
@@ -372,16 +373,6 @@ func (c *<%= it.clientClass %>) Subscribe(fn func(*SubscriptionBuilder) *Subscri
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	var connectErr error
-	for attempt := 0; ; attempt++ {
-		connectErr = c.ensureWsConn()
-		if connectErr == nil { break }
-		if !c.reconnect || attempt >= c.maxReconnectAttempts {
-			return nil, connectErr
-		}
-		time.Sleep(c.reconnectInterval)
-	}
-
 	id := fmt.Sprintf("%d", c.nextSubID)
 	c.nextSubID++
 
@@ -395,19 +386,32 @@ func (c *<%= it.clientClass %>) Subscribe(fn func(*SubscriptionBuilder) *Subscri
 		handler(&envelope.Data)
 	}}
 
-	c.writeMu.Lock()
-	err := c.wsConn.WriteJSON(map[string]interface{}{
-		"type": "subscribe",
-		"id":   id,
-		"payload": map[string]interface{}{
-			"query":     query,
-			"variables": variables,
-		},
-	})
-	c.writeMu.Unlock()
-	if err != nil {
-		delete(c.subs, id)
-		return nil, fmt.Errorf("ws subscribe: %w", err)
+	var subscribeErr error
+	for attempt := 0; ; attempt++ {
+		subscribeErr = c.ensureWsConn()
+		if subscribeErr == nil {
+			conn := c.wsConn
+			c.writeMu.Lock()
+			subscribeErr = conn.WriteJSON(map[string]interface{}{
+				"type": "subscribe",
+				"id":   id,
+				"payload": map[string]interface{}{
+					"query":     query,
+					"variables": variables,
+				},
+			})
+			c.writeMu.Unlock()
+			if subscribeErr == nil { break }
+			if c.wsConn == conn {
+				_ = conn.Close()
+				c.wsConn = nil
+			}
+		}
+		if !c.reconnect || attempt >= c.maxReconnectAttempts {
+			delete(c.subs, id)
+			return nil, fmt.Errorf("ws subscribe: %w", subscribeErr)
+		}
+		time.Sleep(c.reconnectInterval)
 	}
 
 	return func() {

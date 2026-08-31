@@ -281,7 +281,7 @@ export class GenerateCommand extends CommandRunner {
               totalFiles: 0,
               protocols: [],
               langDir: langConfig.output_dir,
-              error: err.message,
+              error: err instanceof Error ? err.message : String(err),
             }),
           );
           worker.on('exit', (code) => {

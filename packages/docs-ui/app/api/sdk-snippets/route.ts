@@ -800,8 +800,7 @@ export async function GET() {
           }
         }
         const globalSecurity = (spec.raw as any).security as
-          | Array<Record<string, string[]>>
-          | undefined;
+          Array<Record<string, string[]>> | undefined;
 
         // Read intro
         let intro: string | undefined;

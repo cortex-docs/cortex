@@ -144,6 +144,7 @@ async function fetchRegistry(
   } catch (error) {
     throw new Error(
       `Registry lookup failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
   if (response.status === 404) return undefined;
