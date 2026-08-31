@@ -13,12 +13,12 @@
     "clean": "rm -rf .wrangler dist coverage wrangler.static.production.jsonc"
   },
   "dependencies": {
-    "graphql": "^16.14.0"
+    "graphql": "^17.0.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260823.1",
-    "typescript": "^5.8.0",
+    "@cloudflare/workers-types": "^5.20260828.1",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.10",
-    "wrangler": "^4.86.0"
+    "wrangler": "^4.127.0"
   }
 }

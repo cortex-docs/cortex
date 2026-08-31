@@ -3,7 +3,7 @@
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const docsUiDir = resolve(scriptDir, '..');

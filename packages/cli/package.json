@@ -49,12 +49,12 @@
     "@cortex-docs/core": "0.1.6",
     "@cortex-docs/docs-ui": "0.1.6",
     "@cortex-docs/mcp-gen": "0.1.6",
-    "@nestjs/common": "^11.0.0",
-    "@nestjs/core": "^11.0.0",
-    "chalk": "^5.4.0",
-    "js-yaml": "^4.3.1",
+    "@nestjs/common": "^11.2.3",
+    "@nestjs/core": "^11.2.3",
+    "chalk": "^6.0.0",
+    "js-yaml": "^5.4.1",
     "nest-commander": "^3.20.0",
-    "ora": "^8.2.0",
+    "ora": "^9.4.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0"
   },
@@ -65,10 +65,10 @@
     "@cortex-docs/docs-ui"
   ],
   "devDependencies": {
-    "@types/glob": "^8.1.0",
-    "@types/node": "^22.0.0",
+    "@types/glob": "^9.0.0",
+    "@types/node": "^26.4.0",
     "nest-commander-testing": "^3.5.0",
-    "typescript": "^5.8.0",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }
 }
