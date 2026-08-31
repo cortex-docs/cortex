@@ -121,8 +121,7 @@ export class OpenAPIParser {
           if (!pathItem) continue;
           for (const method of HTTP_METHODS) {
             const op = (pathItem as Record<string, unknown>)[method] as
-              | Record<string, unknown>
-              | undefined;
+              Record<string, unknown> | undefined;
             if (!op) continue;
             if (!op['operationId']) {
               warnings.push({
@@ -158,8 +157,7 @@ export class OpenAPIParser {
 
       for (const method of HTTP_METHODS) {
         const op = (pathItem as Record<string, unknown>)[method] as
-          | OpenAPIV3_1.OperationObject
-          | undefined;
+          OpenAPIV3_1.OperationObject | undefined;
         if (!op) continue;
 
         const opRecord = op as unknown as Record<string, unknown>;

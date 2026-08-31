@@ -54,7 +54,7 @@
     "js-yaml": "^5.4.1"
   },
   "devDependencies": {
-    "typescript": "^7.0.2",
+    "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }
 }

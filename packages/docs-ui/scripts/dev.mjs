@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, watch, writeFileSync 
 import { connect } from 'node:net';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOCS_UI_DIR = resolve(__dirname, '..');

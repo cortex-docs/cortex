@@ -12,11 +12,7 @@ export type SupportedLanguage =
   | 'c';
 
 export type SourceType =
-  | 'openapi-spec'
-  | 'asyncapi-spec'
-  | 'graphql-spec'
-  | 'grpc-spec'
-  | 'openrpc-spec';
+  'openapi-spec' | 'asyncapi-spec' | 'graphql-spec' | 'grpc-spec' | 'openrpc-spec';
 
 export interface PublishGitHubConfig {
   /** Set to false to disable this GitHub destination. */
@@ -66,12 +62,7 @@ export interface SourceLanguageConfig {
 }
 
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export interface WebSocketHeartbeatFlowConfig {
   /** Message sent by this side of the connection. */
