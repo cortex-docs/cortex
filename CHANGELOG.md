@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.30] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed generated Go GraphQL clients failing to reconnect and resubscribe WebSocket subscriptions after a connection was dropped or a subscribe write failed.
+
+### Improvements
+
+- None.
+
 ## [0.1.29] - 2026-08-31
 
 ### New Features
