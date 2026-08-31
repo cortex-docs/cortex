@@ -6,11 +6,7 @@
   </picture>
 </p>
 
-<h1 align="center">Cortex</h1>
-
-<p align="center">
-  <strong>Every developer. Every agent.</strong>
-</p>
+<h3 align="center">Every developer. Every agent.</h3>
 
 <p align="center">
   Cortex turns API specifications and Markdown into typed SDKs, interactive documentation, and an MCP server from one project configuration.

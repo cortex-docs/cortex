@@ -12,7 +12,7 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 ### Bug Fixes
 
-- None.
+- Disabled analytics and cookie controls unless the current hostname is explicitly listed in `enabled_hosts`.
 
 ### Improvements
 

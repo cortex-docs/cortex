@@ -178,7 +178,9 @@ analytics:
   privacy_url: https://example.com/privacy#cookies-and-analytics
 ```
 
-`google_analytics_id` is the Google Analytics measurement ID. `enabled_hosts` prevents tracking on local and preview sites.
+`google_analytics_id` is the Google Analytics measurement ID. The integration stays disabled unless the current hostname is in `enabled_hosts`.
+
+This host list prevents tracking and cookie controls on local and preview sites.
 
 `privacy_url` opens from the cookie banner. Cortex asks for consent where required and stores the choice in local browser storage.
 

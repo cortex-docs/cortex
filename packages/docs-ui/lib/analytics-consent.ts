@@ -48,7 +48,8 @@ const CONSENT_REQUIRED = new Set([
 ]);
 
 export function isAnalyticsHost(hostname: string, enabledHosts: string[]): boolean {
-  return enabledHosts.length === 0 || enabledHosts.includes(hostname.toLowerCase());
+  const normalizedHostname = hostname.toLowerCase();
+  return enabledHosts.some((host) => host.toLowerCase() === normalizedHostname);
 }
 
 export function analyticsAllowed(state: ConsentState): boolean {
