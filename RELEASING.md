@@ -59,8 +59,11 @@ The release workflow performs these actions:
 11. Build the complete product documentation as static files.
 12. Deploy the static files to `docs.cortexdocs.dev`.
 13. Make sure that Cloudflare Static Assets serves the product documentation.
+14. Create the GitHub Release with the generated changelog notes.
 
 The release stops before the product docs deployment if an npm publication fails. A rerun skips package versions that already exist.
+
+The workflow creates or updates the GitHub Release after all package and documentation checks pass. This operation is safe during a workflow rerun.
 
 The CLI tarball includes the internal workspace packages that it uses. The release does not publish these workspaces as separate npm packages.
 

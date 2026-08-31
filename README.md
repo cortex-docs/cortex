@@ -1,19 +1,83 @@
-# Cortex Docs
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="packages/docs-site/assets/logo_dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="packages/docs-site/assets/logo_light.svg">
+    <img alt="Cortex" src="packages/docs-site/assets/logo_light.svg" width="246">
+  </picture>
+</p>
 
-[![CI](https://github.com/cortex-docs/cortex/actions/workflows/ci.yml/badge.svg)](https://github.com/cortex-docs/cortex/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<h1 align="center">Cortex</h1>
 
-Cortex turns API specifications and Markdown into typed SDKs, interactive documentation, and MCP servers for developers and AI agents.
+<p align="center">
+  <strong>Every developer. Every agent.</strong>
+</p>
 
-One project can combine OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC sources. Cortex Docs generates one package for each configured language.
+<p align="center">
+  Cortex turns API specifications and Markdown into typed SDKs, interactive documentation, and an MCP server from one project configuration.
+</p>
 
-## Live sites
+<p align="center">
+  OpenAPI · AsyncAPI · GraphQL · gRPC · OpenRPC · Markdown
+</p>
 
-**[Read the Cortex Docs documentation →](https://docs.cortexdocs.dev)**
+<p align="center">
+  <a href="https://github.com/cortex-docs/cortex/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/cortex-docs/cortex/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://www.npmjs.com/package/@cortex-docs/cli"><img alt="npm version" src="https://img.shields.io/npm/v/@cortex-docs/cli.svg"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <a href="https://github.com/cortex-docs/cortex/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/cortex-docs/cortex?style=flat&logo=github"></a>
+</p>
 
-**[Open the Cortex Docs demo →](https://demo.cortexdocs.dev)**
+<p align="center">
+  <a href="https://docs.cortexdocs.dev"><strong>Documentation</strong></a> ·
+  <a href="https://demo.cortexdocs.dev"><strong>Live demo</strong></a> ·
+  <a href="https://cortexdocs.dev"><strong>Website</strong></a>
+</p>
 
-**[Official Website →](https://cortexdocs.dev)**
+![Cortex turns API sources into interactive documentation, typed SDKs, and an MCP server for developers, applications, and AI agents.](assets/cortex-overview.svg)
+
+Cortex combines OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, OpenRPC, and Markdown sources. Developers get interactive documentation, applications get typed SDKs, and AI agents get an MCP server with project context.
+
+If Cortex helps your team, [star this repository](https://github.com/cortex-docs/cortex) to support its development.
+
+## Try Cortex in 60 seconds
+
+Create a sample project and inspect the generation plan:
+
+```bash
+mkdir petstore
+cd petstore
+npm install --global @cortex-docs/cli
+cortex init petstore
+cortex validate
+cortex generate --dry-run
+```
+
+Cortex validates each source and shows every planned output:
+
+```text
+✓ Config is valid
+✓ Parsed AsyncAPI: WebSocket API
+✓ Parsed GraphQL: GraphQL
+✓ Parsed OpenRPC: OpenRPC
+✓ Parsed OpenAPI: REST API V1
+Languages: typescript, python, go, java, kotlin, ruby, php, csharp, rust, cpp, c
+
+typescript [REST + WS + GraphQL + OpenRPC] → generated/typescript/petstore-typescript-client-sdk
+python [REST + WS + GraphQL + OpenRPC] → generated/python/petstore-python-sdk
+...
+mcp-server → generated/mcp-server
+```
+
+The generated MCP server gives AI agents typed tools, specifications, SDK guides, and project documentation.
+
+Generate the files. Then start the documentation server:
+
+```bash
+cortex generate
+cortex docs serve
+```
+
+Open `http://localhost:3012`. Press `Ctrl+C` to stop the server.
 
 ## Features
 
@@ -21,10 +85,23 @@ One project can combine OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC
 - Combine multiple specification files in one generated SDK.
 - Generate HTTP, WebSocket, GraphQL, gRPC, and JSON-RPC clients.
 - Generate a production documentation server with interactive API reference pages.
-- Generate MCP server for REST, GraphQL, OpenRPC, and WebSocket payload preparation.
+- Generate an MCP server with typed tools, embedded specifications, SDK guides, and project documentation for AI agents.
 - Add Markdown pages, SDK guides, and all API specifications to the MCP server.
 - Customize generated output with sparse Eta template overrides.
-- Publish generated packages and MCP to language registries and GitHub repositories.
+- Publish generated packages and MCP servers to language registries and GitHub repositories.
+
+## Unlimited specs. Multiple ways to use it.
+
+Generate interactive docs for exploration, typed SDKs for integration, and MCP servers for AI agents.
+
+| Task                | Split toolchain                                     | Cortex Docs                                                                     |
+| ------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Configuration       | Configure SDK, documentation, and MCP generators    | Declare all API sources in one project configuration                            |
+| Generation          | Coordinate separate commands and output directories | Generate all configured outputs with one command                                |
+| Customization       | Maintain templates for each generator               | Override only the required Eta templates                                        |
+| Publishing          | Maintain a release process for each package         | Review one publish plan for registries and GitHub                               |
+| Developer interface | Keep guides separate from API references            | Combine Markdown, API references, and SDK guides                                |
+| Agent interface     | Maintain MCP servers and context separately         | Generate MCP servers with specifications, SDK guides, and project documentation |
 
 ## Requirements
 
@@ -32,19 +109,6 @@ One project can combine OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, and OpenRPC
 - npm 10 or later
 
 Some generated SDKs require the normal compiler or package manager for their target language.
-
-## Quick start
-
-```bash
-npm install --global @cortex-docs/cli
-cortex init my-api
-cd my-api
-cortex validate
-cortex generate
-cortex docs serve
-```
-
-Open `http://localhost:3012` unless you selected another port.
 
 ## Configuration
 
@@ -108,7 +172,7 @@ Add `?appearance=dark` or `?appearance=light` to any documentation URL to select
 
 For example, `/docs/quickstart?appearance=dark` opens the quickstart in dark mode. The theme button can change the appearance after the page loads.
 
-Sources that use the same language and `package_name` are merged into one SDK. Cortex Docs rejects duplicate operation and type names that would make a merge ambiguous.
+Sources that use the same language and `package_name` are merged into one SDK. Cortex rejects duplicate operation and type names that would make a merge ambiguous.
 
 See the [configuration reference](packages/docs-site/docs/configuration.md) for all fields.
 
@@ -170,7 +234,7 @@ The release workflow publishes `@cortex-docs/cli` and `@cortex-docs/mcp`. The CL
 | Package                | Distribution    | Purpose                                        |
 | ---------------------- | --------------- | ---------------------------------------------- |
 | `@cortex-docs/cli`     | npm             | Command-line interface and project workflow    |
-| `@cortex-docs/mcp`     | npm             | MCP server for the Cortex Docs documentation   |
+| `@cortex-docs/mcp`     | npm             | MCP server for the Cortex documentation        |
 | `@cortex-docs/core`    | Included in CLI | Configuration loader and specification parsers |
 | `@cortex-docs/codegen` | Included in CLI | SDK generation engine and language templates   |
 | `@cortex-docs/mcp-gen` | Included in CLI | MCP server generator                           |
@@ -197,3 +261,5 @@ Report vulnerabilities through the private process in [SECURITY.md](SECURITY.md)
 ## License
 
 Cortex Docs is available under the [MIT License](LICENSE).
+
+If Cortex saves you time, [give the repository a star](https://github.com/cortex-docs/cortex). It helps more developers find the project.

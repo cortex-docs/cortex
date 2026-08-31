@@ -16,7 +16,8 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 ### Improvements
 
-- None.
+- Added a visual product overview, a 60-second tour, a workflow comparison, and clearer project links to the README.
+- Added automatic GitHub Releases with notes from the generated changelog.
 
 ## [0.1.26] - 2026-08-28
 
