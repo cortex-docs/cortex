@@ -234,6 +234,18 @@ describe('GraphQL Codegen — All Languages', () => {
           expect(client.content).not.toContain('func (c *Gql) Pets(');
         });
 
+        it('retries subscriptions when the shared WebSocket closes during a write', async () => {
+          const files = await generateForLanguage(language);
+          const client = getFile(files, 'gql-client')!;
+          expect(client.content).toContain('wasCurrent := c.wsConn == conn');
+          expect(client.content).toContain(
+            'shouldReconnect := wasCurrent && c.reconnect && !c.disposed',
+          );
+          expect(client.content).toContain('subscribeErr = conn.WriteJSON(');
+          expect(client.content).toContain('if c.wsConn == conn {');
+          expect(client.content).toContain('c.wsConn = nil');
+        });
+
         it('generates unified result types instead of per-operation types', async () => {
           const files = await generateForLanguage(language);
           const types = getFile(files, 'gql-types')!;
