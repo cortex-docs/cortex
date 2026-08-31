@@ -49,12 +49,12 @@
   },
   "dependencies": {
     "@cortex-docs/core": "0.1.6",
-    "eta": "^3.5.0",
-    "graphql": "^16.14.0",
-    "js-yaml": "^4.3.1"
+    "eta": "^4.6.0",
+    "graphql": "^17.0.2",
+    "js-yaml": "^5.4.1"
   },
   "devDependencies": {
-    "typescript": "^5.8.0",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }

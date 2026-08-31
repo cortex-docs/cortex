@@ -47,10 +47,10 @@
   },
   "dependencies": {
     "@cortex-docs/core": "0.1.6",
-    "eta": "^3.5.0"
+    "eta": "^4.6.0"
   },
   "devDependencies": {
-    "typescript": "^5.8.0",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
