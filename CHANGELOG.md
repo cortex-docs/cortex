@@ -12,11 +12,25 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 ### Bug Fixes
 
-- Disabled analytics and cookie controls unless the current hostname is explicitly listed in `enabled_hosts`.
+- None.
 
 ### Improvements
 
 - None.
+
+## [0.1.28] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Disabled analytics and cookie controls unless the current hostname is explicitly listed in `enabled_hosts`, instead of enabling tracking by default when the list was empty.
+
+### Improvements
+
+- Simplified the README header presentation.
 
 ## [0.1.27] - 2026-08-31
 
