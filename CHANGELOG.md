@@ -20,6 +20,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - Removed `cortex docs start`. Use `cortex docs serve` for a local preview with file watching. Host production output as static files without a Node.js server.
 
+## [0.1.30] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed generated Go GraphQL clients failing to reconnect and resubscribe WebSocket subscriptions after a connection was dropped or a subscribe write failed.
+
+### Improvements
+
+- None.
+
 ## [0.1.29] - 2026-08-31
 
 ### New Features
