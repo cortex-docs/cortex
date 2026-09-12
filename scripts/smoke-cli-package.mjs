@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { createServer as createNetServer } from 'node:net';
@@ -227,14 +227,16 @@ try {
     [['publish'], 'Build and publish generated SDKs'],
     [['docs'], 'API documentation commands'],
     [['docs', 'serve'], 'Start a local API docs server'],
-    [['docs', 'build'], 'Build production API documentation'],
-    [['docs', 'start'], 'Start a production Cortex Docs build'],
+    [['docs', 'build'], 'Build static HTML API documentation'],
     [['mcp'], 'MCP server commands'],
     [['mcp', 'generate'], 'Generate an MCP server'],
     [['generators'], 'Custom generator template commands'],
     [['generators', 'export'], 'Export installed generator templates'],
   ]) {
     assertHelp(cli, args, expectedText);
+  }
+  if (/\bstart\b/.test(run(cli, ['docs', '--help'], smokeRoot, true))) {
+    throw new Error('cortex docs still exposes the removed start command.');
   }
 
   run(cli, ['init', 'registry-smoke'], projectDir);
@@ -295,30 +297,35 @@ try {
 
   run(cli, ['docs', 'build', '--output', docsOutput], projectDir);
 
-  if (!existsSync(join(docsOutput, '.cortex-docs-build.json'))) {
-    throw new Error('cortex docs build did not create its production manifest.');
+  for (const file of ['index.html', '404.html', 'docs/quickstart.html', '_next/static']) {
+    if (!existsSync(join(docsOutput, file))) {
+      throw new Error(`The static documentation build is missing ${file}.`);
+    }
   }
-
-  const port = await reservePort();
-  const docsStart = spawnCli(
-    cli,
-    ['docs', 'start', '--output', docsOutput, '--port', String(port)],
-    projectDir,
-  );
-  try {
-    await waitForPage(
-      `http://127.0.0.1:${port}/docs/quickstart`,
-      docsStart.child,
-      docsStart.output,
-      'Getting Started',
-      'cortex docs start',
-    );
-  } finally {
-    await stopProcessGroup(docsStart.child);
+  for (const file of ['server.js', 'node_modules', '.next', '.cortex-docs-build.json']) {
+    if (existsSync(join(docsOutput, file))) {
+      throw new Error(`The static documentation build contains a server artifact: ${file}.`);
+    }
+  }
+  const quickstart = readFileSync(join(docsOutput, 'docs', 'quickstart.html'), 'utf8');
+  if (!quickstart.includes('Getting Started')) {
+    throw new Error('The static documentation build is missing the quickstart page content.');
+  }
+  for (const match of quickstart.matchAll(/(?:src|href)="(\/_next\/[^"?]+)(?:\?[^"\s]*)?"/g)) {
+    if (!existsSync(join(docsOutput, decodeURIComponent(match[1])))) {
+      throw new Error(`The static documentation page references a missing asset: ${match[1]}.`);
+    }
+  }
+  for (const endpoint of ['config', 'docs', 'mcp', 'sdks', 'sdk-snippets', 'sdk-readme']) {
+    JSON.parse(readFileSync(join(docsOutput, 'api', endpoint), 'utf8'));
+  }
+  const exportedConfig = JSON.parse(readFileSync(join(docsOutput, 'api', 'config'), 'utf8'));
+  if (exportedConfig.project !== 'registry-smoke') {
+    throw new Error('The static documentation build does not contain the project configuration.');
   }
 
   console.log(
-    `E2E-tested ${expectedVersion}: every CLI command, generated SDK and MCP, publish planning, and docs runtimes.`,
+    `E2E-tested ${expectedVersion}: every CLI command, generated SDK and MCP, publish planning, docs preview, and static HTML export.`,
   );
 } finally {
   rmSync(smokeRoot, { recursive: true, force: true });

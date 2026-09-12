@@ -311,36 +311,36 @@ export function DocsHeader() {
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl backdrop-saturate-150">
-        <div className="flex h-14 items-center px-6">
+        <div className="flex h-14 items-center px-4 sm:px-6">
           {/* Left: logo */}
-          <div className="flex items-center gap-2">
-            <Link href="/" className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-initial">
+            <Link href="/" className="flex min-w-0 items-center gap-3 overflow-hidden">
               {hasCustomLogo && (logoDarkSvg || logoLightSvg) ? (
                 <>
                   {logoDarkSvg && (
                     <span
-                      className="hidden dark:inline-flex w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
+                      className="hidden dark:inline-flex min-w-0 w-auto text-foreground [&>svg]:h-full [&>svg]:max-w-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoDarkSvg }}
                     />
                   )}
                   {logoLightSvg && (
                     <span
-                      className="inline-flex dark:hidden w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
+                      className="inline-flex dark:hidden min-w-0 w-auto text-foreground [&>svg]:h-full [&>svg]:max-w-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoLightSvg }}
                     />
                   )}
                   {!logoLightSvg && logoDarkSvg && (
                     <span
-                      className="inline-flex dark:hidden w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
+                      className="inline-flex dark:hidden min-w-0 w-auto text-foreground [&>svg]:h-full [&>svg]:max-w-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoDarkSvg }}
                     />
                   )}
                   {!logoDarkSvg && logoLightSvg && (
                     <span
-                      className="hidden dark:inline-flex w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
+                      className="hidden dark:inline-flex min-w-0 w-auto text-foreground [&>svg]:h-full [&>svg]:max-w-full [&>svg]:w-auto [&>svg]:overflow-visible"
                       style={{ height: logoHeight ?? 24 }}
                       dangerouslySetInnerHTML={{ __html: logoLightSvg }}
                     />
@@ -348,7 +348,7 @@ export function DocsHeader() {
                 </>
               ) : hasCustomLogo && logoSvg ? (
                 <span
-                  className="w-auto text-foreground [&>svg]:h-full [&>svg]:w-auto [&>svg]:overflow-visible"
+                  className="min-w-0 w-auto text-foreground [&>svg]:h-full [&>svg]:max-w-full [&>svg]:w-auto [&>svg]:overflow-visible"
                   style={{ height: logoHeight ?? 24 }}
                   dangerouslySetInnerHTML={{ __html: logoSvg }}
                 />
@@ -357,11 +357,11 @@ export function DocsHeader() {
                   src="/api/logo"
                   alt="Logo"
                   style={{ height: logoHeight ?? 28 }}
-                  className="w-auto"
+                  className="min-w-0 w-auto object-contain"
                 />
               ) : (
                 <svg
-                  className="h-6 w-6 text-primary"
+                  className="h-6 w-6 shrink-0 text-primary"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -378,25 +378,26 @@ export function DocsHeader() {
                 </svg>
               )}
               {!hasCustomLogo && (
-                <span className="text-lg font-semibold tracking-tight">
+                <span className="truncate text-lg font-semibold tracking-tight">
                   {project || siteTitle || 'Cortex'}
                 </span>
               )}
             </Link>
             {showLogoDocsLabel !== false && (
-              <span className="text-md text-muted-foreground">Docs</span>
+              <span className="shrink-0 text-md text-muted-foreground">Docs</span>
             )}
           </div>
 
           {/* Center: search bar */}
-          <div className="flex-1 flex justify-center px-8">
+          <div className="flex shrink-0 justify-center px-2 sm:flex-1 sm:px-8">
             <button
               onClick={() => setSearchOpen(true)}
-              className="flex w-full max-w-md items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3.5 py-2 text-sm text-muted-foreground transition-all hover:bg-muted/50 hover:border-border"
+              aria-label="Search documentation"
+              className="flex sm:w-full max-w-md items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-2 sm:px-3.5 py-2 text-sm text-muted-foreground transition-all hover:bg-muted/50 hover:border-border"
             >
               <SearchIcon className="size-4 shrink-0" />
-              <span className="flex-1 text-left">Search...</span>
-              <Kbd>⌘K</Kbd>
+              <span className="hidden sm:block flex-1 text-left">Search...</span>
+              <Kbd className="hidden sm:inline-flex">⌘K</Kbd>
             </button>
           </div>
 
@@ -437,7 +438,7 @@ export function DocsHeader() {
         </div>
 
         {/* Bottom row: nav links */}
-        <nav className="flex items-center gap-1 px-6 py-1.5">
+        <nav className="flex items-center gap-1 overflow-x-auto whitespace-nowrap px-4 py-1.5 sm:px-6 [&>a]:shrink-0">
           <Link
             href="/"
             className={cn(

@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Cortex Docs product overview</title>
+  <desc id="desc">API specifications and Markdown flow through one Cortex project configuration into interactive documentation, typed SDKs, and an MCP server for AI agents.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0d12"/>
+      <stop offset="1" stop-color="#141925"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6ee7f2"/>
+      <stop offset="1" stop-color="#8b7cf6"/>
+    </linearGradient>
+    <linearGradient id="asyncapi-logo" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2dccfd"/>
+      <stop offset="1" stop-color="#ad20e2"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="630" rx="24" fill="url(#background)"/>
+  <circle cx="600" cy="315" r="250" fill="#7767f4" opacity="0.05"/>
+  <circle cx="600" cy="315" r="175" fill="#67e8f9" opacity="0.04"/>
+
+  <g transform="translate(62 34) scale(1.3)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+    <g stroke="#f8fafc" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 2.5 Q11 1 13 2.5 L18 5 Q20 6 18 7 L13 9.5 Q11 11 9 9.5 L4 7 Q2 6 4 5 Z" stroke-width="1.5" fill="#f8fafc" fill-opacity=".1"/>
+      <path d="M3 10 L9 13.5 Q11 14.8 13 13.5 L19 10" stroke-width="1.5"/>
+      <path d="M3 13.5 L9 17 Q11 18.3 13 17 L19 13.5" stroke-width="1.5" stroke-opacity=".5"/>
+    </g>
+    <text x="26" y="15" fill="#f8fafc" font-size="16" font-weight="600">Cortex</text>
+  </g>
+
+  <text x="600" y="58" text-anchor="middle" fill="#f8fafc" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="28" font-weight="700">Unlimited specs. Multiple ways to use it.</text>
+  <text x="600" y="88" text-anchor="middle" fill="#94a3b8" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15">Generate interactive docs for exploration, typed SDKs for integration, and MCP servers for AI agents.</text>
+
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="78" y="145" fill="#64748b" font-size="12" font-weight="700" letter-spacing="1.4">SOURCES</text>
+
+    <g fill="#151a24" stroke="#2a3242">
+      <rect x="62" y="166" width="224" height="54" rx="12"/>
+      <rect x="62" y="232" width="224" height="54" rx="12"/>
+      <rect x="62" y="298" width="224" height="54" rx="12"/>
+      <rect x="62" y="364" width="224" height="54" rx="12"/>
+      <rect x="62" y="430" width="224" height="54" rx="12"/>
+      <rect x="62" y="496" width="224" height="54" rx="12"/>
+    </g>
+
+    <g font-size="16" font-weight="600" fill="#e2e8f0">
+      <text x="118" y="199">OpenAPI</text>
+      <text x="118" y="265">AsyncAPI</text>
+      <text x="118" y="331">GraphQL</text>
+      <text x="118" y="397">Protocol Buffer</text>
+      <text x="118" y="463">OpenRPC</text>
+      <text x="118" y="529">Markdown</text>
+    </g>
+
+    <!-- OpenAPI -->
+    <g transform="translate(80 181)" fill="#6ba43a">
+      <path d="M21.039 0a2.959 2.959 0 0 0-2.65 4.274l-6.447 6.447a2.96 2.96 0 1 0 1.335 1.336l6.447-6.447A2.959 2.959 0 1 0 21.04 0ZM10.628 2.745c-.072 0-.143.003-.214.004-.072.002-.143.002-.215.005-.447.018-.893.064-1.335.138l-.03.005-.185.033-.105.02a7.718 7.718 0 0 0-.289.062l-.032.008a10.69 10.69 0 0 0-2.55.95l-.155.089c-.063.034-.125.07-.187.105-.046.027-.093.051-.14.079H5.19l-.01.005-.036.02v.002l.111.184 3.15 5.23a4.168 4.168 0 0 1 .38-.202 4.294 4.294 0 0 1 1.628-.413c.071-.004.143-.008.214-.008Zm.428.01v6.333c.325.034.647.103.96.209l4.66-4.66c-.173-.12-.348-.237-.528-.347l-.026-.015c-.056-.035-.112-.067-.168-.1l-.098-.056-.099-.055a12.735 12.735 0 0 0-.171-.092l-.027-.014a10.628 10.628 0 0 0-1.425-.617c-.69-.241-1.403-.41-2.128-.505l-.089-.012-.09-.01a6.56 6.56 0 0 0-.17-.019l-.049-.004-.204-.017a6.44 6.44 0 0 0-.255-.015c-.031-.003-.062-.003-.093-.004ZM4.782 4.498a9.92 9.92 0 0 0-1.36 1.062l4.461 4.461.018.018c.049-.04.098-.078.149-.116l-.011-.018Zm-1.67 1.36c-.05.05-.098.103-.147.154l-.149.155c-.33.357-.63.73-.902 1.118l-.039.056a10.588 10.588 0 0 0-.216.326 10.6 10.6 0 0 0-1.65 5.276l-.006.215-.003.214h6.317c0-.072.007-.143.01-.214.005-.072.006-.144.013-.215.081-.822.399-1.625.952-2.3.045-.055.096-.106.144-.16.048-.052.093-.107.144-.158Zm16.255 1.464-4.663 4.663c.106.312.175.634.21.959h6.332l-.004-.094a11.579 11.579 0 0 0-.032-.456l-.005-.052a13.044 13.044 0 0 0-.026-.241v-.009l-.033-.24v-.009a10.618 10.618 0 0 0-.327-1.493l-.003-.01a15.839 15.839 0 0 0-.07-.228l-.01-.03a14.111 14.111 0 0 0-.069-.204l-.02-.055a5.65 5.65 0 0 0-.153-.405 7.84 7.84 0 0 0-.093-.227 16.67 16.67 0 0 0-.063-.144l-.037-.081a13.776 13.776 0 0 0-.08-.171l-.024-.052-.096-.194-.014-.027a11.2 11.2 0 0 0-.112-.212l-.004-.008a10.615 10.615 0 0 0-.604-.98Zm-4.43 6.05c0 .071-.006.142-.01.214-.003.072-.005.143-.012.214a4.29 4.29 0 0 1-.952 2.301c-.045.055-.096.107-.144.16-.048.053-.093.108-.144.159l4.467 4.467c.051-.051.099-.104.148-.155.05-.052.1-.103.148-.155.331-.358.633-.733.905-1.122l.032-.046.098-.144.085-.13.04-.063a10.597 10.597 0 0 0 1.647-5.272c.003-.071.004-.143.006-.214.001-.071.004-.143.004-.214ZM.01 13.8l.004.093.01.179.005.076.017.206.005.046c.007.076.015.153.024.228l.003.022a9.605 9.605 0 0 0 .033.248c.072.505.182 1.005.327 1.497l.002.006c.022.077.047.154.071.23l.004.014.005.014a15.737 15.737 0 0 0 .153.439l.03.08.059.148a7.702 7.702 0 0 0 .093.228l.062.14.038.084.078.169.027.054a10.677 10.677 0 0 0 .225.441l.025.043 5.408-3.258.02-.012a4.314 4.314 0 0 1-.395-1.414h-.025Zm6.93 1.794-5.415 3.262c.083.139.17.273.259.406l.008.014.004.005.008.014h.001c.007.012.014.022.022.032l.001.002v.001a10.634 10.634 0 0 0 .298.417l.006.008a9.963 9.963 0 0 0 .29.368l.033.04c.043.052.086.103.13.153l.057.065.112.127.064.069.029.031.083.09.035.035c.049.051.098.103.149.153L7.58 16.42a3.86 3.86 0 0 1-.285-.321 4.422 4.422 0 0 1-.356-.505Zm6.416 1.111c-.05.04-.1.079-.15.116l.011.018 3.257 5.407c.151-.099.3-.2.446-.307.315-.232.62-.484.914-.756l-4.46-4.46Zm-5.457.003-.015.015-4.46 4.46a8.966 8.966 0 0 0 .195.176c.022.02.043.04.065.058l.152.13a10.622 10.622 0 0 0 .215.174l.023.017.191.148.008.005c.268.2.547.389.834.564l.03.018.164.097.101.057a5.458 5.458 0 0 0 .27.148c.008.004.016.01.025.013.162.085.327.164.493.24l.158-.385 2.243-5.448.009-.02a4.328 4.328 0 0 1-.701-.467Zm4.951.353c-.061.037-.124.07-.187.104a4.318 4.318 0 0 1-3.271.336c-.069-.02-.135-.047-.203-.071-.067-.024-.136-.044-.202-.072l-2.242 5.444-.088.213-.075.183v.001l.017.007a.137.137 0 0 0 .019.007l.005.003c.052.021.106.04.159.06.067.027.133.053.2.077l.102.04c.702.247 1.43.42 2.168.518l.087.012.09.01.172.019a7.173 7.173 0 0 0 .252.022c.023.001.048.001.071.003l.184.011.112.005a7.06 7.06 0 0 0 .358.007h.05a10.667 10.667 0 0 0 1.793-.15l.185-.034.105-.02.109-.023.18-.04.032-.008a10.684 10.684 0 0 0 2.55-.95c.052-.028.104-.06.156-.089.063-.034.125-.07.187-.105.043-.024.087-.047.13-.073h.001l.002-.002.002-.001.002-.001.007-.004.042-.025-.11-.183-.11-.184Z"/>
+    </g>
+
+    <!-- AsyncAPI -->
+    <g transform="translate(78 245) scale(.18)">
+      <rect x="8.88" y="8.88" width="137.75" height="137.75" rx="32.58" fill="url(#asyncapi-logo)"/>
+      <g fill="#fff">
+        <polygon points="53.35 63.21 49.25 68.86 81.27 92.1 81.49 92.26 85.59 86.61 53.57 63.37 53.35 63.21"/>
+        <polygon points="74.27 63.37 74.05 63.21 69.95 68.86 101.97 92.1 102.19 92.26 106.29 86.61 74.27 63.37"/>
+        <path d="M77.78 34.29c-17.35 0-31.48 10.79-31.48 24.06v.27h7v-.27c0-9.42 11-17.08 24.5-17.08s24.51 7.66 24.51 17.08v.27h7v-.27c-.04-13.27-14.17-24.06-31.53-24.06Z"/>
+        <path d="M102.23 97.16c0 9.42-11 17.08-24.51 17.08s-24.5-7.66-24.5-17.08v-.27h-7v.27c0 13.26 14.13 24 31.48 24s31.49-10.79 31.49-24v-.27h-7Z"/>
+      </g>
+    </g>
+
+    <!-- GraphQL -->
+    <g transform="translate(80 313)" fill="#e10098">
+      <path d="M12.002 0a2.138 2.138 0 1 0 0 4.277 2.138 2.138 0 1 0 0-4.277zm8.54 4.931a2.138 2.138 0 1 0 0 4.277 2.138 2.138 0 1 0 0-4.277zm0 9.862a2.138 2.138 0 1 0 0 4.277 2.138 2.138 0 1 0 0-4.277zm-8.54 4.931a2.138 2.138 0 1 0 0 4.276 2.138 2.138 0 1 0 0-4.276zm-8.542-4.93a2.138 2.138 0 1 0 0 4.276 2.138 2.138 0 1 0 0-4.277zm0-9.863a2.138 2.138 0 1 0 0 4.277 2.138 2.138 0 1 0 0-4.277zm8.542-3.378L2.953 6.777v10.448l9.049 5.224 9.047-5.224V6.777zm0 1.601 7.66 13.27H4.34zm-1.387.371L3.97 15.037V7.363zm2.774 0 6.646 3.838v7.674zM5.355 17.44h13.293l-6.646 3.836z"/>
+    </g>
+
+    <!-- Protocol Buffers -->
+    <g transform="translate(79 378)">
+      <path d="M13 0 25 6.5 13 13 1 6.5Z" fill="#5ba5f5"/>
+      <path d="M1 6.5 13 13v13L1 19.5Z" fill="#2d7dd2"/>
+      <path d="M25 6.5 13 13v13l12-6.5Z" fill="#74b9ff"/>
+      <path d="M7 8.4 13 11.6 19 8.4M13 14.8v6.6" fill="none" stroke="#eaf4ff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- OpenRPC -->
+    <g transform="translate(79 444) scale(.052734375)">
+      <path d="M256 56.4 56.4 256 256 455.6 455.6 256 256 56.4Zm0 42.4 157.3 157.3L256 413.5 98.7 256.1 256 98.8Z" fill="#94a3b8"/>
+      <g fill="none" stroke="#94a3b8" stroke-width="26" stroke-linecap="round">
+        <path d="m86.4 75.5 75 74.8"/>
+        <path d="m425.6 75.5-75 74.8"/>
+        <path d="m86.4 436.5 75-74.8"/>
+        <path d="m425.6 436.5-75-74.8"/>
+      </g>
+      <circle cx="86.5" cy="75.5" r="37.5" fill="#89dbd4"/>
+      <circle cx="425.6" cy="75.5" r="37.5" fill="#fce182"/>
+      <circle cx="86.5" cy="436.5" r="37.5" fill="#ea7988"/>
+      <circle cx="425.6" cy="436.5" r="37.5" fill="#b9dcfd"/>
+      <g fill="#94a3b8">
+        <circle cx="152.3" cy="256" r="14"/>
+        <circle cx="256.3" cy="256" r="14"/>
+        <circle cx="360.5" cy="256" r="14"/>
+      </g>
+    </g>
+
+    <!-- Markdown -->
+    <g transform="translate(80 511)" fill="#f8fafc">
+      <path d="M22.27 19.385H1.73A1.73 1.73 0 0 1 0 17.655V6.345a1.73 1.73 0 0 1 1.73-1.73h20.54A1.73 1.73 0 0 1 24 6.345v11.308a1.73 1.73 0 0 1-1.73 1.731ZM5.769 15.923v-4.5l2.308 2.885 2.307-2.885v4.5h2.308V8.078h-2.308l-2.307 2.885-2.308-2.885H3.46v7.847Zm15.463-3.923h-2.309V8.077h-2.307V12h-2.308l3.461 4.039Z"/>
+    </g>
+
+    <path d="M 306 358 C 342 358, 350 315, 382 315" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <g filter="url(#shadow)">
+      <rect x="394" y="193" width="328" height="276" rx="20" fill="#111722" stroke="#48546a"/>
+      <rect x="394" y="193" width="328" height="58" rx="20" fill="#171e2b"/>
+      <path d="M394 231 H722" stroke="#171e2b" stroke-width="38"/>
+      <circle cx="424" cy="222" r="6" fill="#fb7185"/>
+      <circle cx="444" cy="222" r="6" fill="#fbbf24"/>
+      <circle cx="464" cy="222" r="6" fill="#4ade80"/>
+      <text x="558" y="228" text-anchor="middle" fill="#cbd5e1" font-size="14" font-weight="600">cortex.config.yml</text>
+    </g>
+
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12">
+      <text x="424" y="278" fill="#94a3b8">project:</text><text x="488" y="278" fill="#a5f3fc">petstore</text>
+      <text x="424" y="302" fill="#94a3b8">sources:</text>
+      <text x="440" y="326" fill="#94a3b8">- type:</text><text x="504" y="326" fill="#c4b5fd">openapi-spec</text>
+      <text x="456" y="350" fill="#94a3b8">spec:</text><text x="504" y="350" fill="#a5f3fc">./openapi.yml</text>
+      <text x="424" y="374" fill="#94a3b8">docs:</text>
+      <text x="440" y="398" fill="#94a3b8">- section:</text><text x="520" y="398" fill="#a5f3fc">Guides</text>
+      <text x="424" y="422" fill="#94a3b8">mcp:</text>
+      <text x="440" y="446" fill="#94a3b8">package_name:</text><text x="536" y="446" fill="#86efac">'@petstore/mcp'</text>
+    </g>
+
+    <path d="M 738 315 C 770 315, 778 198, 812 198" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 738 315 C 770 315, 778 330, 812 330" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M 738 315 C 770 315, 778 462, 812 462" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <text x="830" y="145" fill="#64748b" font-size="12" font-weight="700" letter-spacing="1.4">OUTPUTS</text>
+
+    <g filter="url(#shadow)">
+      <rect x="824" y="163" width="314" height="108" rx="16" fill="#151a24" stroke="#2f3a4d"/>
+      <rect x="824" y="295" width="314" height="108" rx="16" fill="#151a24" stroke="#2f3a4d"/>
+      <rect x="824" y="427" width="314" height="108" rx="16" fill="#151a24" stroke="#2f3a4d"/>
+    </g>
+
+    <g>
+      <rect x="848" y="185" width="48" height="48" rx="12" fill="#183447"/>
+      <path d="M860 197 H878 L886 205 V221 H860 Z M878 197 V205 H886 M865 211 H881 M865 216 H877" fill="none" stroke="#67e8f9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="916" y="203" fill="#f8fafc" font-size="18" font-weight="700">Interactive docs</text>
+      <text x="916" y="229" fill="#94a3b8" font-size="13">For developers</text>
+    </g>
+
+    <g>
+      <rect x="848" y="317" width="48" height="48" rx="12" fill="#282545"/>
+      <path d="M867 330 L859 341 L867 352 M877 330 L885 341 L877 352" fill="none" stroke="#a5b4fc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="916" y="335" fill="#f8fafc" font-size="18" font-weight="700">Typed SDKs</text>
+      <text x="916" y="361" fill="#94a3b8" font-size="13">For applications</text>
+    </g>
+
+    <g>
+      <rect x="848" y="449" width="48" height="48" rx="12" fill="#173a31"/>
+      <rect x="859" y="459" width="26" height="10" rx="3" fill="none" stroke="#86efac" stroke-width="1.5"/>
+      <rect x="859" y="477" width="26" height="10" rx="3" fill="none" stroke="#86efac" stroke-width="1.5"/>
+      <circle cx="865" cy="464" r="1.5" fill="#86efac"/>
+      <circle cx="865" cy="482" r="1.5" fill="#86efac"/>
+      <text x="916" y="467" fill="#f8fafc" font-size="18" font-weight="700">MCP server</text>
+      <text x="916" y="493" fill="#94a3b8" font-size="13">For AI agents</text>
+    </g>
+
+    <rect x="394" y="536" width="328" height="34" rx="17" fill="#171e2b" stroke="#2f3a4d"/>
+    <text x="558" y="558" text-anchor="middle" fill="#cbd5e1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">cortex generate</text>
+  </g>
+</svg>

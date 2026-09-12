@@ -8,6 +8,79 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 ### New Features
 
+- `cortex docs build` now exports static HTML, CSS, JavaScript, and documentation data for deployment to a static web host.
+
+### Bug Fixes
+
+- Fixed the documentation layout and navigation on mobile screens.
+- Fixed MCP tool links that scrolled to the wrong position after the setup guide loaded.
+- Excluded workspace test dependencies from the CLI release package to prevent dependency conflicts during CI packaging.
+
+### Improvements
+
+- Removed `cortex docs start`. Use `cortex docs serve` for a local preview with file watching. Host production output as static files without a Node.js server.
+
+## [0.1.30] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Fixed generated Go GraphQL clients failing to reconnect and resubscribe WebSocket subscriptions after a connection was dropped or a subscribe write failed.
+
+### Improvements
+
+- None.
+
+## [0.1.29] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Improved the README heading hierarchy for better structure and readability.
+
+## [0.1.28] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- Disabled analytics and cookie controls unless the current hostname is explicitly listed in `enabled_hosts`, instead of enabling tracking by default when the list was empty.
+
+### Improvements
+
+- Simplified the README header presentation.
+
+## [0.1.27] - 2026-08-31
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Added a visual product overview, a 60-second tour, a workflow comparison, and clearer project links to the README.
+- Added automatic GitHub Releases with notes from the generated changelog.
+
+## [0.1.26] - 2026-08-28
+
+### New Features
+
 - None.
 
 ### Bug Fixes

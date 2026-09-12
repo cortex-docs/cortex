@@ -204,7 +204,7 @@ export default function DocSlugPage({ params }: { params: Promise<{ slug: string
         <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/30">
           <DocsBreadcrumb segments={breadcrumbs} />
         </div>
-        <div className="p-8 flex justify-center">
+        <div className="p-4 sm:p-8 flex justify-center">
           <div className="w-full max-w-3xl">
             {activeDoc ? (
               <>

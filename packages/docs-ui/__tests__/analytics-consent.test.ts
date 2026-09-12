@@ -7,7 +7,8 @@ describe('analytics consent', () => {
     expect(isAnalyticsHost('docs.cortexdocs.dev', hosts)).toBe(true);
     expect(isAnalyticsHost('DOCS.CORTEXDOCS.DEV', hosts)).toBe(true);
     expect(isAnalyticsHost('localhost', hosts)).toBe(false);
-    expect(isAnalyticsHost('preview.example.com', [])).toBe(true);
+    expect(isAnalyticsHost('preview.example.com', [])).toBe(false);
+    expect(isAnalyticsHost('demo.cortexdocs.dev', ['DEMO.CORTEXDOCS.DEV'])).toBe(true);
   });
 
   it('requires an explicit choice in consent regions', () => {
