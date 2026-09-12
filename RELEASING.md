@@ -114,13 +114,13 @@ Run this command to calculate the next version without file changes:
 node scripts/set-release-version.mjs --check
 ```
 
-Run this command to build the demo for the Cloudflare runtime:
+Run this command to build the demo documentation as static files for Cloudflare:
 
 ```bash
 npm run --workspace=@cortex-docs/docs-ui demo:build
 ```
 
-Run this command to build the product docs for the Cloudflare runtime:
+Run this command to build the product documentation as static files for Cloudflare:
 
 ```bash
 npm run --workspace=@cortex-docs/docs-ui docs:build

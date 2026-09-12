@@ -129,10 +129,10 @@ npm run --workspace=@cortex-docs/docs-ui dev:next
 
 ### Cloudflare demo
 
-The public demo uses two Cloudflare Workers:
+The public demo uses a Worker for the API and static hosting for the documentation:
 
 - `api.demo.cortexdocs.dev` serves the REST, GraphQL, WebSocket, OpenRPC, and HTTP bridge endpoints.
-- `demo.cortexdocs.dev` serves the Next.js documentation UI through OpenNext.
+- `demo.cortexdocs.dev` serves the exported documentation through Cloudflare Static Assets.
 
 Run the API Worker without the docs UI:
 
@@ -140,13 +140,13 @@ Run the API Worker without the docs UI:
 npm run --workspace=@cortex-docs/demo-api dev
 ```
 
-Build the docs UI for the Cloudflare runtime:
+Build the static documentation for Cloudflare:
 
 ```bash
 npm run --workspace=@cortex-docs/docs-ui demo:build
 ```
 
-Preview the complete docs UI Worker locally:
+Preview the static documentation locally:
 
 ```bash
 npm run --workspace=@cortex-docs/docs-ui demo:preview
@@ -344,7 +344,18 @@ The spec is served via the `/api/spec` route, which reads the file path from the
 npm run --workspace=@cortex-docs/docs-site dev
 ```
 
-Starts the product documentation site locally on `:3200` with hot reload. Edit a Markdown file in `packages/docs-site/docs/` to update a page.
+The command starts the product documentation site locally on `:3200` with hot reload. Edit a Markdown file in `packages/docs-site/docs/` to update a page.
+
+Build the product documentation as static files:
+
+```bash
+npm run --workspace=@cortex-docs/docs-site build
+```
+
+This command runs `cortex docs build --output .cortex/docs` in the product docs workspace. The output directory is `packages/docs-site/.cortex/docs`.
+
+Deploy the output directory to a static web host. Configure page URLs such as `/docs/quickstart` to resolve to `/docs/quickstart.html`.
+The deployed site needs no Node.js server or access to the original configuration and specifications. Rebuild the site after source changes.
 
 ## Modifying the Docs Site
 

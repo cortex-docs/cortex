@@ -14,7 +14,7 @@ import { prepareDocsUiBuildRuntime, resolveDocsUiPath, resolveNextBin } from './
 
 @SubCommand({
   name: 'build',
-  description: 'Build production API documentation',
+  description: 'Build static HTML API documentation',
 })
 export class DocsBuildCommand extends CommandRunner {
   constructor(
@@ -29,7 +29,7 @@ export class DocsBuildCommand extends CommandRunner {
 
     const foundConfigPath = await this.project.findConfig();
     const configPath = foundConfigPath ? path.resolve(foundConfigPath) : undefined;
-    const config = await this.project.loadConfig();
+    const config = await this.project.loadConfig(configPath);
     const templateRoot = resolveGeneratorTemplateRoot(config, configPath);
     assertTemplateRoot(templateRoot);
     const languageTemplateDirs = getAllLanguageTemplateDirs(config, configPath);
@@ -54,58 +54,53 @@ export class DocsBuildCommand extends CommandRunner {
 
     const { execFileSync } = await import('node:child_process');
     const runtimeDir = fs.mkdtempSync(path.join(docsUiPath, '.cortex-build-'));
-    prepareDocsUiBuildRuntime(docsUiPath, runtimeDir);
-    const distDir = '.next';
-    const buildDir = path.join(runtimeDir, distDir);
+    const exportDir = path.join(runtimeDir, 'out');
 
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
-      CORTEX_DIST_DIR: distDir,
+      CORTEX_DIST_DIR: '.next',
       CORTEX_DOCS_UI_ROOT: docsUiPath,
-      CORTEX_STANDALONE_BUILD: '1',
+      CORTEX_STATIC_EXPORT: '1',
+      CORTEX_CLOUDFLARE: '0',
     };
     if (configPath) env.CORTEX_CONFIG_PATH = configPath;
     if (specPath) env.CORTEX_SPEC_PATH = specPath;
+    const asyncApiPath = getFirstSpecPath(config, 'asyncapi-spec');
+    if (asyncApiPath) env.CORTEX_ASYNCAPI_PATH = asyncApiPath;
+    const graphqlPath = getFirstSpecPath(config, 'graphql-spec');
+    if (graphqlPath) env.CORTEX_GRAPHQL_PATH = graphqlPath;
+    const grpcPath = getFirstSpecPath(config, 'grpc-spec');
+    if (grpcPath) env.CORTEX_GRPC_PATH = grpcPath;
+    const openRpcPath = getFirstSpecPath(config, 'openrpc-spec');
+    if (openRpcPath) env.CORTEX_OPENRPC_PATH = openRpcPath;
+    if (config.logo) env.CORTEX_LOGO_PATH = config.logo;
+    if (config.favicon) env.CORTEX_FAVICON_PATH = config.favicon;
     if (templateRoot) env.CORTEX_TEMPLATE_ROOT = templateRoot;
+    if (languageTemplateDirs.length > 0) {
+      env.CORTEX_LANGUAGE_TEMPLATE_DIRS = JSON.stringify(languageTemplateDirs);
+    }
 
-    this.logger.info('Building docs...');
+    this.logger.info('Building static docs...');
     try {
+      prepareDocsUiBuildRuntime(docsUiPath, runtimeDir);
       execFileSync(process.execPath, [nextBin, 'build', '--webpack'], {
         cwd: runtimeDir,
         env,
         stdio: 'inherit',
       });
 
-      const standaloneRoot = path.join(buildDir, 'standalone');
-      const serverPath = this.findStandaloneServer(standaloneRoot);
-      if (!serverPath) throw new Error('The Next.js standalone build did not contain server.js.');
+      if (!fs.existsSync(path.join(exportDir, 'index.html'))) {
+        throw new Error('The static documentation build did not contain index.html.');
+      }
 
       fs.rmSync(outputDir, { recursive: true, force: true });
-      fs.mkdirSync(outputDir, { recursive: true });
-      fs.cpSync(standaloneRoot, outputDir, { recursive: true });
-
-      const relativeServer = path.relative(standaloneRoot, serverPath);
-      const deployedServerDir = path.dirname(path.join(outputDir, relativeServer));
-      const deployedDistDir = path.join(deployedServerDir, distDir);
-      fs.mkdirSync(deployedDistDir, { recursive: true });
-      fs.cpSync(path.join(buildDir, 'static'), path.join(deployedDistDir, 'static'), {
-        recursive: true,
-      });
-      const publicDir = path.join(docsUiPath, 'public');
-      if (fs.existsSync(publicDir)) {
-        fs.cpSync(publicDir, path.join(deployedServerDir, 'public'), { recursive: true });
-      }
-      fs.writeFileSync(
-        path.join(outputDir, '.cortex-docs-build.json'),
-        `${JSON.stringify({ schemaVersion: 1, server: relativeServer }, null, 2)}\n`,
-        'utf-8',
-      );
+      fs.cpSync(exportDir, outputDir, { recursive: true });
     } finally {
       fs.rmSync(runtimeDir, { recursive: true, force: true });
     }
 
-    this.logger.success(`Docs built to ${outputDir}`);
-    this.logger.info(`Start the build with: cortex docs start --output ${outputDir}`);
+    this.logger.success(`Static docs built to ${outputDir}`);
+    this.logger.info('Deploy this directory to a static web host.');
   }
 
   @Option({ flags: '-s, --spec <path>', description: 'Path to OpenAPI spec file' })
@@ -116,28 +111,5 @@ export class DocsBuildCommand extends CommandRunner {
   @Option({ flags: '-o, --output <dir>', description: 'Output directory for built docs' })
   parseOutput(val: string): string {
     return val;
-  }
-
-  private findStandaloneServer(directory: string): string | undefined {
-    if (!fs.existsSync(directory)) return undefined;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const candidate = path.join(directory, entry.name);
-      if (entry.isFile() && entry.name === 'package.json') {
-        try {
-          const packageJson = JSON.parse(fs.readFileSync(candidate, 'utf-8')) as { name?: string };
-          const serverPath = path.join(directory, 'server.js');
-          if (packageJson.name === '@cortex-docs/docs-ui' && fs.existsSync(serverPath)) {
-            return serverPath;
-          }
-        } catch {
-          // Ignore unrelated package manifests that cannot be parsed.
-        }
-      }
-      if (entry.isDirectory()) {
-        const nested = this.findStandaloneServer(candidate);
-        if (nested) return nested;
-      }
-    }
-    return undefined;
   }
 }

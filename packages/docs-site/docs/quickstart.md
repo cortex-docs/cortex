@@ -75,7 +75,7 @@ Cortex Docs adds these pages to the documentation site. The generated MCP server
 cortex generate
 ```
 
-This command generates SDKs, the MCP server, and documentation for all configured sources and languages.
+This command generates SDKs and the MCP server for all configured sources and languages.
 
 ### Generate only the MCP server
 
@@ -93,12 +93,23 @@ cortex docs serve
 
 This command starts a local documentation server. The server watches the configuration and source files, then regenerates the SDKs after changes.
 
+### Build documentation for deployment
+
+```bash
+cortex docs build --output .cortex/docs
+```
+
+The output contains static HTML, CSS, JavaScript, and documentation data. Deploy this directory to a static web host. The deployed site needs no Node.js server.
+
+Rebuild the site after source changes. See [Documentation](/docs/documentation) for hosting instructions.
+
 ## How It Works
 
 1. **Parse** — Cortex parses and validates each API specification from a file or URL
 2. **Resolve** — Cortex resolves local component references when code generation needs their values
 3. **Transform** — Cortex groups operations into resources with tags or `x-cortex-resource`
-4. **Generate** — Cortex creates SDKs, documentation, and an MCP server from the project configuration
+4. **Generate** — Cortex creates SDKs and an MCP server from the project configuration
+5. **Document** — `cortex docs serve` previews the site, and `cortex docs build` exports static HTML for deployment
 
 ## Connection and Stream Behavior
 
@@ -126,8 +137,7 @@ The exact option names follow the conventions of each generated language. The SD
 | `cortex publish --dry-run`              | Preview publish commands                                    |
 | `cortex validate`                       | Validate the configuration and each API specification       |
 | `cortex docs serve`                     | Preview docs and regenerate SDKs after source changes       |
-| `cortex docs build`                     | Build a production Node.js documentation server             |
-| `cortex docs start`                     | Start a production documentation build                      |
+| `cortex docs build`                     | Build static HTML documentation for deployment              |
 | `cortex mcp generate`                   | Generate an MCP server standalone                           |
 
 ## Supported Languages
