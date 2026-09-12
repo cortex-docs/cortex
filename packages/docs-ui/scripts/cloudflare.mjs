@@ -45,7 +45,6 @@ const env = {
   ...process.env,
   CORTEX_STATIC_EXPORT: '1',
   CORTEX_CLOUDFLARE: '1',
-  NEXT_PUBLIC_CORTEX_CLOUDFLARE: '1',
   NEXT_PUBLIC_CORTEX_BUILT_WITH_LOGO_URL: builtWithCortexLogoUrl,
   CORTEX_DIST_DIR: '.next-cloudflare',
   CORTEX_DOCS_UI_ROOT: docsUiDir,

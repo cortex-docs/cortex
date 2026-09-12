@@ -89,10 +89,12 @@ function CopyButton({ text }: { text: string }) {
 export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
   const [data, setData] = useState<McpData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string>('mcp-client-setup');
+  const [activeId, setActiveId] = useState<string>(
+    scrollTarget ? cardId(scrollTarget) : 'mcp-client-setup',
+  );
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const observerRef = useRef<IntersectionObserver | null>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const isScrollingRef = useRef(false);
 
   const fetchData = useCallback(() => {
@@ -113,8 +115,18 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
   useProjectWatch(fetchData);
 
   useEffect(() => {
-    if (!data) return;
-    observerRef.current?.disconnect();
+    const main = mainRef.current;
+    if (!data || !main) return;
+
+    // Render the setup content before positioning a direct link so it cannot shift the tool.
+    if (scrollTarget) {
+      const id = cardId(scrollTarget);
+      const target = document.getElementById(id);
+      if (target) {
+        target.scrollIntoView({ behavior: 'instant', block: 'start' });
+        setActiveId(id);
+      }
+    }
     const visibleIds = new Set<string>();
 
     const observer = new IntersectionObserver(
@@ -128,7 +140,7 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
           setActiveId('mcp-client-setup');
           return;
         }
-        const cards = document.querySelectorAll('[data-mcp-card]');
+        const cards = main.querySelectorAll('[data-mcp-card]');
         for (const card of cards) {
           if (visibleIds.has(card.id)) {
             setActiveId(card.id);
@@ -136,27 +148,10 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
           }
         }
       },
-      { rootMargin: '-60px 0px -40% 0px', threshold: 0.1 },
+      { root: main, rootMargin: '-48px 0px -40% 0px', threshold: 0.1 },
     );
-    observerRef.current = observer;
-    requestAnimationFrame(() => {
-      const setupEl = document.getElementById('mcp-client-setup');
-      if (setupEl) observer.observe(setupEl);
-      document.querySelectorAll('[data-mcp-card]').forEach((el) => observer.observe(el));
-    });
+    main.querySelectorAll('[data-mcp-card]').forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [data]);
-
-  useEffect(() => {
-    if (!data || !scrollTarget) return;
-    const id = cardId(scrollTarget);
-    requestAnimationFrame(() => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        setActiveId(id);
-      }
-    });
   }, [data, scrollTarget]);
 
   useEffect(() => {
@@ -337,7 +332,7 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
       </aside>
 
       {/* ---- Center panel ---- */}
-      <main className="flex-1 overflow-y-auto">
+      <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto">
         <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/30">
           <DocsBreadcrumb
             segments={[
@@ -348,7 +343,8 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
             ]}
           />
         </div>
-        <div className="px-6 py-6 lg:px-8">
+        {/* Leave enough space to align the final tool below the breadcrumb. */}
+        <div className="px-6 pt-6 pb-[calc(100vh-8.5rem)] lg:px-8">
           {data.githubRepository && (
             <div className="mb-6 flex justify-end">
               <a
@@ -376,8 +372,8 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
             </div>
           )}
           {/* Client Setup */}
-          <div id="mcp-client-setup" data-mcp-card className="mb-8">
-            <McpSetupGuide />
+          <div id="mcp-client-setup" data-mcp-card className="mb-8 scroll-mt-12">
+            <McpSetupGuide setupHtml={data.setupHtml} />
           </div>
 
           {/* Agent Instructions */}
@@ -428,7 +424,7 @@ export function McpReference({ scrollTarget }: { scrollTarget?: string }) {
                   key={tool.name}
                   id={cardId(tool.name)}
                   data-mcp-card
-                  className="rounded-lg border"
+                  className="scroll-mt-12 rounded-lg border"
                 >
                   <div className="flex items-center gap-3 border-b px-4 py-3">
                     <code className="font-mono text-sm font-semibold">{tool.name}</code>

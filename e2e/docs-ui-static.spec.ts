@@ -38,17 +38,48 @@ test.describe('Cloudflare Static Assets export', () => {
   });
 
   test('serves generated MCP and SDK deep links', async ({ page }) => {
-    await page.goto('/mcp/docs_quickstart');
-    await expect(page.getByText('docs_quickstart').first()).toBeVisible();
-
-    await page.goto('/mcp/sdk_typescript_petstore_typescript_client_sdk');
-    await expect(
-      page.getByText('sdk_typescript_petstore_typescript_client_sdk').first(),
-    ).toBeVisible();
+    const mcp = await (await page.request.get('/api/mcp')).json();
+    for (const tool of [
+      'docs_quickstart',
+      'sdk_typescript_petstore_typescript_client_sdk',
+      mcp.tools.at(-1).name,
+    ]) {
+      await page.goto(`/mcp/${tool}`);
+      await page.waitForLoadState('networkidle');
+      await expect(page.locator(`[id="mcp-${tool}"]`)).toBeInViewport({ ratio: 1 });
+      await expect(page.getByRole('navigation', { name: 'breadcrumb' })).toContainText(tool);
+      await expect(page).toHaveURL(new RegExp(`/mcp/${tool}$`));
+    }
 
     await page.goto('/sdks/typescript');
     await expect(page.getByText('TypeScript').first()).toBeVisible();
   });
+
+  for (const width of [320, 390]) {
+    test(`keeps documentation readable and navigation usable at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/docs/quickstart');
+      await expect(page.getByRole('heading', { name: 'Quickstart', exact: true })).toBeVisible();
+      const article = await page.locator('article').boundingBox();
+      expect(article?.width).toBeGreaterThanOrEqual(width - 40);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      await expect(page.getByRole('button', { name: 'Toggle theme' })).toBeInViewport({ ratio: 1 });
+      await expect(page.getByRole('button', { name: 'Search documentation' })).toBeInViewport({
+        ratio: 1,
+      });
+
+      await page.getByRole('button', { name: 'Open documentation navigation' }).click();
+      const navigation = page.getByRole('dialog', { name: 'Documentation', exact: true });
+      await expect(navigation).toBeVisible();
+      await navigation.getByRole('link', { name: 'Quickstart', exact: true }).click();
+      await expect(navigation).not.toBeVisible();
+
+      await page.getByRole('button', { name: 'Search documentation' }).click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).not.toBeVisible();
+    });
+  }
 
   test('matches the local demo documentation and MCP SDK tools', async ({ request }) => {
     const docsResponse = await request.get('/api/docs');

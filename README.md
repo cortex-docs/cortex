@@ -68,7 +68,7 @@ mcp-server → generated/mcp-server
 
 The generated MCP server gives AI agents typed tools, specifications, SDK guides, and project documentation.
 
-Generate the files. Then start the documentation server:
+Generate the files. Then start the local documentation preview:
 
 ```bash
 cortex generate
@@ -82,7 +82,7 @@ Open `http://localhost:3012`. Press `Ctrl+C` to stop the server.
 - Generate SDKs for TypeScript, Python, Go, Java, Kotlin, Ruby, PHP, C#, Rust, C++, and C.
 - Combine multiple specification files in one generated SDK.
 - Generate HTTP, WebSocket, GraphQL, gRPC, and JSON-RPC clients.
-- Generate a production documentation server with interactive API reference pages.
+- Build static HTML documentation with interactive API reference pages.
 - Generate an MCP server with typed tools, embedded specifications, SDK guides, and project documentation for AI agents.
 - Add Markdown pages, SDK guides, and all API specifications to the MCP server.
 - Customize generated output with sparse Eta template overrides.
@@ -184,8 +184,7 @@ See the [configuration reference](packages/docs-site/docs/configuration.md) for 
 | `cortex generate --language typescript`   | Generate one configured language.                     |
 | `cortex generate --dry-run`               | Show planned output without writing files.            |
 | `cortex docs serve`                       | Start the development server and watch project files. |
-| `cortex docs build --output .cortex/docs` | Create a production Node.js documentation build.      |
-| `cortex docs start --output .cortex/docs` | Start a production documentation build.               |
+| `cortex docs build --output .cortex/docs` | Build static HTML documentation.                      |
 | `cortex mcp generate`                     | Generate only the MCP server.                         |
 | `cortex publish --dry-run`                | Check package publication without uploading.          |
 | `cortex publish`                          | Publish enabled generated packages.                   |
@@ -204,14 +203,15 @@ The generated MCP server does not call gRPC methods. It exposes Protocol Buffer 
 
 ## Production documentation
 
-The build command creates a self-contained Next.js server. It is not a static HTML export.
+The build command exports the documentation as static HTML, CSS, JavaScript, and data files.
 
 ```bash
 cortex docs build --output .cortex/docs
-NODE_ENV=production cortex docs start --output .cortex/docs --port 3000
 ```
 
-Deploy the output directory to a service that can run Node.js. Keep `cortex.config.yml` and its referenced specifications available at runtime.
+Deploy the output directory to a static web host. Configure the host to resolve page URLs such as `/docs/quickstart` to `/docs/quickstart.html`.
+
+The deployed site needs no Node.js server or access to the original configuration and specifications. Rebuild the site after source changes. Use `cortex docs serve` for a local preview with file watching.
 
 ## MCP output
 

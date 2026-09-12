@@ -104,6 +104,8 @@ try {
   stagedManifest.version = expectedVersion;
   stagedManifest.bundleDependencies = bundledPackages;
   addBundledRuntimeDependencies(stagedManifest, bundledManifests);
+  // Resolve only the dependencies needed by the published CLI, not workspace test tools.
+  delete stagedManifest.devDependencies;
   writeFileSync(stagedManifestPath, `${JSON.stringify(stagedManifest, null, 2)}\n`);
 
   execFileSync(

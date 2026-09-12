@@ -31,15 +31,13 @@ The development server watches the configuration, specifications, Markdown files
 cortex docs build --output .cortex/docs
 ```
 
-This command creates a self-contained Node.js server. The result is not a static HTML export.
+This command exports static HTML, CSS, JavaScript, and data files to `.cortex/docs`. Use `--output` to select another directory.
 
-Start the result with this command:
+Deploy the output directory to a static web host. Configure the host to resolve page URLs such as `/docs/quickstart` to `/docs/quickstart.html`.
 
-```bash
-NODE_ENV=production cortex docs start --output .cortex/docs --port 3000
-```
+The deployed site needs no Node.js server or access to the original configuration and specifications. The export includes documentation data and local assets.
 
-Deploy the output directory to a service that can run Node.js. Keep the configuration file and all referenced local files available at their original paths.
+Rebuild the site after source changes. Use `cortex docs serve` for a local preview with file watching.
 
 ## Configure site identity
 

@@ -8,15 +8,17 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 ### New Features
 
-- None.
+- `cortex docs build` now exports static HTML, CSS, JavaScript, and documentation data for deployment to a static web host.
 
 ### Bug Fixes
 
-- None.
+- Fixed the documentation layout and navigation on mobile screens.
+- Fixed MCP tool links that scrolled to the wrong position after the setup guide loaded.
+- Excluded workspace test dependencies from the CLI release package to prevent dependency conflicts during CI packaging.
 
 ### Improvements
 
-- None.
+- Removed `cortex docs start`. Use `cortex docs serve` for a local preview with file watching. Host production output as static files without a Node.js server.
 
 ## [0.1.29] - 2026-08-31
 
