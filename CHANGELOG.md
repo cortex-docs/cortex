@@ -8,6 +8,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 ### New Features
 
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
+## [0.1.31] - 2026-09-12
+
+### New Features
+
 - `cortex docs build` now exports static HTML, CSS, JavaScript, and documentation data for deployment to a static web host.
 
 ### Bug Fixes
