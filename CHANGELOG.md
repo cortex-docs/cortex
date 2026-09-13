@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.32] - 2026-09-13
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Added a Product Hunt badge and a link to the changelog on the README.
+
 ## [0.1.31] - 2026-09-12
 
 ### New Features
