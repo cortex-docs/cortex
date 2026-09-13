@@ -26,8 +26,13 @@
 <h3 align="center">
   <a href="https://docs.cortexdocs.dev"><strong>Documentation</strong></a> ·
   <a href="https://demo.cortexdocs.dev"><strong>Live demo</strong></a> ·
-  <a href="https://cortexdocs.dev"><strong>Website</strong></a>
+  <a href="https://cortexdocs.dev"><strong>Website</strong></a> ·
+  <a href="CHANGELOG.md"><strong>Changelog</strong></a>
 </h3>
+
+<p align="center">
+  <a href="https://www.producthunt.com/products/cortex-25?embed=true&amp;utm_source=badge-top-post-badge&amp;utm_medium=badge&amp;utm_campaign=badge-cortex-27" target="_blank" rel="noopener noreferrer"><img alt="Cortex - Turn API specs into docs, SDKs, and MCP servers | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/top-post-badge.svg?post_id=1241923&amp;theme=light&amp;period=daily&amp;t=1789286262611"></a>
+</p>
 
 </br>
 
