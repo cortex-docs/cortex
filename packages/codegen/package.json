@@ -51,10 +51,10 @@
     "@cortex-docs/core": "0.1.6",
     "eta": "^4.6.0",
     "graphql": "^17.0.2",
-    "js-yaml": "^5.4.1"
+    "js-yaml": "^5.4.2"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
   }
 }
