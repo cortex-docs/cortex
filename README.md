@@ -39,8 +39,8 @@
 <p align="center">
   <a href="https://demo.cortexdocs.dev">
     <picture>
-      <source media="(prefers-reduced-motion: reduce)" srcset="assets/cortex-overview.png">
-      <img src="assets/cortex-overview.gif" width="1200" alt="Run cortex generate with a configured OpenAPI file, then explore Getting Started, API Reference, SDKs, and MCP in the live demo. Click to try it.">
+      <source media="(prefers-reduced-motion: reduce)" srcset="assets/cortex-overview-poster.png">
+      <img src="assets/cortex-overview.png" width="1200" alt="Run cortex generate with a configured OpenAPI file, then explore Getting Started, API Reference, SDKs, and MCP in the live demo. Click to try it.">
     </picture>
   </a>
 </p>
