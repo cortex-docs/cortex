@@ -36,7 +36,14 @@
 
 </br>
 
-![Cortex turns API sources into interactive documentation, typed SDKs, and an MCP server for developers, applications, and AI agents.](assets/cortex-overview.svg)
+<p align="center">
+  <a href="https://demo.cortexdocs.dev">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="assets/cortex-overview.png">
+      <img src="assets/cortex-overview.gif" width="1200" alt="Run cortex generate with a configured OpenAPI file, then explore Getting Started, API Reference, SDKs, and MCP in the live demo. Click to try it.">
+    </picture>
+  </a>
+</p>
 
 Cortex combines OpenAPI, AsyncAPI, GraphQL, Protocol Buffer, OpenRPC, and Markdown sources. Developers get interactive documentation, applications get typed SDKs, and AI agents get an MCP server with project context.
 
