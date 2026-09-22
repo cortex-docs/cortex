@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.35] - 2026-09-22
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Documented the `primaryColor` configuration option in the README, showing how to set the documentation accent color as a six-digit hex value.
+
 ## [0.1.34] - 2026-09-22
 
 ### New Features
