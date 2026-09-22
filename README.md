@@ -129,6 +129,7 @@ project: my-api
 title: My API Docs
 logo: ./assets/logo.svg
 theme: system
+primaryColor: '#ffffff'
 custom_head_html: |-
   <meta name="theme-color" content="#ffffff">
   <link rel="stylesheet" href="/assets/custom.css">
@@ -171,6 +172,8 @@ docs:
 mcp:
   package_name: '@my-org/my-api-mcp'
 ```
+
+`primaryColor` sets the documentation accent color as a six-digit hex value.
 
 `custom_head_html` adds trusted HTML to every documentation page. This field supports metadata, stylesheets, and analytics scripts.
 
