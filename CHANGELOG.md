@@ -18,6 +18,21 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.33] - 2026-09-22
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Replaced the static SVG overview in the README with an animated terminal demo GIF and PNG for a more interactive preview of Cortex.
+- Added a Product Hunt badge and a changelog link to the README.
+
 ## [0.1.32] - 2026-09-13
 
 ### New Features
