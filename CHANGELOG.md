@@ -18,6 +18,20 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.34] - 2026-09-22
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Sharpened the README demo animation and poster image for better clarity.
+
 ## [0.1.33] - 2026-09-22
 
 ### New Features
