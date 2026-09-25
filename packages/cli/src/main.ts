@@ -16,7 +16,7 @@ async function bootstrap() {
   }
 
   await CommandFactory.run(AppModule, {
-    logger: ['warn', 'error'],
+    logger: args[0] === 'mcp-serve' ? false : ['warn', 'error'],
     serviceErrorHandler: (error) => {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
       process.exitCode = 1;

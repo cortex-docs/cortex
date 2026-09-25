@@ -137,6 +137,21 @@ mcp:
 
 See [Custom Generators](/docs/custom-generators) for export commands, template data, and override rules.
 
+## Public repository hosting
+
+`cortex deploy` uses `project` as the subdomain at `PROJECT.cortexdocs.dev`. For hosting, use 1–63 lowercase letters, digits, or hyphens.
+
+To attach a custom domain, add:
+
+```yaml
+deploy:
+  domain: docs.example.org
+```
+
+Commit this configuration to the public repository's default branch. The deploy command prints the required DNS verification records.
+
+API `sources` are optional for Markdown-only hosting. See [Open Source Hosting](/docs/open-source-hosting) for the full setup.
+
 ## Appearance Query Parameter
 
 Add `?appearance=dark` or `?appearance=light` to any documentation URL. The parameter selects the initial appearance for that page.

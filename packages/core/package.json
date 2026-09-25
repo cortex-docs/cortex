@@ -32,9 +32,20 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./hosting": {
+      "types": "./dist/hosting.d.ts",
+      "default": "./dist/hosting.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "hosting": [
+        "dist/hosting.d.ts"
+      ]
     }
   },
   "scripts": {

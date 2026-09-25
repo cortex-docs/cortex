@@ -51,43 +51,32 @@ If Cortex helps your team, [star this repository](https://github.com/cortex-docs
 
 ## Try Cortex in 60 seconds
 
-Create a sample project and inspect the generation plan:
+Start a local demo:
 
 ```bash
 mkdir petstore
 cd petstore
 npm install --global @cortex-docs/cli
 cortex init petstore
-cortex validate
-cortex generate --dry-run
-```
-
-Cortex validates each source and shows every planned output:
-
-```text
-✓ Config is valid
-✓ Parsed AsyncAPI: WebSocket API
-✓ Parsed GraphQL: GraphQL
-✓ Parsed OpenRPC: OpenRPC
-✓ Parsed OpenAPI: REST API V1
-Languages: typescript, python, go, java, kotlin, ruby, php, csharp, rust, cpp, c
-
-typescript [REST + WS + GraphQL + OpenRPC] → generated/typescript/petstore-typescript-client-sdk
-python [REST + WS + GraphQL + OpenRPC] → generated/python/petstore-python-sdk
-...
-mcp-server → generated/mcp-server
-```
-
-The generated MCP server gives AI agents typed tools, specifications, SDK guides, and project documentation.
-
-Generate the files. Then start the local documentation preview:
-
-```bash
-cortex generate
 cortex docs serve
 ```
 
 Open `http://localhost:3012`. Press `Ctrl+C` to stop the server.
+
+## We love open source
+
+Keep your Markdown in Git. Add `cortex.config.yml` to the default branch of your public GitHub repository, then run:
+
+```bash
+npx -y @cortex-docs/cli deploy https://github.com/OWNER/REPO
+npx -y @cortex-docs/cli mcp-serve https://github.com/OWNER/REPO
+```
+
+The first command publishes a free documentation site at `PROJECT.cortexdocs.dev`. The second connects AI clients to current documentation through local MCP.
+
+Deploy requires repository write access. MCP works with public read access and checks for changes before each request.
+
+See the [open source hosting guide](packages/docs-site/docs/open-source-hosting.md) for configuration, custom domains, automatic updates, and limits.
 
 ## Features
 

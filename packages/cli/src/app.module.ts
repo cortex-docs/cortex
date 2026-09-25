@@ -12,10 +12,14 @@ import { GeneratorsCommand } from './commands/generators/generators.command';
 import { GeneratorsExportCommand } from './commands/generators/export.command';
 import { ProjectService } from './services/project.service';
 import { LoggerService } from './services/logger.service';
+import { DeployCommand } from './commands/deploy/deploy.command';
+import { McpServeCommand } from './commands/mcp/mcp-serve.command';
 
 @Module({
   providers: [
     InitCommand,
+    DeployCommand,
+    McpServeCommand,
     GenerateCommand,
     ValidateCommand,
     DocsCommand,

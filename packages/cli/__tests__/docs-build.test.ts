@@ -37,7 +37,41 @@ describe('docs build', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     fs.rmSync(workspace, { recursive: true, force: true });
+  });
+
+  it('isolates hosted builds from inherited configuration and omits empty dynamic routes', async () => {
+    vi.stubEnv('CORTEX_SPEC_PATH', '/unrelated/private-spec.yaml');
+    vi.stubEnv('CORTEX_TEMPLATE_ROOT', '/unrelated/templates');
+    vi.mocked(prepareDocsUiBuildRuntime).mockImplementationOnce((_source, runtime) => {
+      for (const route of [
+        'api-reference/[...slug]',
+        'sdks/[language]',
+        'docs/[slug]',
+        'mcp/[tool]',
+        'assets/[...path]',
+      ])
+        fs.mkdirSync(path.join(runtime, 'app', route), { recursive: true });
+    });
+    vi.mocked(execFileSync).mockImplementation((_file, _args, options) => {
+      expect(options!.env!.CORTEX_SPEC_PATH).toBeUndefined();
+      expect(options!.env!.CORTEX_TEMPLATE_ROOT).toBeUndefined();
+      expect(options!.env!.CORTEX_HOSTED_REPOSITORY).toBe('https://github.com/owner/repo');
+      const runtime = String(options!.cwd);
+      for (const route of [
+        'api-reference/[...slug]',
+        'sdks/[language]',
+        'docs/[slug]',
+        'mcp/[tool]',
+        'assets/[...path]',
+      ])
+        expect(fs.existsSync(path.join(runtime, 'app', route))).toBe(false);
+      fs.mkdirSync(path.join(runtime, 'out'));
+      fs.writeFileSync(path.join(runtime, 'out/index.html'), 'docs');
+      return Buffer.from('');
+    });
+    await command.run([], { output: outputDir, repository: 'https://github.com/owner/repo' });
   });
 
   it('replaces the previous build with exported pages, data, and browser assets', async () => {
