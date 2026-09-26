@@ -68,7 +68,7 @@ export async function deploymentRequest(
       ...init.headers,
     },
     redirect: 'error',
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(route.endsWith('/finalize') ? 300_000 : 60_000),
   });
   let data: Record<string, any>;
   try {
@@ -191,7 +191,7 @@ export class DeployCommand extends CommandRunner {
     this.logger.success(
       `${result.status === 'unchanged' ? 'Unchanged — skipped build and upload' : 'Deployed'}: ${result.url}`,
     );
-    this.logger.info('Updates become visible across the edge within 30 seconds.');
+    this.logger.info('Cloudflare serves the documentation directly from Static Assets.');
     const domain = await deploymentRequest(
       api,
       `/v1/projects/${snapshot.config.project}/domain`,

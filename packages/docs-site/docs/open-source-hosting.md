@@ -50,7 +50,7 @@ Run the deploy command after you change the documentation. Cortex compares the c
 
 If those inputs are unchanged, Cortex skips the build and upload. Changes to unrelated application code do not trigger a new deployment.
 
-Referenced specifications and files in `assets/` also count as documentation inputs. Updated sites become visible within about 30 seconds after activation.
+Referenced specifications and files in `assets/` also count as documentation inputs. Cloudflare distributes each completed deployment across its edge network.
 
 For automatic deployment, add this GitHub Actions workflow:
 
@@ -139,8 +139,10 @@ The repository must be public, with `cortex.config.yml` at its root. Hosted buil
 
 Put shared images and styles in `assets/`. Cortex also rewrites relative Markdown links to configured documentation pages.
 
-Cortex builds the static site on your machine or CI runner and uploads it to R2. It does not run the repository's scripts.
+Cortex builds the static site on your machine or CI runner. It stages the files in R2, then publishes them through Cloudflare Static Assets. It does not run the repository's scripts.
 
-Versioned files stay cached at the edge for one year. HTML revalidates in browsers so new deployments remain visible.
+Cloudflare caches the static files at the edge. Hashed browser assets use a one-year TTL. HTML revalidates in browsers so new deployments remain visible.
+
+Documentation visits use direct static delivery without a per-request Worker charge. Custom domains are free for project maintainers.
 
 Free hosting for maintainers still has operating costs. Cortex operates the hosting service separately from the CLI repository.
