@@ -191,7 +191,6 @@ export class DeployCommand extends CommandRunner {
     this.logger.success(
       `${result.status === 'unchanged' ? 'Unchanged — skipped build and upload' : 'Deployed'}: ${result.url}`,
     );
-    this.logger.info('Cloudflare serves the documentation directly from Static Assets.');
     const domain = await deploymentRequest(
       api,
       `/v1/projects/${snapshot.config.project}/domain`,
