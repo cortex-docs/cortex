@@ -5,8 +5,10 @@ import { gitRepositoryUrl, normalizeRepositoryUrl } from '@cortex-docs/core';
 import { locationExists } from '@/lib/load-location';
 import {
   buildToolInfos,
+  buildConfigToolDefinitions,
   generateReadme,
   generateSetupSection,
+  generateRepositorySetupSection,
   renderMcpTemplate,
   type McpToolInfo,
 } from '@cortex-docs/mcp-gen';
@@ -105,14 +107,20 @@ export async function GET() {
       }
     }
 
-    const tools = buildToolInfos({
-      spec,
-      asyncApiSpec,
-      graphqlSpec,
-      openRpcSpec,
-      config,
-      configDir,
-    });
+    const hostedRepository = process.env.CORTEX_HOSTED_REPOSITORY;
+    const tools =
+      hostedRepository && config && configDir
+        ? buildConfigToolDefinitions({ ...config, languages: [] }, configDir).map(
+            ({ content: _content, ...tool }) => tool,
+          )
+        : buildToolInfos({
+            spec,
+            asyncApiSpec,
+            graphqlSpec,
+            openRpcSpec,
+            config,
+            configDir,
+          });
 
     const configSources = config?.sources ?? [];
 
@@ -154,23 +162,25 @@ export async function GET() {
       }
     }
 
-    const instructions = [
-      `You are an AI coding assistant for ${title}.`,
-      '',
-      ...(introBlocks.length > 0 ? ['## Overview', '', ...introBlocks, ''] : []),
-      '## How to help users',
-      '',
-      '1. ALWAYS prefer the SDK over raw HTTP calls. The SDK provides typed methods, error handling, and auth built in.',
-      sdkBlock ? `\nAvailable SDKs:\n${sdkBlock}\n` : '',
-      "2. When the user's language has an SDK, show the install command first, then a working code example using the SDK client.",
-      "3. Adapt examples to the user's existing codebase — match their import style, error handling patterns, and variable naming.",
-      "4. Only fall back to direct HTTP/curl calls if no SDK exists for the user's language.",
-      '5. Use the `docs_*` and `sdk_*` tools to look up quickstart guides and SDK references before writing code.',
-      '',
-      '## Tool categories',
-      '',
-      '- `docs_*`, `intro_*` — Documentation pages, intro guides, and SDK references. Read these first for context.',
-    ].join('\n');
+    const instructions = hostedRepository
+      ? `Read the documentation tools before writing integration code for ${title}. The local MCP server refreshes configuration and Markdown from the repository’s default branch before each request.`
+      : [
+          `You are an AI coding assistant for ${title}.`,
+          '',
+          ...(introBlocks.length > 0 ? ['## Overview', '', ...introBlocks, ''] : []),
+          '## How to help users',
+          '',
+          '1. ALWAYS prefer the SDK over raw HTTP calls. The SDK provides typed methods, error handling, and auth built in.',
+          sdkBlock ? `\nAvailable SDKs:\n${sdkBlock}\n` : '',
+          "2. When the user's language has an SDK, show the install command first, then a working code example using the SDK client.",
+          "3. Adapt examples to the user's existing codebase — match their import style, error handling patterns, and variable naming.",
+          "4. Only fall back to direct HTTP/curl calls if no SDK exists for the user's language.",
+          '5. Use the `docs_*` and `sdk_*` tools to look up quickstart guides and SDK references before writing code.',
+          '',
+          '## Tool categories',
+          '',
+          '- `docs_*`, `intro_*` — Documentation pages, intro guides, and SDK references. Read these first for context.',
+        ].join('\n');
 
     const mcpPackageName = config?.mcp?.package_name ?? `@${config?.project ?? 'my-org'}/mcp`;
 
@@ -188,7 +198,13 @@ export async function GET() {
       instructions,
     };
 
-    const setupMarkdown = generateSetupSection(readmeData);
+    const setupMarkdown = hostedRepository
+      ? generateRepositorySetupSection({
+          repository: hostedRepository,
+          serverName,
+          publishedPackage: config?.mcp?.package_name,
+        })
+      : generateSetupSection(readmeData);
     const setupHtml = await renderMarkdown(setupMarkdown);
     const customReadme = renderMcpTemplate(
       'readme',
@@ -219,9 +235,11 @@ export async function GET() {
     const mcpInfo: McpInfo = {
       serverName,
       packageName: mcpPackageName,
-      githubRepository: config?.mcp?.github_repository
-        ? normalizeRepositoryUrl(config.mcp.github_repository)
-        : undefined,
+      githubRepository:
+        hostedRepository ??
+        (config?.mcp?.github_repository
+          ? normalizeRepositoryUrl(config.mcp.github_repository)
+          : undefined),
       instructions,
       instructionsHtml,
       tools,

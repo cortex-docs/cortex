@@ -135,6 +135,53 @@ export default function DocSlugPage({ params }: { params: Promise<{ slug: string
   const tocItems = useMemo(() => (activeDoc ? extractToc(activeDoc.content) : []), [activeDoc]);
 
   useEffect(() => {
+    const article = articleRef.current;
+    if (!article || !activeDoc) return;
+
+    // Sanitization prefixes heading IDs. Keep the original Markdown fragments usable,
+    // including links opened before the client has fetched the document content.
+    const scrollToFragment = (hash: string) => {
+      if (!hash) return false;
+      let id: string;
+      try {
+        id = decodeURIComponent(hash.slice(1));
+      } catch {
+        return false;
+      }
+      const target =
+        article.querySelector(`#${CSS.escape(id)}`) ??
+        article.querySelector(`#${CSS.escape(`user-content-${id}`)}`);
+      if (!target) return false;
+      target.scrollIntoView({ block: 'start' });
+      return true;
+    };
+    const onHashChange = () => scrollToFragment(window.location.hash);
+    const onClick = (event: MouseEvent) => {
+      if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor =
+        event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
+      if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
+      const url = new URL(anchor.href);
+      if (
+        url.origin !== window.location.origin ||
+        url.pathname !== window.location.pathname ||
+        url.search !== window.location.search ||
+        !scrollToFragment(url.hash)
+      )
+        return;
+      event.preventDefault();
+      if (window.location.hash !== url.hash) window.history.pushState(null, '', url.hash);
+    };
+    onHashChange();
+    article.addEventListener('click', onClick);
+    window.addEventListener('hashchange', onHashChange);
+    return () => {
+      article.removeEventListener('click', onClick);
+      window.removeEventListener('hashchange', onHashChange);
+    };
+  }, [activeDoc]);
+
+  useEffect(() => {
     const container = mainRef.current;
     if (!container || tocItems.length === 0) return;
 

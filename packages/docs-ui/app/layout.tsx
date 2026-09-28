@@ -163,7 +163,10 @@ function readSiteConfig(): LoadedSiteConfig {
       theme,
       hasSources: Array.isArray(sources) && sources.length > 0,
       hasDocs: Array.isArray(docs) && docs.length > 0,
-      hasMcp: !!mcp || (Array.isArray(sources) && sources.length > 0),
+      hasMcp:
+        !!process.env.CORTEX_HOSTED_REPOSITORY ||
+        !!mcp ||
+        (Array.isArray(sources) && sources.length > 0),
       analytics,
       home: home
         ? {

@@ -21,6 +21,11 @@ home:
     label: Getting Started
     href: /docs
   sections:
+    - title: We love open source
+      description: Turn your existing Markdown into a free documentation site. Connect AI clients to current docs with local MCP.
+      badge: Free hosting
+      href: /docs/open-source-hosting
+      icon: assets/docs-icon.svg
     - title: Documentation
       description: Learn about SDK generation, request timeouts, connection recovery, heartbeats, and streaming APIs.
       badge: Docs
@@ -38,6 +43,8 @@ docs:
         document: docs/quickstart.md
       - title: Configuration
         document: docs/configuration.md
+      - title: Open Source Hosting
+        document: docs/open-source-hosting.md
   - section: SDK Generation
     sources:
       - title: OpenAPI
