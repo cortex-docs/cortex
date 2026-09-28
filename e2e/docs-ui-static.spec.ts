@@ -55,6 +55,17 @@ test.describe('Cloudflare Static Assets export', () => {
     await expect(page.getByText('TypeScript').first()).toBeVisible();
   });
 
+  test('follows Markdown fragments after static content loads', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 400 });
+    await page.goto('/docs/quickstart#mcp-server');
+    await expect(page.locator('article #user-content-mcp-server')).toBeInViewport({ ratio: 1 });
+
+    await page.goto('/docs/quickstart');
+    await page.getByRole('link', { name: 'next steps', exact: true }).click();
+    await expect(page).toHaveURL(/#next-steps$/);
+    await expect(page.locator('article #user-content-next-steps')).toBeInViewport({ ratio: 1 });
+  });
+
   for (const width of [320, 390]) {
     test(`keeps documentation readable and navigation usable at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 });

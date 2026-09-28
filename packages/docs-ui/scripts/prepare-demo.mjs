@@ -16,6 +16,8 @@ const quickstart = `# Quickstart
 
 Welcome to your API documentation! This guide will help you get started.
 
+Read about the [MCP server](#mcp-server) or skip to [next steps](#next-steps).
+
 ## API Reference
 
 Browse the full API reference to see all available endpoints, request/response schemas, and authentication details.
