@@ -63,6 +63,8 @@ const DISPLAY_NAMES: Record<string, string> = {
 };
 
 export async function GET(request: Request) {
+  if (process.env.CORTEX_HOSTED_REPOSITORY && !process.env.CORTEX_SPEC_PATH)
+    return NextResponse.json({ error: 'No OpenAPI spec configured' }, { status: 404 });
   const lang =
     process.env.CORTEX_STATIC_EXPORT === '1' ? null : new URL(request.url).searchParams.get('lang');
 
@@ -96,17 +98,22 @@ export async function GET(request: Request) {
     const fallbackPkg = spec.info.title.toLowerCase().replace(/\s+/g, '-');
     const hasWs = !!(
       process.env.CORTEX_ASYNCAPI_PATH ||
-      fs.existsSync(path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'chat-asyncapi.yaml'))
+      (!process.env.CORTEX_HOSTED_REPOSITORY &&
+        fs.existsSync(
+          path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'chat-asyncapi.yaml'),
+        ))
     );
     const hasGql = !!(
       process.env.CORTEX_GRAPHQL_PATH ||
-      fs.existsSync(path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore.graphql'))
+      (!process.env.CORTEX_HOSTED_REPOSITORY &&
+        fs.existsSync(path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore.graphql')))
     );
     const hasOpenRpc = !!(
       process.env.CORTEX_OPENRPC_PATH ||
-      fs.existsSync(
-        path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore-openrpc.json'),
-      )
+      (!process.env.CORTEX_HOSTED_REPOSITORY &&
+        fs.existsSync(
+          path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore-openrpc.json'),
+        ))
     );
 
     const configPkgNames: Record<string, string> = {};

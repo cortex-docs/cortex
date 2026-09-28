@@ -101,7 +101,7 @@ const DEFAULT_SECTIONS: HomeSection[] = [
 ];
 
 export default function Home() {
-  const { title: siteTitle, home: initialHome } = useSiteConfig();
+  const { title: siteTitle, home: initialHome, hasSources, hasDocs, hasMcp } = useSiteConfig();
   const [home, setHome] = useState<HomeConfig | undefined>(initialHome);
 
   const fetchConfig = useCallback(() => {
@@ -162,9 +162,25 @@ export default function Home() {
   const title = home?.title ?? siteTitle ?? 'API Docs';
   const description =
     home?.description ??
-    'Explore the full API surface, grab a client SDK, or wire up AI coding agents via our MCP for faster integration.';
+    (hasSources === false
+      ? 'Explore the project documentation and connect your AI client to the latest guides.'
+      : 'Explore the full API surface, grab a client SDK, or wire up AI coding agents via our MCP for faster integration.');
   const cta = home?.cta ?? { label: 'Getting Started', href: '/docs' };
-  const sections = home?.sections ?? DEFAULT_SECTIONS;
+  const sections = home?.sections ?? [
+    ...(hasDocs
+      ? [
+          {
+            title: 'Documentation',
+            description: 'Read the guides and get started with the project.',
+            href: '/docs',
+            badge: 'Guides',
+          },
+        ]
+      : []),
+    ...DEFAULT_SECTIONS.filter((section) =>
+      section.href === '/mcp' ? hasMcp !== false : hasSources !== false,
+    ),
+  ];
 
   return (
     <div className="flex min-h-screen flex-col">

@@ -28,6 +28,7 @@ function resolveSpecPath(): string | null {
     return process.env.CORTEX_SPEC_PATH;
   }
 
+  if (process.env.CORTEX_HOSTED_REPOSITORY) return null;
   const fallback = path.join(getDocsUiRoot(), '..', 'core', '__fixtures__', 'petstore.yaml');
   if (fs.existsSync(fallback)) return fallback;
   return null;

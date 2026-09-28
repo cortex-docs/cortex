@@ -186,6 +186,7 @@ export interface CortexConfig {
   languages: LanguageConfig[];
   docs?: DocsSection[];
   mcp?: McpConfig;
+  deploy?: { domain?: string };
   analytics?: AnalyticsConfig;
   publish?: PublishConfig;
 }

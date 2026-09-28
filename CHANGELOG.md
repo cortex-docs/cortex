@@ -8,6 +8,77 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 ### New Features
 
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- None.
+
+## [0.1.35] - 2026-09-22
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Documented the `primaryColor` configuration option in the README, showing how to set the documentation accent color as a six-digit hex value.
+
+## [0.1.34] - 2026-09-22
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Sharpened the README demo animation and poster image for better clarity.
+
+## [0.1.33] - 2026-09-22
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Replaced the static SVG overview in the README with an animated terminal demo GIF and PNG for a more interactive preview of Cortex.
+- Added a Product Hunt badge and a changelog link to the README.
+
+## [0.1.32] - 2026-09-13
+
+### New Features
+
+- None.
+
+### Bug Fixes
+
+- None.
+
+### Improvements
+
+- Added a Product Hunt badge and a link to the changelog on the README.
+
+## [0.1.31] - 2026-09-12
+
+### New Features
+
 - `cortex docs build` now exports static HTML, CSS, JavaScript, and documentation data for deployment to a static web host.
 
 ### Bug Fixes

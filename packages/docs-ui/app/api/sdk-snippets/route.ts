@@ -603,7 +603,7 @@ export async function GET() {
     }
 
     // If still nothing, fall back to fixture paths
-    if (configSources.length === 0) {
+    if (configSources.length === 0 && !process.env.CORTEX_HOSTED_REPOSITORY) {
       configSources = [
         {
           title: 'REST API',

@@ -284,6 +284,10 @@ export const cortexConfigSchema = z
     generators: generatorConfigSchema.optional(),
     docs: z.array(docsSectionSchema).optional(),
     mcp: mcpConfigSchema,
+    deploy: z
+      .object({ domain: z.string().min(1).optional() })
+      .strict()
+      .optional(),
     analytics: analyticsConfigSchema,
     publish: publishConfigSchema,
   })

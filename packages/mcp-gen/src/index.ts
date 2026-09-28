@@ -34,3 +34,4 @@ export {
   generateToolsSection,
   type ReadmeData,
 } from './readme-content';
+export { generateRepositorySetupSection } from './repository-setup';

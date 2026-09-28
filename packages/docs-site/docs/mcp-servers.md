@@ -1,5 +1,11 @@
 # MCP Servers
 
+For public repositories, use `npx -y @cortex-docs/cli mcp-serve https://github.com/OWNER/REPO` to serve current documentation locally.
+
+This command checks the default branch before each request and needs no npm package publication. See [Open Source Hosting](/docs/open-source-hosting).
+
+The generation and npm publishing flow below remains available for MCP servers with API action tools.
+
 Cortex Docs can generate [Model Context Protocol](https://modelcontextprotocol.io) servers from API specifications and project documentation.
 
 You can replace server, handler, entry point, package, README, and final-file templates. See [Custom Generators](/docs/custom-generators).
