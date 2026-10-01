@@ -9,6 +9,7 @@ import {
   type HomeConfig,
 } from '@/components/docs/site-config-provider';
 import { useProjectWatch } from '@/lib/use-project-watch';
+import { primaryThemeCss } from '@/lib/primary-theme';
 
 const COLS = 45;
 const ROWS = 16;
@@ -111,44 +112,13 @@ export default function Home() {
         if (!data) return;
         if (data.home) setHome(data.home);
         if (data.primaryColor && /^#[0-9a-fA-F]{6}$/.test(data.primaryColor)) {
-          const pc = data.primaryColor;
-          const r = parseInt(pc.slice(1, 3), 16);
-          const g = parseInt(pc.slice(3, 5), 16);
-          const b = parseInt(pc.slice(5, 7), 16);
-          const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-          const a = (m: number) =>
-            `rgb(${Math.min(255, Math.round(r * m))},${Math.min(255, Math.round(g * m))},${Math.min(255, Math.round(b * m))})`;
-          const lbm = lum < 0.15 ? 1.8 : lum < 0.3 ? 1.3 : 1;
-          const dbm = lum < 0.15 ? 4 : lum < 0.3 ? 2.2 : lum < 0.4 ? 1.4 : 1;
-          const tm =
-            lum > 0.9
-              ? 0.45
-              : lum > 0.7
-                ? 0.88
-                : lum > 0.5
-                  ? 0.92
-                  : lum < 0.15
-                    ? 3.5
-                    : lum < 0.3
-                      ? 2
-                      : 1;
-          const tintMul = lum > 0 ? Math.max(1, 0.45 / lum) : 6;
-          const lightColor = a(lbm),
-            darkColor = a(dbm),
-            lightText = a(tm),
-            darkText = a(dbm),
-            cardTint = a(Math.min(tintMul, 10));
-          const lightLum = lum * lbm,
-            darkLum = Math.min(1, lum * dbm);
-          const lightFg = lightLum > 0.5 ? '#0a0a0a' : '#fafafa';
-          const darkFg = darkLum > 0.5 ? '#0a0a0a' : '#fafafa';
           let s = document.querySelector('style[data-primary]') as HTMLStyleElement;
           if (!s) {
             s = document.createElement('style');
             s.setAttribute('data-primary', '');
             document.body.prepend(s);
           }
-          s.textContent = `html{--color-primary:${lightColor}!important;--color-primary-foreground:${lightFg}!important;--primary-text:${lightText};--primary-card-tint:${cardTint}}html.dark{--color-primary:${darkColor}!important;--color-primary-foreground:${darkFg}!important;--primary-text:${darkText};--primary-card-tint:${cardTint}}@media(prefers-color-scheme:dark){html:not(.light){--color-primary:${darkColor}!important;--color-primary-foreground:${darkFg}!important;--primary-text:${darkText};--primary-card-tint:${cardTint}}}`;
+          s.textContent = primaryThemeCss(data.primaryColor);
         }
       })
       .catch(() => {});

@@ -379,7 +379,7 @@ export function DocsHeader() {
               )}
               {!hasCustomLogo && (
                 <span className="truncate text-lg font-semibold tracking-tight">
-                  {project || siteTitle || 'Cortex'}
+                  {siteTitle || project || 'Cortex'}
                 </span>
               )}
             </Link>
