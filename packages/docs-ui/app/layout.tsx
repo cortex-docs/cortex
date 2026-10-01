@@ -13,6 +13,7 @@ import {
 import { SearchProvider } from '@/components/docs/search-provider';
 import { GoogleAnalytics } from '@/components/docs/google-analytics';
 import { sanitizeSvg } from '@/lib/sanitize-svg';
+import { primaryThemeCss } from '@/lib/primary-theme';
 
 interface LoadedSiteConfig extends SiteConfig {
   customHeadHtml?: string;
@@ -25,33 +26,6 @@ function emptySiteConfig(): LoadedSiteConfig {
     hasLogo: false,
     customHeadHtml: undefined,
   };
-}
-
-function adj(r: number, g: number, b: number, mul: number) {
-  return `rgb(${Math.min(255, Math.round(r * mul))},${Math.min(255, Math.round(g * mul))},${Math.min(255, Math.round(b * mul))})`;
-}
-
-function parsePrimary(hex: string) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  const lightBgMul = lum < 0.15 ? 1.8 : lum < 0.3 ? 1.3 : 1;
-  const darkBgMul = lum < 0.15 ? 4 : lum < 0.3 ? 2.2 : lum < 0.4 ? 1.4 : 1;
-  const textMul =
-    lum > 0.9 ? 0.45 : lum > 0.7 ? 0.88 : lum > 0.5 ? 0.92 : lum < 0.15 ? 3.5 : lum < 0.3 ? 2 : 1;
-  const lightColor = adj(r, g, b, lightBgMul);
-  const darkColor = adj(r, g, b, darkBgMul);
-  const lightText = adj(r, g, b, textMul);
-  const darkText = adj(r, g, b, darkBgMul);
-  const lightLum = lum * lightBgMul;
-  const darkLum = Math.min(1, lum * darkBgMul);
-  const lightFg = lightLum > 0.5 ? '#0a0a0a' : '#fafafa';
-  const darkFg = darkLum > 0.5 ? '#0a0a0a' : '#fafafa';
-  const targetTintLum = 0.45;
-  const tintMul = lum > 0 ? Math.max(1, targetTintLum / lum) : 6;
-  const cardTint = adj(r, g, b, Math.min(tintMul, 10));
-  return { lightColor, darkColor, lightFg, darkFg, lightText, darkText, cardTint };
 }
 
 function createThemeInitializationScript(defaultTheme: 'light' | 'dark' | 'system'): string {
@@ -196,13 +170,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const { customHeadHtml, ...siteConfig } = readSiteConfig();
   const defaultTheme = siteConfig.theme ?? 'system';
 
-  const pc = siteConfig.primaryColor;
-  const primaryCss = pc
-    ? (() => {
-        const p = parsePrimary(pc);
-        return `html{--color-primary:${p.lightColor}!important;--color-primary-foreground:${p.lightFg}!important;--primary-text:${p.lightText};--primary-card-tint:${p.cardTint}}html.dark{--color-primary:${p.darkColor}!important;--color-primary-foreground:${p.darkFg}!important;--primary-text:${p.darkText};--primary-card-tint:${p.cardTint}}@media(prefers-color-scheme:dark){html:not(.light){--color-primary:${p.darkColor}!important;--color-primary-foreground:${p.darkFg}!important;--primary-text:${p.darkText};--primary-card-tint:${p.cardTint}}}`;
-      })()
-    : '';
+  const primaryCss = primaryThemeCss(siteConfig.primaryColor ?? '');
 
   return (
     <html

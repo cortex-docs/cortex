@@ -18,6 +18,23 @@ The project uses Semantic Versioning. Each release contains the same three chang
 
 - None.
 
+## [0.1.36] - 2026-09-28
+
+### New Features
+
+- Deploy free documentation hosting for public GitHub repositories with `cortex deploy`, publishing your existing Markdown to a `*.cortexdocs.dev` subdomain.
+- Serve a live MCP server directly from a public repository with `cortex mcp-serve https://github.com/OWNER/REPO`, without a local checkout.
+- Documentation sites are now published through Cloudflare Static Assets for direct, low-latency delivery of hosted docs.
+
+### Bug Fixes
+
+- Fixed in-page links to Markdown headings so they scroll to the correct section in the hosted documentation site, even before content has fully loaded.
+- Removed a conflicting cache-control header on static hosted assets that could cause stale or inconsistent caching behavior.
+
+### Improvements
+
+- None.
+
 ## [0.1.35] - 2026-09-22
 
 ### New Features

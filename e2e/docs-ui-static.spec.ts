@@ -30,6 +30,29 @@ test.describe('Cloudflare Static Assets export', () => {
     await expect(page.locator('.cortex-cookie-settings-button')).toHaveCount(0);
   });
 
+  for (const appearance of ['light', 'dark']) {
+    for (const [color, background, foreground] of [
+      ['#c2410c', 'rgb(194, 65, 12)', 'rgb(255, 255, 255)'],
+      ['#2563eb', 'rgb(37, 99, 235)', 'rgb(255, 255, 255)'],
+      ['#7c3aed', 'rgb(124, 58, 237)', 'rgb(255, 255, 255)'],
+      ['#ffffff', 'rgb(255, 255, 255)', 'rgb(10, 10, 10)'],
+    ]) {
+      test(`adapts the homepage button text to ${color} in ${appearance} mode`, async ({
+        page,
+      }) => {
+        await page.route('**/api/config*', async (route) => {
+          const response = await route.fetch();
+          const config = await response.json();
+          await route.fulfill({ json: { ...config, primaryColor: color } });
+        });
+        await page.goto(`/?appearance=${appearance}`);
+        const button = page.getByRole('link', { name: 'Getting Started', exact: true });
+        await expect(button).toHaveCSS('background-color', background);
+        await expect(button).toHaveCSS('color', foreground);
+      });
+    }
+  }
+
   test('supports client navigation between generated documentation pages', async ({ page }) => {
     await page.goto('/docs/quickstart');
     await expect(page).toHaveTitle('Petstore Docs');
